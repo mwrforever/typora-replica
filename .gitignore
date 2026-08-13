@@ -1,0 +1,44 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Tauri / Rust 构建产物
+src-tauri/target
+src-tauri/gen
+
+# 本地参考文件（Typora 安装包，不纳入版本库）
+refs/
+
+# 工具链本地状态
+.zcode/
+
+# 测试与覆盖率产物
+coverage
+e2e/.wdio*
+e2e/logs
+
+# 证书与签名材料（仅 CI secrets 注入）
+*.pfx
+*.cer
+*.pem
