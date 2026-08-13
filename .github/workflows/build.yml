@@ -86,27 +86,42 @@ jobs:
         run: npm ci
       - name: 编译 debug 二进制（E2E 目标，rust-cache 命中时快速）
         run: cargo build --manifest-path src-tauri/Cargo.toml
-      - name: 安装 tauri-driver（WebDriver 服务）
-        run: cargo install tauri-driver --locked
       - name: 读取 WebView2 运行时版本
         id: wv2ver
         shell: bash
         run: |
           set -euo pipefail
-          echo "--- 系统组件版本诊断 ---"
+          # 注意：不能用 msedge.exe --version 探测版本——CI 服务会话中 Edge 启动后不退出，
+          # 会导致步骤挂起（曾卡死 20 分钟超时）。只读注册表，且加 timeout 保护。
           echo "[WebView2 运行时注册表]"
-          reg query "HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" //v pv || echo "（注册表键不存在）"
-          echo "[Edge 浏览器版本]"
-          "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" --version || echo "（Edge 不存在）"
-          # tauri-driver 的 WebView2 模式要求 msedgedriver 与 WebView2 运行时版本匹配
-          # （而非 Edge 版本），不匹配会报 DevToolsActivePort 错误
-          WV2_VERSION=$(reg query "HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" //v pv 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+          WV2_VERSION=$(timeout 30 reg query "HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" //v pv 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+          if [ -z "$WV2_VERSION" ]; then
+            echo "reg 查询失败或超时，改用 PowerShell 读取..."
+            WV2_VERSION=$(timeout 30 powershell -NoProfile -Command "(Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' -ErrorAction SilentlyContinue).pv" 2>/dev/null || true)
+          fi
           if [ -z "$WV2_VERSION" ]; then
             echo "::error::无法读取 WebView2 运行时版本（CI 环境异常，需人工排查）"
             exit 1
           fi
           echo "WebView2 运行时版本: $WV2_VERSION"
           echo "version=$WV2_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: 恢复 tauri-driver 缓存（避免每次编译 3-4 分钟）
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/tauri-driver.exe
+          key: tauri-driver-v2
+
+      - name: 安装 tauri-driver（WebDriver 服务）
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$PATH"
+          if command -v tauri-driver >/dev/null 2>&1 && tauri-driver --version >/dev/null 2>&1; then
+            echo "tauri-driver 已缓存，跳过编译"
+          else
+            cargo install tauri-driver --locked
+          fi
 
       - name: 恢复 Edge WebDriver 缓存（跨 run 复用，秒级恢复）
         uses: actions/cache@v4
