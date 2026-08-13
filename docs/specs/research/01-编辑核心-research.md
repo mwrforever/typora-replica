@@ -111,16 +111,16 @@
 - spec 所列全部菜单项及快捷键与官方 Shortcut-Keys 一致（29 项逐项核对）
 - Edit 菜单需补 4 项：Emoji & Symbols（E17）、Math Tools（强制刷新数学渲染）、Whitespace and Line Breaks（E1 保留行为切换）、Spell Check…
 - Find Next/Previous：官方另有 Enter / Shift+Enter 别名
-- Paragraph 菜单 Indent/Outdent：官方表格与业界常识相反，待实操确认后定稿
+- Paragraph 菜单 Indent/Outdent：**用户实测定稿——Ctrl+[ = 缩进、Ctrl+] = 反向缩进**（与官方表格一致，与 VS Code 等业界习惯相反，Typora 特有，须原样复刻并标注）
 - Format 菜单全部一致；Image 菜单项官方名为 "Insert Local Images…"
 
 ### 3.2 设置项（12.2/12.3）
 
 - Auto Save：官方默认 5 分钟（`conf.user.json` 的 `autoSaveTimer`，单位分钟）——与 spec F30 完全吻合
-- Inline Math：默认关、**需重启**（官方明示）
+- Inline Math：默认关；**用户实测启用后即时生效**（与官方「需重启」记载矛盾，以实测为准）
 - Strict Mode：**需重启**（官方明示）；Code Fences 各选项均需重启
 - auto pair markdown syntax：官方符号为 `=`（非 `==`）；`~`/`=`/`^` 为「选中后包围」
-- 默认值未载明、待实操确认的项：auto pair 两开关、Default Line Ending、Code Fences 各选项、Diagrams/Highlight 等开关生效时机（见第 8 节）
+- 用户实操回填（2026-08-13）：auto pair 两开关默认均开；Default Line Ending 默认 LF（Windows 亦 LF）；Highlight/Superscript/Subscript 开关需重启生效；其余未实测项见第 7 节
 
 ## 4. Crepe 集成与 keymap 机制要点
 
@@ -172,17 +172,17 @@
 
 > 用户实测回填后更新本表并同步模块 spec。来源：官方文档未载明/记载模糊/自相矛盾的行为。
 
-| #   | 事项                                                                 | 状态       |
-| --- | -------------------------------------------------------------------- | ---------- |
-| 1   | Indent/Outdent 快捷键实际配对（官方疑笔误）                          | 待回填     |
-| 2   | Auto pair 两开关默认状态                                             | 待回填     |
-| 3   | Default Line Ending 默认值                                           | 待回填     |
-| 4   | Emoji 补全触发方式与偏好设置选项名                                   | 待回填     |
-| 5   | Windows 版「Emoji & Symbols」菜单项名称                              | 待回填     |
-| 6   | 表格 Tab 加行的精确触发位置                                          | 待回填     |
-| 7   | Ctrl+A 在代码块内的选择范围                                          | 待回填     |
-| 8   | Highlight/Superscript/Subscript/Legacy math 等开关生效时机           | 待回填     |
-| 9   | Code Fences 各选项与 Inline Math 默认值                              | 待回填     |
-| 10  | 软换行/连续空格「编辑保留、导出忽略」设置项名称与分区                | 待回填     |
-| 11  | Indent Size for Code 的具体语义                                      | 待回填     |
-| 12  | 代码块语言列表最终范围（实现阶段做 highlight/CodeMirror 映射时验证） | 归实现阶段 |
+| #   | 事项                                                                 | 回填结果（2026-08-13 用户实测）                                                                                            |
+| --- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Indent/Outdent 快捷键实际配对（官方疑笔误）                          | ✅ Ctrl+[ = Indent、Ctrl+] = Outdent（与官方一致，反业界习惯，须原样复刻）                                                 |
+| 2   | Auto pair 两开关默认状态                                             | ✅ 默认均开                                                                                                                |
+| 3   | Default Line Ending 默认值                                           | ✅ 默认 LF（Windows 亦为 LF，官方 Issue 开发者确认）                                                                       |
+| 4   | Emoji 补全触发方式与偏好设置选项名                                   | ✅ 输入 `:` 自动弹出（默认开）；ESC 可手动触发；v1.11 起选项名「Disable emoji autocomplete when typing `:`」（默认不勾选） |
+| 5   | Windows 版「Emoji & Symbols」菜单项名称                              | ✅ Windows/Linux 无此菜单项（macOS 专属）→ 我们首版不做该菜单项                                                            |
+| 6   | 表格 Tab 加行的精确触发位置                                          | ✅ 中间单元格=跳下一格；任意行最后一个单元格按 Tab=表格末尾新增一行                                                        |
+| 7   | Ctrl+A 在代码块内的选择范围                                          | ⚠️ 未实测到（推测首次选整块/再次选全文）→ 保持待确认，实现阶段按 Crepe 默认行为验证                                        |
+| 8   | Highlight/Superscript/Subscript/Legacy math 等开关生效时机           | ✅ 需重启生效（社区反馈）；Inline Math 用户实测即时生效                                                                    |
+| 9   | Code Fences 各选项与 Inline Math 默认值                              | ⚠️ Code Fences 子项默认值未实测到（待确认）；Inline Math 默认关闭 ✅                                                       |
+| 10  | 软换行/连续空格「编辑保留、导出忽略」设置项名称与分区                | ✅ 默认行为成立（编辑保留、导出忽略/折叠为空格）；设置位于偏好设置→Markdown 分区                                           |
+| 11  | Indent Size for Code 的具体语义                                      | ⚠️ 未回填 → 待确认（实现阶段暂按「N 个空格渲染制表符」语义）                                                               |
+| 12  | 代码块语言列表最终范围（实现阶段做 highlight/CodeMirror 映射时验证） | 归实现阶段                                                                                                                 |
