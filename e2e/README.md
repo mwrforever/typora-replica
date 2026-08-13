@@ -5,9 +5,10 @@
 ## 1. CI 冒烟测试（GitHub Actions）
 
 - 脚本：`e2e/smoke-ci.mjs`
-- 原理：通过 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=0` 让
-  WebView2 开启调试端口并写 `DevToolsActivePort` 文件，脚本通过 CDP 协议连接页面，
-  执行 JS 断言。
+- 原理：通过 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`
+  让 WebView2 浏览器进程监听固定调试端口（Playwright 官方 WebView2 方案同款），
+  脚本通过 CDP 协议连接页面，执行 JS 断言。不依赖 DevToolsActivePort 文件——
+  CI 的 WebView2 150.x 对 `--remote-debugging-port=0` 不写该文件（本地 151 正常）。
 - 触发：Build Verification workflow 的 e2e job（PR 与 main 推送）
 
 ## 2. 完整 WebDriver E2E（本地执行）
@@ -31,10 +32,8 @@ EDGEDRIVER_CACHE_DIR="$PWD/e2e/.driver" npx edgedriver --version
 
 ## 为什么 CI 用冒烟而不是完整 WebDriver
 
-GitHub Actions 的 windows-latest 镜像自带 WebView2 Runtime 150.x，该版本与
-msedgedriver 的自动化握手存在环境兼容问题（会话创建报
-`DevToolsActivePort file doesn't exist`）。已排查并排除：驱动版本匹配、
-user data 目录指定、进程残留、调试参数注入失效等（详见 git 历史）。
-CDP 冒烟测试绕开 WebDriver 握手，验证能力等价（启动/渲染/命令链路），
-且本地完整 WebDriver E2E 不受影响。待微软修复 WebView2 150 或 runner
-镜像升级后，可将 CI 恢复为完整 WebDriver 方案。
+GitHub Actions 的 windows-latest 镜像自带 WebView2 Runtime 150.x，该版本对
+`--remote-debugging-port=0` 不写 `DevToolsActivePort` 文件（msedgedriver 创建会话
+依赖该文件，报 `DevToolsActivePort file doesn't exist`；本地 WebView2 151 正常）。
+CI 冒烟改用固定调试端口直接连 CDP，绕开文件机制；完整 WebDriver 方案待
+WebView2 150 修复或 runner 镜像升级后恢复。

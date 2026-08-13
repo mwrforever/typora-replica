@@ -65,9 +65,11 @@ jobs:
 
   # ── CI 冒烟测试 ──────────────────────────────────────────────
   # 说明：完整 WebDriver E2E（WebdriverIO + tauri-driver）因 CI 的 WebView2 150.x
-  # 与 msedgedriver 自动化握手存在环境兼容问题（DevToolsActivePort），降级为
-  # CDP 冒烟测试（e2e/smoke-ci.mjs），覆盖相同验证目标：
+  # 对 --remote-debugging-port=0 不写 DevToolsActivePort 文件，msedgedriver 会话
+  # 创建失败，降级为 CDP 冒烟测试（e2e/smoke-ci.mjs），覆盖相同验证目标：
   #   应用启动 + 前端渲染 + Rust 命令链路。
+  # 冒烟使用固定调试端口方案（Playwright 官方 WebView2 文档同款），不依赖
+  # DevToolsActivePort 文件，跨 WebView2 版本稳定。
   # 完整 E2E 在本地环境正常，执行方式见 e2e/README（npm run test:e2e）。
   e2e:
     name: CI 冒烟（应用启动/前端渲染/Rust 链路）
@@ -105,27 +107,31 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # WebView2 调试参数注入（两者缺一不可）：
-          # 1. TAURI_WEBVIEW_AUTOMATION=true：tauri 侧允许自动化
-          #    （tauri-runtime-wry 检测该变量后 WebView2 环境才启用调试协议）
-          # 2. WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=0：
-          #    注入调试端口参数，WebView2 开启端口并写 DevToolsActivePort 文件
+          # WebView2 调试参数注入（固定端口方案）：
+          # 1. TAURI_WEBVIEW_AUTOMATION=true：声明自动化意图（Windows 上 wry 当前
+          #    无操作，保留以对齐 tauri-driver 的行为契约）
+          # 2. WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222：
+          #    让 WebView2 浏览器进程监听固定调试端口，冒烟脚本直接连 CDP。
+          #    不用 --remote-debugging-port=0：CI 的 WebView2 150 不写
+          #    DevToolsActivePort 文件（本地 151 正常），固定端口跨版本稳定。
           export TAURI_WEBVIEW_AUTOMATION=true
-          export WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=0"
+          export WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9222"
+          export SMOKE_CDP_PORT=9222
           ls -la src-tauri/target/debug/typora-replica.exe
           # 启动应用（加载 vite dev server 前端）
           src-tauri/target/debug/typora-replica.exe --use-localhost > e2e/app.log 2>&1 &
-          APP_PID=$!
           # 运行 CDP 冒烟脚本（窗口渲染 + Rust 命令链路断言）
+          # 注意：set -e 下 node 失败会直接终止脚本、跳过收尸与诊断，
+          # 因此临时关闭 set -e 手动接管退出码（诊断逻辑内置在冒烟脚本内）
+          set +e
           node e2e/smoke-ci.mjs
           EXIT_CODE=$?
+          set -e
           if [ $EXIT_CODE -ne 0 ]; then
-            echo "=== 失败诊断：全盘搜索 DevToolsActivePort ==="
-            find "$LOCALAPPDATA" "$TEMP" -name "DevToolsActivePort" 2>/dev/null | head -5 || true
-            echo "=== app 数据目录内容 ==="
-            ls -la "$LOCALAPPDATA/com.markwell.app" 2>/dev/null || true
-            ls -la "$LOCALAPPDATA/com.markwell.app/EBWebView" 2>/dev/null | head -10 || true
+            echo "=== app.log（应用输出）==="
+            cat e2e/app.log 2>/dev/null || true
           fi
+          # 收尸：残留的 WebView2 子进程会锁定 user data 目录
           taskkill //IM typora-replica.exe //F 2>/dev/null || true
           taskkill //IM msedgewebview2.exe //F 2>/dev/null || true
           exit $EXIT_CODE
