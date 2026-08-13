@@ -22,3 +22,9 @@ allow = [
 [bans]
 # 同一依赖多版本共存：警告不阻断（避免过度严格导致 CI 频繁误伤）
 multiple-versions = "warn"
+
+[advisories]
+version = 2
+# gtk-rs GTK3 bindings 已停止维护：仅为 tauri 的 Linux 支持传递引入，
+# 本项目目标平台为 Windows（发布产物不含该依赖），降级为警告不阻断
+unmaintained = "warn"
