@@ -78,3 +78,5 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
+          # Cargo 清单位于 src-tauri/ 子目录（Tauri 项目结构）
+          manifest-path: src-tauri/Cargo.toml
