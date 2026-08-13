@@ -43,39 +43,39 @@
 
 ### 2.1 块级元素
 
-| #   | 功能              | 行为规范                                                                                     | 实现机制                                         |
-| --- | ----------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| E1  | 段落与换行        | Enter 新段落（单空行即可）；Shift+Enter 软换行；行尾两空格为兼容性换行符                     | Crepe 内核（ProseMirror hardBreak/paragraph）    |
-| E2  | 标题              | 行首 1-6 个 `#` + 空格 + Enter 自动转标题；Ctrl+1~6 设级别；Ctrl+0 转段落；Ctrl+=/- 增减级别 | Crepe 标题语法 + keymap 扩展                     |
-| E3  | 引用块            | 行首 `>` 自动生成；Enter 自动延续 `>`；`>>` 嵌套                                             | GFM blockquote（Crepe 内置）                     |
-| E4  | 列表              | `- `、`* `、`+ `、`1. ` 自动创建；Tab/Shift+Tab 缩进提升                                     | Crepe list 语法（GFM）                           |
-| E5  | 任务列表          | `- [ ]` / `- [x]`；点击复选框切换状态                                                        | GFM taskList（Crepe 内置）                       |
-| E6  | 代码围栏          | ` ``` ` + Enter 创建；行首语言名高亮；右下角语言切换；Ctrl+Shift+K 插入；行号/换行/缩进可配  | Crepe CodeBlock + highlight.js；语言列表扩展     |
-| E7  | 数学块            | `$$` + Enter 创建；Ctrl+Enter 结束；`\def` 自定义命令、`\ce{}` 化学式、自动编号模式可选      | Crepe Math 插件（KaTeX）                         |
-| E8  | 表格              | `                                                                                            | 表头                                             | 表头 | ` + Enter 建表；工具栏缩放/对齐/删除；右键增删行列；Tab 加行；拖拽移动行列 | Crepe GFM 表格（tooltip 工具栏需自定义） |
-| E9  | 脚注              | `[^id]` 引用式；悬停预览                                                                     | ProseMirror footnote（自定义扩展，Crepe 无内置） |
-| E10 | 水平线            | 空行 `***` 或 `---` + Enter                                                                  | Crepe 内置                                       |
-| E11 | YAML Front Matter | 文首 `---` 块自动识别；解析 title/author 等元数据                                            | 自定义 front-matter 插件（读取时剥离 + 解析）    |
-| E12 | 目录 TOC          | `[toc]` + Enter 生成；随标题增删自动更新                                                     | 自定义节点（监听 heading 变更重算）              |
-| E13 | Callouts          | 1.8+ 功能，需启用                                                                            | ❌ 首版不做（依赖启用项，非核心）                |
+| #   | 功能              | 行为规范                                                                                                       | 实现机制                                         |
+| --- | ----------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| E1  | 段落与换行        | Enter 新段落（单空行即可）；Shift+Enter 软换行；行尾两空格为兼容性换行符                                       | Crepe 内核（ProseMirror hardBreak/paragraph）    |
+| E2  | 标题              | 行首 1-6 个 `#` + 空格 + Enter 自动转标题；Ctrl+1~6 设级别；Ctrl+0 转段落；Ctrl+=/- 增减级别                   | Crepe 标题语法 + keymap 扩展                     |
+| E3  | 引用块            | 行首 `>` 自动生成；Enter 自动延续 `>`；`>>` 嵌套                                                               | GFM blockquote（Crepe 内置）                     |
+| E4  | 列表              | `- `、`* `、`+ `、`1. ` 自动创建；Tab/Shift+Tab 缩进提升                                                       | Crepe list 语法（GFM）                           |
+| E5  | 任务列表          | `- [ ]` / `- [x]`；点击复选框切换状态                                                                          | GFM taskList（Crepe 内置）                       |
+| E6  | 代码围栏          | ` ``` ` + Enter 创建；行首语言名高亮；右下角语言切换；Ctrl+Shift+K 插入；行号/换行/缩进可配；复制代码/自动缩进 | Crepe CodeMirror 6 代码块；语言列表需注入        |
+| E7  | 数学块            | `$$` + Enter 创建；Ctrl+Enter 结束；`\def` 自定义命令、`\ce{}` 化学式、自动编号模式可选                        | Crepe Math 插件（KaTeX）                         |
+| E8  | 表格              | `                                                                                                              | 表头                                             | 表头 | ` + Enter 建表；工具栏缩放/对齐/删除；右键增删行列；Tab 加行；拖拽移动行列；Shift+Alt+Ctrl+L 删行 | Crepe GFM 表格（工具栏内置；Typora 式建表规则与 Tab 加行需自定义） |
+| E9  | 脚注              | `[^id]` 引用式；悬停预览                                                                                       | preset-gfm 内置脚注节点；仅需悬停预览            |
+| E10 | 水平线            | 空行 `***` 或 `---` + Enter                                                                                    | Crepe 内置                                       |
+| E11 | YAML Front Matter | 文首 `---` 块自动识别；解析 title/author 等元数据与 Typora 专有属性 typora-root-url/typora-copy-images-to      | 自定义 front-matter（加载剥离存内存 + 保存回写） |
+| E12 | 目录 TOC          | `[toc]` + Enter 生成；随标题增删自动更新                                                                       | 自定义节点（监听 heading 变更重算）              |
+| E13 | Callouts          | 1.8+ 功能，需启用                                                                                              | ❌ 首版不做（依赖启用项，非核心）                |
 
 ### 2.2 行内元素
 
-| #   | 功能           | 行为规范                                                                                    | 实现机制                                             |
-| --- | -------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| E14 | 链接           | `[text](url)` / `[text][id]` / `<url>` / 裸 URL 自动识别；Ctrl+点击浏览器打开；点击展开编辑 | Crepe 内置 + opener 插件                             |
-| E15 | 图片           | `![alt](path)`；拖拽插入；点击编辑源码；同目录相对路径                                      | Crepe ImageBlock + 自定义拖拽上传（M7）              |
-| E16 | 行内样式       | `*斜体*` `**粗体**` `` `代码` `` `~~删除线~~`；单词内下划线不识别                           | Crepe GFM 内置                                       |
-| E17 | Emoji          | `:名称` 自动补全；菜单插入 UTF-8 emoji                                                      | 自定义 emoji 补全（可延后）                          |
-| E18 | 上标/下标/高亮 | `^x^` `~x~` `==x==` 可选启用                                                                | Crepe 扩展（可延后，非核心）                         |
-| E19 | 行内数学       | `$...$`；ESC 触发预览；Pandoc 解析规则（`$` 后不能跟数字）                                  | Crepe Inline Math（KaTeX）                           |
-| E20 | HTML/媒体      | 行内 span 渲染；块级 HTML 编辑模式；iframe 沙箱                                             | ⚠️ 首版仅白名单安全渲染（script 禁、iframe sandbox） |
+| #   | 功能           | 行为规范                                                                                                                                  | 实现机制                                                   |
+| --- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| E14 | 链接           | `[text](url)` / `[text][id]` / `<url>` / 裸 URL 自动识别；Ctrl+点击浏览器打开；点击展开编辑；隐式引用 [Google][]；重复标题锚点 -1/-2 后缀 | Crepe 内置 + opener 插件                                   |
+| E15 | 图片           | `![alt](path)`；拖拽插入；点击编辑源码；同目录相对路径                                                                                    | Crepe ImageBlock + 自定义拖拽上传（M7）                    |
+| E16 | 行内样式       | `*斜体*` `**粗体**` `` `代码` `` `~~删除线~~`；单词内下划线不识别                                                                         | Crepe GFM 内置                                             |
+| E17 | Emoji          | `:名称` 自动补全；菜单插入 UTF-8 emoji                                                                                                    | 自定义 emoji 补全（可延后）                                |
+| E18 | 上标/下标/高亮 | `^x^` `~x~` `==x==` 可选启用                                                                                                              | Crepe 扩展（可延后，非核心）                               |
+| E19 | 行内数学       | `$...$`；ESC 触发预览；Pandoc 解析规则三条（开 `$` 后无空格/制表符；闭 `$` 前无空格/制表符且前一字符非反斜杠；闭 `$` 后不紧跟数字）       | Crepe Inline Math（KaTeX）；Pandoc 规则需自定义 InputRule  |
+| E20 | HTML/媒体      | 行内 span 渲染；块级 HTML 编辑模式；iframe 沙箱；class/id/data-* 渲染剥离、导出保留；视频/音频路径规则同图片                              | ⚠️ 白名单渲染（DOMPurify 清洗；script 禁、iframe sandbox） |
 
 ### 2.3 图表（Mermaid）
 
-| #   | 功能 | 行为规范                                                                                                  | 实现机制                                   |
-| --- | ---- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| E21 | 图表 | ` ```mermaid ` 代码块渲染为图表；支持 flowchart/sequence/gantt/class/state/pie/mindmap 等；主题变量可定制 | Crepe Diagram 插件（Mermaid.js，本地加载） |
+| #   | 功能 | 行为规范                                                                                                                                                  | 实现机制                                                                                            |
+| --- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| E21 | 图表 | ` ```mermaid ` 代码块渲染为图表；支持 flowchart/sequence/gantt/class/state/pie/mindmap 等 15 种 + legacy `sequence`/`flow`；主题变量可定制；右键另存/复制 | Crepe 无图表能力（官方 diagram 插件已弃用）；复用 CodeMirror renderPreview 钩子 + mermaid.js 懒加载 |
 
 ---
 
@@ -255,20 +255,24 @@
 
 ### 11.2 Edit（编辑）
 
-| 菜单项                                  | 快捷键                        | 对应功能             |
-| --------------------------------------- | ----------------------------- | -------------------- |
-| New Paragraph / New Line                | Enter / Shift+Enter           | 编辑器行为（E1）     |
-| Cut / Copy / Paste                      | Ctrl+X/C/V                    | 剪贴板               |
-| Copy As Markdown                        | Ctrl+Shift+C                  | 复制为 Markdown 源码 |
-| Paste As Plain Text                     | Ctrl+Shift+V                  | 粘贴 Markdown 源码   |
-| Select All                              | Ctrl+A                        | 全选                 |
-| Select Line/Sentence（表格 Select Row） | Ctrl+L                        | 行/句选择            |
-| Delete Row（表格）                      | Ctrl+Shift+Backspace          | 表格行删除           |
-| Select Style Scope（表格 Select Cell）  | Ctrl+E                        | 样式范围/单元格选择  |
-| Select Word / Delete Word               | Ctrl+D / Ctrl+Shift+D         | 词级选择/删除        |
-| Jump to Top / Bottom / Selection        | Ctrl+Home / Ctrl+End / Ctrl+J | 光标跳转             |
-| Find / Replace                          | Ctrl+F / Ctrl+H               | F24/F25              |
-| Find Next / Previous                    | F3 / Shift+F3                 | 查找导航             |
+| 菜单项                                  | 快捷键                               | 对应功能                                      |
+| --------------------------------------- | ------------------------------------ | --------------------------------------------- |
+| New Paragraph / New Line                | Enter / Shift+Enter                  | 编辑器行为（E1）                              |
+| Cut / Copy / Paste                      | Ctrl+X/C/V                           | 剪贴板                                        |
+| Copy As Markdown                        | Ctrl+Shift+C                         | 复制为 Markdown 源码                          |
+| Paste As Plain Text                     | Ctrl+Shift+V                         | 粘贴 Markdown 源码                            |
+| Select All                              | Ctrl+A                               | 全选                                          |
+| Select Line/Sentence（表格 Select Row） | Ctrl+L                               | 行/句选择                                     |
+| Delete Row（表格）                      | Ctrl+Shift+Backspace                 | 表格行删除                                    |
+| Select Style Scope（表格 Select Cell）  | Ctrl+E                               | 样式范围/单元格选择                           |
+| Select Word / Delete Word               | Ctrl+D / Ctrl+Shift+D                | 词级选择/删除                                 |
+| Jump to Top / Bottom / Selection        | Ctrl+Home / Ctrl+End / Ctrl+J        | 光标跳转                                      |
+| Find / Replace                          | Ctrl+F / Ctrl+H                      | F24/F25                                       |
+| Find Next / Previous                    | F3 / Shift+F3（Enter / Shift+Enter） | 查找导航                                      |
+| Emoji & Symbols                         | -                                    | 插入 UTF-8 emoji（E17，Windows 菜单名待确认） |
+| Math Tools                              | -                                    | 强制刷新数学渲染（E7）                        |
+| Whitespace and Line Breaks              | -                                    | 换行/空格保留行为（E1）                       |
+| Spell Check…                            | -                                    | 拼写检查面板                                  |
 
 ### 11.3 Paragraph（段落）
 
@@ -342,7 +346,7 @@
 ### 12.2 Editor（编辑器）
 
 - Image Insert：copy images to given folder（P2）、relative path（P3）、./ prefix（默认关）、URL 转义
-- Auto pair brackets/quotes、auto pair markdown syntax（自动配对 `$`/`^`/`==`）
+- Auto pair brackets/quotes、auto pair markdown syntax（自动配对 `*`/`~`/`` ` ``/`_`；`=`/`$`/`^` 为选中文字后包围）
 - Default Line Ending（CRLF/LF）
 - Auto Save 间隔（默认 5 分钟，`autoSaveTimer`，F30）
 
