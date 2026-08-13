@@ -176,33 +176,10 @@ jobs:
           # 环境变量机制跨版本稳定：--remote-debugging-port=0 让 WebView2
           # 自动开启调试端口并写 DevToolsActivePort 文件（msedgedriver 等待的文件）
           export WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=0"
+          # 注意：不得在 wdio 前手动启动 app——残留的 DevToolsActivePort 文件
+          # 会误导 msedgedriver 连接已死端口（曾导致会话创建失败）。
+          # app 可启动性已由早期自检轮验证过，此处直接进入自动化测试。
           ls -la src-tauri/target/debug/typora-replica.exe
-          # 【诊断】app 能否在 CI 会话独立启动（区分 app 问题 vs 自动化链路问题）
-          echo "=== app 启动自检（8 秒存活测试）==="
-          export TAURI_WEBVIEW_AUTOMATION=true
-          src-tauri/target/debug/typora-replica.exe --use-localhost > e2e/app.log 2>&1 &
-          APP_PID=$!
-          sleep 8
-          if kill -0 $APP_PID 2>/dev/null; then
-            echo "app 存活（PID $APP_PID）"
-            tasklist //FI "IMAGENAME eq typora-replica.exe" 2>/dev/null | grep -i typora || true
-          else
-            echo "::error::app 启动后立即退出（WebView2 初始化失败？）"
-            cat e2e/app.log
-            exit 1
-          fi
-          kill $APP_PID 2>/dev/null || true
-          taskkill //IM typora-replica.exe //F 2>/dev/null || true
-          # 关键：WebView2 子进程（msedgewebview2.exe）在 app 被杀后仍会残留，
-          # 锁定 user data 目录导致后续 msedgedriver 启动的实例无法初始化
-          # （表现为 DevToolsActivePort file doesn't exist），必须彻底清理
-          taskkill //IM msedgewebview2.exe //F 2>/dev/null || true
-          echo "=== DevTools 自动化诊断（自检 app 应已写 DevToolsActivePort）==="
-          find "$LOCALAPPDATA/com.markwell.app" -name "DevToolsActivePort" 2>/dev/null && echo "→ DevToolsActivePort 文件存在" || echo "→ DevToolsActivePort 文件不存在"
-          # 诊断命令需容错：Windows Server netstat 输出为本地化格式，grep 可能无匹配
-          # （pipefail 下管道返回非零会触发 set -e 导致步骤误失败）
-          netstat -ano 2>/dev/null | grep -i "listen" | grep "127.0.0.1" | head -6 || true
-          echo "=== 自检通过，进入自动化测试 ==="
           # 拉起 WebDriver 服务（显式指定 Edge 驱动路径），就绪后执行测试
           tauri-driver --native-driver e2e/.driver/msedgedriver.exe > e2e/tauri-driver.log 2>&1 &
           DRIVER_PID=$!
