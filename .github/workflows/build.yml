@@ -197,6 +197,9 @@ jobs:
           # 锁定 user data 目录导致后续 msedgedriver 启动的实例无法初始化
           # （表现为 DevToolsActivePort file doesn't exist），必须彻底清理
           taskkill //IM msedgewebview2.exe //F 2>/dev/null || true
+          echo "=== DevTools 自动化诊断（自检 app 应已写 DevToolsActivePort）==="
+          find "$LOCALAPPDATA/com.markwell.app" -name "DevToolsActivePort" 2>/dev/null && echo "→ DevToolsActivePort 文件存在" || echo "→ DevToolsActivePort 文件不存在"
+          netstat -ano 2>/dev/null | grep LISTENING | grep "127.0.0.1" | head -6
           echo "=== 自检通过，进入自动化测试 ==="
           # 拉起 WebDriver 服务（显式指定 Edge 驱动路径），就绪后执行测试
           tauri-driver --native-driver e2e/.driver/msedgedriver.exe > e2e/tauri-driver.log 2>&1 &
