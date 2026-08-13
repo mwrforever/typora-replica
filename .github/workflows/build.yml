@@ -170,10 +170,24 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$HOME/.cargo/bin:$PATH"
-          # 启动前确认关键文件存在（app 二进制 / 驱动）
-          echo "[E2E 前置文件检查]"
           ls -la src-tauri/target/debug/typora-replica.exe
-          ls -la e2e/.driver/msedgedriver.exe
+          # 【诊断】app 能否在 CI 会话独立启动（区分 app 问题 vs 自动化链路问题）
+          echo "=== app 启动自检（8 秒存活测试）==="
+          export TAURI_WEBVIEW_AUTOMATION=true
+          src-tauri/target/debug/typora-replica.exe --use-localhost > e2e/app.log 2>&1 &
+          APP_PID=$!
+          sleep 8
+          if kill -0 $APP_PID 2>/dev/null; then
+            echo "app 存活（PID $APP_PID）"
+            tasklist //FI "IMAGENAME eq typora-replica.exe" 2>/dev/null | grep -i typora || true
+          else
+            echo "::error::app 启动后立即退出（WebView2 初始化失败？）"
+            cat e2e/app.log
+            exit 1
+          fi
+          kill $APP_PID 2>/dev/null || true
+          taskkill //IM typora-replica.exe //F 2>/dev/null || true
+          echo "=== 自检通过，进入自动化测试 ==="
           # 拉起 WebDriver 服务（显式指定 Edge 驱动路径），就绪后执行测试
           tauri-driver --native-driver e2e/.driver/msedgedriver.exe > e2e/tauri-driver.log 2>&1 &
           DRIVER_PID=$!
@@ -196,4 +210,5 @@ jobs:
             e2e/logs
             e2e/vite.log
             e2e/tauri-driver.log
+            e2e/app.log
           if-no-files-found: ignore
