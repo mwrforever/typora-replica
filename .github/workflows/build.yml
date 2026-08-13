@@ -68,6 +68,8 @@ jobs:
     name: E2E / Smoke（WebdriverIO + tauri-driver）
     runs-on: windows-latest
     needs: tauri-build
+    # 总超时保护：任何步骤卡死（如外部下载）不无限挂起
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -104,11 +106,19 @@ jobs:
             exit 1
           fi
           echo "WebView2 运行时版本: $WV2_VERSION"
-          export EDGEDRIVER_CACHE_DIR="$PWD/e2e/.driver"
-          export EDGEDRIVER_VERSION="$WV2_VERSION"
-          npx edgedriver --version
+          # curl 直连下载（edgedriver npm 包内部下载无超时控制，CI 上曾卡死 30 分钟）
+          # 带连接/总超时与重试；已存在且版本正确时跳过
+          if [ -f e2e/.driver/msedgedriver.exe ] && e2e/.driver/msedgedriver.exe --version 2>/dev/null | grep -q "$WV2_VERSION"; then
+            echo "驱动已缓存且版本匹配，跳过下载"
+          else
+            echo "下载 msedgedriver $WV2_VERSION ..."
+            curl -L --fail --retry 5 --retry-delay 3 --connect-timeout 30 --max-time 300 \
+              -o e2e/.driver/driver.zip "https://msedgedriver.microsoft.com/$WV2_VERSION/edgedriver_win64.zip"
+            unzip -o -q e2e/.driver/driver.zip -d e2e/.driver
+            rm -f e2e/.driver/driver.zip
+          fi
           echo "[下载的驱动版本]"
-          e2e/.driver/msedgedriver.exe --version || echo "（驱动文件缺失）"
+          e2e/.driver/msedgedriver.exe --version
           echo "Edge WebDriver 就绪"
       - name: 启动 Vite dev server
         shell: bash
