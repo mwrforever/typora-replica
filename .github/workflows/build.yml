@@ -91,12 +91,19 @@ jobs:
         run: |
           # runner 镜像自带的 WebView2 Runtime（150.x）在本环境存在自动化兼容问题
           # （msedgedriver 启动 app 后 DevTools 端口不产生，DevToolsActivePort 错误）。
-          # 安装 Evergreen 最新版（1.7MB 引导安装器，静默安装）后按新版本适配驱动。
+          # 安装 Evergreen 最新版（1.7MB 引导安装器）后按新版本适配驱动。
           set -euo pipefail
-          curl -L --fail --connect-timeout 15 --max-time 300 -o /tmp/wv2-setup.exe \
+          echo "下载 WebView2 Evergreen 安装器..."
+          curl -L --fail --connect-timeout 15 --max-time 120 -o /tmp/wv2-setup.exe \
             "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
-          /tmp/wv2-setup.exe /silent /install
-          echo "WebView2 Runtime 安装完成"
+          ls -la /tmp/wv2-setup.exe
+          echo "静默安装（服务会话可能挂起，4 分钟超时保护）..."
+          # 安装器在 CI 服务会话可能挂起拖垮整个 job，用 timeout 保护；
+          # 即使超时，安装器可能已在后台继续，不阻断后续步骤
+          timeout 240 /tmp/wv2-setup.exe /silent /install > /tmp/wv2-install.log 2>&1 || {
+            echo "::warning::WebView2 安装器未在 4 分钟内完成（可能仍在后台安装），继续后续步骤"
+          }
+          tail -5 /tmp/wv2-install.log 2>/dev/null || true
 
       - name: 读取 WebView2 运行时版本
         id: wv2ver
