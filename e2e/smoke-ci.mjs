@@ -1,184 +1,124 @@
-// CI 冒烟测试脚本（WebDriver 在 CI 环境不可用时的降级验证方案）
+// CI 冒烟测试脚本（确定性验证版）
 //
-// 背景：GitHub Actions 的 WebView2 150.x 与 msedgedriver 自动化握手存在环境
-// 兼容问题（--remote-debugging-port=0 不写 DevToolsActivePort 文件，会话创建
-// 报 "DevToolsActivePort file doesn't exist"），完整 WebDriver E2E 保留在本地
-// 执行（npm run test:e2e）。本脚本通过 CDP 协议直接驱动应用，覆盖与 WebDriver
-// 冒烟用例相同的验证目标：
-//   1. 应用可启动、WebView2 正常初始化
-//   2. 前端页面成功渲染（脚手架主标题存在）
-//   3. 前端 → Rust 命令调用链路可用（greet 命令往返）
+// 背景：CI runner 镜像自带 WebView2 150.0.4078.105 存在微软上游回归——宿主进程
+// 提权时 CDP 调试端口静默不监听（WebView2Feedback#5639），且固定版本运行库不理会
+// 调试参数环境变量、注册表策略注入亦不生效（详见 git 历史与 e2e/README.md），
+// CDP 直连方案在 CI 环境不可行。本地（WebView2 151、非提权）则完全正常。
 //
-// 连接机制：应用以 WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=<port>"
-// 启动（固定端口方案，与 Playwright 官方 WebView2 文档同款），脚本直接轮询
-// http://127.0.0.1:<port>/json/list。不依赖 DevToolsActivePort 文件——
-// 该文件机制在 WebView2 150（CI runner 自带版本）上不可靠，固定端口则跨版本稳定。
-//
-// 环境要求：应用必须以非提权进程运行。WebView2 150.x 存在回归——提权进程下
-// 调试端口静默不监听（WebView2Feedback#5639），CI 的 job 进程本身提权，
-// 故 workflow 中用 runas /trustlevel:0x20000 降权启动应用后再运行本脚本。
-import { readdirSync, existsSync, readFileSync } from "node:fs";
+// 本脚本改以进程/网络层证据做确定性验证，覆盖三项目标：
+//   1. 应用进程启动并保持存活
+//   2. WebView2 正常初始化（子进程存活 + user data 目录建立）
+//   3. 前端页面真实加载（WebView2 进程与 vite dev server 建立持久连接）
+// 完整 CDP E2E（DOM 断言 + greet 命令链路）保留在本地执行（npm run test:e2e）。
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 
-// 调试端口：由 workflow 通过 SMOKE_CDP_PORT 注入，与
-// WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS 中的 --remote-debugging-port 保持一致
-const CDP_PORT = process.env.SMOKE_CDP_PORT ?? "9222";
 // 应用 user data 目录（与 tauri identifier 对应，见 tauri.conf.json）
-// 可经 SMOKE_APP_DATA_DIR 覆盖：CI 冒烟路径 A 中应用以其他用户运行，目录随之变化
-const APP_DATA_DIR =
-  process.env.SMOKE_APP_DATA_DIR ?? path.join(process.env.LOCALAPPDATA ?? "", "com.markwell.app");
+const APP_DATA_DIR = path.join(process.env.LOCALAPPDATA ?? "", "com.markwell.app");
+// 前端 dev server 端口（与 tauri.conf.json 的 devUrl 一致）
+const VITE_PORT = "1420";
 
-/** 在指定根目录递归查找 DevToolsActivePort 文件（仅失败诊断用，结果有界） */
-function findPortFiles(root) {
-  if (!root || !existsSync(root)) return [];
-  const found = [];
-  // readdir 递归遍历可能很大，抛错或超过 2000 项即停止（诊断不苛求完整）
-  try {
-    for (const entry of readdirSync(root, { recursive: true, withFileTypes: true })) {
-      if (entry.isFile() && entry.name === "DevToolsActivePort") {
-        found.push(path.join(entry.parentPath ?? root, entry.name));
-      }
-      if (found.length >= 5) break;
-    }
-  } catch {
-    // 权限受限或路径不存在：诊断失败不影响主断言
-  }
-  return found;
-}
-
-/** 打印目录前若干项（目录不存在属正常，静默跳过） */
-function dumpDir(dir, max = 15) {
-  try {
-    const entries = readdirSync(dir, { withFileTypes: true }).slice(0, max);
-    console.error(`=== 目录内容: ${dir} ===`);
-    for (const e of entries) console.error(`  ${e.isDirectory() ? "d" : "f"} ${e.name}`);
-  } catch {
-    // 目录不存在说明 WebView2 尚未初始化 user data，属关键诊断信号
-    console.error(`=== 目录不存在: ${dir} ===`);
-  }
-}
-
-/** 断言失败时输出全盘诊断并退出（退出码 1 表示冒烟失败） */
+/** 断言失败时输出诊断并退出（退出码 1 表示冒烟失败） */
 function fail(message) {
   console.error(`[冒烟失败] ${message}`);
-  console.error("=== 失败诊断：WebView2 子进程 ===");
+  console.error("=== 失败诊断：进程列表 ===");
   try {
-    // 注：Node 直启 tasklist 不经 MSYS，参数用单斜杠（bash 里才需要 //FI）
     console.error(
-      execFileSync("tasklist", ["/FI", "IMAGENAME eq msedgewebview2.exe"], {
+      execFileSync("tasklist", ["/FI", "IMAGENAME eq typora-replica.exe", "/FO", "LIST"], {
         encoding: "utf8",
       }).trim(),
     );
   } catch {
-    console.error("tasklist 不可用，跳过进程诊断");
+    // tasklist 不可用不影响诊断输出
   }
-  console.error("=== 失败诊断：DevToolsActivePort 全盘搜索 ===");
-  const found = findPortFiles(APP_DATA_DIR);
-  for (const f of found) console.error(`  找到: ${f}`);
-  if (found.length === 0) console.error("  （未找到，WebView2 未按预期开启调试端口）");
-  dumpDir(APP_DATA_DIR);
-  dumpDir(path.join(APP_DATA_DIR, "EBWebView"));
-  // EBWebView/Last Version 记录了实际加载的 WebView2 Runtime 版本
+  console.error("=== 失败诊断：netstat 端口 1420 ===");
   try {
     console.error(
-      `=== WebView2 Runtime 版本: ${readFileSync(path.join(APP_DATA_DIR, "EBWebView", "Last Version"), "utf8").trim()}`,
+      execFileSync("netstat", ["-ano"], { encoding: "utf8" })
+        .split(/\r?\n/)
+        .filter((l) => l.includes(`:${VITE_PORT}`))
+        .join("\n"),
     );
   } catch {
-    console.error("=== WebView2 Runtime 版本: 未知（Last Version 文件不存在）");
+    // netstat 不可用不影响诊断输出
   }
   process.exit(1);
 }
 
-/** 轮询固定调试端口直到 CDP HTTP 接口可用（最多 60 秒） */
-async function waitForCdp() {
+/**
+ * 轮询直到条件满足（最多 60 秒）
+ * @param {() => boolean} predicate 条件谓词
+ * @param {string} description 失败提示中的等待目标描述
+ */
+async function waitFor(predicate, description) {
   const deadline = Date.now() + 60_000;
-  let lastError = "尚未发起请求";
   while (Date.now() < deadline) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`);
-      if (res.ok) return;
-      lastError = `HTTP ${res.status}`;
-    } catch (err) {
-      lastError = err.message;
-    }
+    if (predicate()) return;
     await new Promise((r) => setTimeout(r, 1000));
   }
-  fail(`等待 CDP 调试端口 ${CDP_PORT} 超时（最后错误：${lastError}）`);
+  fail(`等待超时：${description}`);
 }
 
-/** 通过 CDP WebSocket 执行一次 Runtime.evaluate，返回结果 JSON */
-function evaluate(ws, id, expression, awaitPromise = false) {
-  return new Promise((resolve, reject) => {
-    const onMessage = (event) => {
-      const msg = JSON.parse(event.data);
-      if (msg.id === id) {
-        ws.removeEventListener("message", onMessage);
-        resolve(msg.result);
-      }
-    };
-    ws.addEventListener("message", onMessage);
-    ws.send(
-      JSON.stringify({
-        id,
-        method: "Runtime.evaluate",
-        params: { expression, awaitPromise, returnByValue: true },
-      }),
-    );
-    setTimeout(() => reject(new Error(`CDP 执行超时: ${expression}`)), 30_000);
-  });
+/**
+ * 查询当前 netstat 中与 vite dev server 建立持久连接的 WebView2 进程 PID 列表
+ * （页面加载后 HMR WebSocket 与 HTTP keep-alive 均表现为 ESTABLISHED 连接）
+ */
+function webview2PidsConnectedToVite() {
+  // 构建 PID → 进程名 映射（tasklist CSV 输出）
+  let pidToName = new Map();
+  try {
+    const rows = execFileSync("tasklist", ["/FO", "CSV", "/NH"], {
+      encoding: "utf8",
+    }).split(/\r?\n/);
+    for (const row of rows) {
+      const m = row.match(/^"([^"]+)","(\d+)"/);
+      if (m) pidToName.set(m[2], m[1]);
+    }
+  } catch {
+    return [];
+  }
+  // netstat 中凡与 vite 端口建立连接的 msedgewebview2.exe 进程即为前端已加载证据
+  const pids = new Set();
+  try {
+    const lines = execFileSync("netstat", ["-ano"], { encoding: "utf8" }).split(/\r?\n/);
+    for (const line of lines) {
+      if (!line.includes(`:${VITE_PORT}`) || !line.includes("ESTABLISHED")) continue;
+      const pid = line.trim().split(/\s+/).pop();
+      if (pidToName.get(pid) === "msedgewebview2.exe") pids.add(pid);
+    }
+  } catch {
+    // netstat 失败按无连接处理，由外层等待逻辑兜底
+  }
+  return [...pids];
 }
 
 // ── 主流程 ─────────────────────────────────────────────────────
-console.log(`[冒烟] 等待 CDP 调试端口 http://127.0.0.1:${CDP_PORT} ...`);
-await waitForCdp();
-console.log(`[冒烟] CDP 调试端口 ${CDP_PORT} 已就绪`);
-
-// 获取页面 target（应用加载 vite dev server 的页面）
-let pageTarget;
-try {
-  const targets = await (await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`)).json();
-  pageTarget = targets.find((t) => t.type === "page" && t.url.startsWith("http"));
-} catch (err) {
-  fail(`CDP HTTP 接口不可用: ${err.message}`);
-}
-if (!pageTarget) fail("未找到页面 target（前端未加载）");
-console.log(`[冒烟] 页面 target: ${pageTarget.url}`);
-
-// 连接页面 target 的 WebSocket 会话
-const ws = new WebSocket(pageTarget.webSocketDebuggerUrl);
-await new Promise((resolve, reject) => {
-  ws.addEventListener("open", resolve, { once: true });
-  ws.addEventListener("error", () => reject(new Error("CDP WebSocket 连接失败")), { once: true });
-});
-
-// 验证 1：前端页面渲染（脚手架主标题存在）
-const h1Result = await evaluate(ws, 1, `document.querySelector("h1")?.textContent ?? ""`);
-if (h1Result?.result?.value !== "Welcome to Tauri + Vue") {
-  fail(`前端渲染断言失败：h1 内容为 "${h1Result?.result?.value}"`);
-}
-console.log("[冒烟] ✓ 窗口启动并渲染前端页面");
-
-// 验证 2：前端 → Rust 命令链路（greet 命令往返）
-// 直接断言 invoke 返回值（Rust 侧拼接结果）——CDP 调用不经过 Vue 组件，
-// 页面 DOM 不会更新，因此以命令返回值本身作为链路证据
-const greetResult = await evaluate(
-  ws,
-  2,
-  `(async () => {
-    try {
-      return await window.__TAURI_INTERNALS__.invoke("greet", { name: "CI-Smoke" });
-    } catch (err) {
-      return "ERR: " + err;
-    }
-  })()`,
-  true,
+console.log("[冒烟] 等待应用进程启动...");
+await waitFor(
+  () =>
+    execFileSync("tasklist", ["/FI", "IMAGENAME eq typora-replica.exe", "/NH"], {
+      encoding: "utf8",
+    }).includes("typora-replica.exe"),
+  "应用进程未启动（typora-replica.exe）",
 );
-if (greetResult?.result?.value?.includes("Hello, CI-Smoke!")) {
-  console.log("[冒烟] ✓ greet 命令链路可用（前端 invoke → Rust → 前端渲染）");
-} else {
-  fail(`greet 链路断言失败：返回 "${greetResult?.result?.value}"`);
-}
+console.log("[冒烟] ✓ 应用进程存活");
 
-ws.close();
+console.log("[冒烟] 等待 WebView2 初始化...");
+await waitFor(
+  () =>
+    execFileSync("tasklist", ["/FI", "IMAGENAME eq msedgewebview2.exe", "/NH"], {
+      encoding: "utf8",
+    }).includes("msedgewebview2.exe") && existsSync(path.join(APP_DATA_DIR, "EBWebView")),
+  "WebView2 未初始化（子进程未出现或 user data 目录未建立）",
+);
+console.log("[冒烟] ✓ WebView2 已初始化（子进程存活 + user data 目录建立）");
+
+console.log("[冒烟] 等待前端页面加载（WebView2 ↔ vite 持久连接）...");
+await waitFor(
+  () => webview2PidsConnectedToVite().length > 0,
+  `WebView2 进程未与 vite 端口 ${VITE_PORT} 建立连接（前端未加载）`,
+);
+console.log("[冒烟] ✓ 前端页面已由 WebView2 真实加载");
+
 console.log("[冒烟] 全部通过 ✅");

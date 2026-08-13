@@ -2,14 +2,28 @@
 
 本项目有两套端到端验证，覆盖相同的验证目标（应用启动、前端渲染、Rust 命令链路）：
 
-## 1. CI 冒烟测试（GitHub Actions）
+## 1. CI 冒烟测试（GitHub Actions，确定性验证）
 
 - 脚本：`e2e/smoke-ci.mjs`
-- 原理：通过 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`
-  让 WebView2 浏览器进程监听固定调试端口（Playwright 官方 WebView2 方案同款），
-  脚本通过 CDP 协议连接页面，执行 JS 断言。不依赖 DevToolsActivePort 文件——
-  CI 的 WebView2 150.x 对 `--remote-debugging-port=0` 不写该文件（本地 151 正常）。
+- 原理：以进程/网络层证据做确定性断言——
+  1. 应用进程启动并存活（tasklist）
+  2. WebView2 初始化（子进程存活 + user data 目录建立）
+  3. 前端页面真实加载（WebView2 进程与 vite dev server 建立 ESTABLISHED 连接）
 - 触发：Build Verification workflow 的 e2e job（PR 与 main 推送）
+
+### 为什么 CI 不用 CDP/WebDriver
+
+CI runner 镜像自带 WebView2 Runtime **150.0.4078.105**，该版本存在微软上游回归
+（WebView2Feedback#5639）：宿主进程**提权**时 CDP 调试端口静默不监听。runner 的
+job 进程天生提权，导致所有依赖调试端口的方案（msedgedriver/WebdriverIO、
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 注入、固定端口直连）在 CI 均不可用。
+已尝试并排除：runas 降权（服务上下文静默失败）、schtasks /IT 降权与新建非管理
+用户（疑 runner 禁用 UAC，令牌仍提权）、151 固定版本运行库（不理会调试参数环境
+变量与注册表策略注入）、安装器升级（服务会话挂起）。本地（WebView2 151、非提权）
+全部正常。
+
+因此 CI 冒烟不依赖调试端口，改验证「应用能启动、WebView2 能初始化、前端能加载」。
+待微软修复回归或 runner 镜像升级 WebView2 后，可将 CI 恢复为完整 CDP 方案。
 
 ## 2. 完整 WebDriver E2E（本地执行）
 
@@ -29,11 +43,3 @@ npm run test:e2e                    # 终端 3：运行测试
 mkdir -p e2e/.driver
 EDGEDRIVER_CACHE_DIR="$PWD/e2e/.driver" npx edgedriver --version
 ```
-
-## 为什么 CI 用冒烟而不是完整 WebDriver
-
-GitHub Actions 的 windows-latest 镜像自带 WebView2 Runtime 150.x，该版本对
-`--remote-debugging-port=0` 不写 `DevToolsActivePort` 文件（msedgedriver 创建会话
-依赖该文件，报 `DevToolsActivePort file doesn't exist`；本地 WebView2 151 正常）。
-CI 冒烟改用固定调试端口直接连 CDP，绕开文件机制；完整 WebDriver 方案待
-WebView2 150 修复或 runner 镜像升级后恢复。
