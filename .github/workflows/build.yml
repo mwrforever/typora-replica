@@ -88,11 +88,11 @@ jobs:
         run: cargo build --manifest-path src-tauri/Cargo.toml
       - name: 安装 tauri-driver（WebDriver 服务）
         run: cargo install tauri-driver --locked
-      - name: 下载 Edge WebDriver（msedgedriver，版本匹配 WebView2 运行时）
+      - name: 读取 WebView2 运行时版本
+        id: wv2ver
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p e2e/.driver
           echo "--- 系统组件版本诊断 ---"
           echo "[WebView2 运行时注册表]"
           reg query "HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" //v pv || echo "（注册表键不存在）"
@@ -106,14 +106,34 @@ jobs:
             exit 1
           fi
           echo "WebView2 运行时版本: $WV2_VERSION"
-          # curl 直连下载（edgedriver npm 包内部下载无超时控制，CI 上曾卡死 30 分钟）
-          # 带连接/总超时与重试；已存在且版本正确时跳过
+          echo "version=$WV2_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: 恢复 Edge WebDriver 缓存（跨 run 复用，秒级恢复）
+        uses: actions/cache@v4
+        with:
+          path: e2e/.driver
+          key: msedgedriver-${{ steps.wv2ver.outputs.version }}
+          restore-keys: msedgedriver-
+
+      - name: 下载 Edge WebDriver（多源回退 + 版本校验）
+        shell: bash
+        run: |
+          set -euo pipefail
+          WV2_VERSION="${{ steps.wv2ver.outputs.version }}"
+          # 缓存命中且版本正确则跳过下载
           if [ -f e2e/.driver/msedgedriver.exe ] && e2e/.driver/msedgedriver.exe --version 2>/dev/null | grep -q "$WV2_VERSION"; then
             echo "驱动已缓存且版本匹配，跳过下载"
           else
+            mkdir -p e2e/.driver
+            rm -f e2e/.driver/msedgedriver.exe
             echo "下载 msedgedriver $WV2_VERSION ..."
-            curl -L --fail --retry 5 --retry-delay 3 --connect-timeout 30 --max-time 300 \
-              -o e2e/.driver/driver.zip "https://msedgedriver.microsoft.com/$WV2_VERSION/edgedriver_win64.zip"
+            # 源1：微软官方 CDN；源2：npmmirror 二进制镜像（官方源在 CI 网络曾卡死，多源回退）
+            if ! curl -L --fail --connect-timeout 15 --max-time 120 -o e2e/.driver/driver.zip \
+              "https://msedgedriver.microsoft.com/$WV2_VERSION/edgedriver_win64.zip"; then
+              echo "官方源下载失败，切换 npmmirror 镜像..."
+              curl -L --fail --connect-timeout 15 --max-time 120 -o e2e/.driver/driver.zip \
+                "https://cdn.npmmirror.com/binaries/edgedriver/$WV2_VERSION/edgedriver_win64.zip"
+            fi
             unzip -o -q e2e/.driver/driver.zip -d e2e/.driver
             rm -f e2e/.driver/driver.zip
           fi
