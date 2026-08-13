@@ -130,47 +130,67 @@ jobs:
           # 上一轮 schtasks /IT 对管理员用户未真正降权（端口仍未开启）。
           # 本轮改为新建非管理员用户运行计划任务：其令牌必为中等完整性，降权确定。
           SMOKE_USER="markwell-smoke"
-          SMOKE_PASS="MarkwellSmoke#2026a"
+          SMOKE_PASS="Smoke#2026a"   # 必须 ≤14 字符：net user 超长会触发交互提示
+          A_READY=false
+          # 注意：路径 A 的每一步都可能失败（用户创建/任务注册），失败即转入路径 B，
+          # 不能因 set -e 直接终止整个步骤
           net user "$SMOKE_USER" "$SMOKE_PASS" //add 2>/dev/null || true
-          WINPWD=$(pwd -W)
-          cat > e2e/run-smoke-app.cmd <<EOF
-          @echo off
-          whoami /groups > "%TEMP%\markwell-token.log" 2>&1
-          set TAURI_WEBVIEW_AUTOMATION=true
-          set WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222
-          "$WINPWD\src-tauri\target\debug\typora-replica.exe" --use-localhost > "%TEMP%\markwell-app.log" 2>&1
-          EOF
-          schtasks //Delete //TN markwell-smoke //F >/dev/null 2>&1 || true
-          schtasks //Create //F //TN markwell-smoke //SC ONCE //ST 00:00 \
-            //RU "$SMOKE_USER" //RP "$SMOKE_PASS" //RL LIMITED //TR "$WINPWD\\e2e\\run-smoke-app.cmd"
-          echo "=== 路径 A：非管理员用户降权启动应用 ==="
-          schtasks //Run //TN markwell-smoke
-          for i in $(seq 1 25); do
-            if tasklist //FI "IMAGENAME eq typora-replica.exe" 2>/dev/null | grep -qi typora; then
-              echo "降权实例已存活"; break
+          if net user "$SMOKE_USER" >/dev/null 2>&1; then
+            WINPWD=$(pwd -W)
+            cat > e2e/run-smoke-app.cmd <<EOF
+            @echo off
+            whoami /groups > "%TEMP%\markwell-token.log" 2>&1
+            set TAURI_WEBVIEW_AUTOMATION=true
+            set WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222
+            "$WINPWD\src-tauri\target\debug\typora-replica.exe" --use-localhost > "%TEMP%\markwell-app.log" 2>&1
+            EOF
+            schtasks //Delete //TN markwell-smoke //F >/dev/null 2>&1 || true
+            if schtasks //Create //F //TN markwell-smoke //SC ONCE //ST 00:00 \
+              //RU "$SMOKE_USER" //RP "$SMOKE_PASS" //RL LIMITED //TR "$WINPWD\\e2e\\run-smoke-app.cmd"; then
+              echo "=== 路径 A：非管理员用户降权启动应用 ==="
+              schtasks //Run //TN markwell-smoke
+              for i in $(seq 1 25); do
+                if tasklist //FI "IMAGENAME eq typora-replica.exe" 2>/dev/null | grep -qi typora; then
+                  echo "降权实例已存活"; break
+                fi
+                sleep 1
+              done
+              if tasklist //FI "IMAGENAME eq typora-replica.exe" 2>/dev/null | grep -qi typora; then
+                A_READY=true
+              else
+                echo "::warning::路径 A 应用未存活（会话 0 无法初始化 WebView2？）"
+              fi
+            else
+              echo "::warning::路径 A 任务注册失败"
             fi
-            sleep 1
-          done
-          tasklist //FI "IMAGENAME eq typora-replica.exe" //FO LIST 2>/dev/null | grep -E "Session|Image" || echo "（未发现应用进程）"
-          echo "=== 降权任务令牌（whoami /groups）==="
-          cat "/c/Users/$SMOKE_USER/AppData/Local/Temp/markwell-token.log" 2>/dev/null | grep -iE "S-1-16|Administrat" || cat "/c/Users/$SMOKE_USER/AppData/Local/Temp/markwell-token.log" 2>/dev/null || echo "令牌信息缺失"
-          # 冒烟诊断里的 user data 目录指向任务用户（非 runneradmin）
-          export SMOKE_APP_DATA_DIR="C:\\Users\\$SMOKE_USER\\AppData\\Local\\com.markwell.app"
-          # 注意：set -e 下 node 失败会直接终止脚本、跳过收尸与诊断，
-          # 因此临时关闭 set -e 手动接管退出码（诊断逻辑内置在冒烟脚本内）
-          set +e
-          node e2e/smoke-ci.mjs
-          EXIT_CODE=$?
-          set -e
-          if [ $EXIT_CODE -ne 0 ]; then
-            echo "=== 路径 A 应用输出 ==="
-            cat "/c/Users/$SMOKE_USER/AppData/Local/Temp/markwell-app.log" 2>/dev/null || true
+          else
+            echo "::warning::路径 A 非管理员用户创建失败"
           fi
-          # 路径 A 收尸
-          taskkill //IM typora-replica.exe //F 2>/dev/null || true
-          taskkill //IM msedgewebview2.exe //F 2>/dev/null || true
-          schtasks //Delete //TN markwell-smoke //F >/dev/null 2>&1 || true
-          net user "$SMOKE_USER" //delete 2>/dev/null || true
+          if [ "$A_READY" = true ]; then
+            tasklist //FI "IMAGENAME eq typora-replica.exe" //FO LIST 2>/dev/null | grep -E "Session|Image" || true
+            echo "=== 降权任务令牌（whoami /groups）==="
+            cat "/c/Users/$SMOKE_USER/AppData/Local/Temp/markwell-token.log" 2>/dev/null | grep -iE "S-1-16|Administrat" || cat "/c/Users/$SMOKE_USER/AppData/Local/Temp/markwell-token.log" 2>/dev/null || echo "令牌信息缺失"
+            # 冒烟诊断里的 user data 目录指向任务用户（非 runneradmin）
+            export SMOKE_APP_DATA_DIR="C:\\Users\\$SMOKE_USER\\AppData\\Local\\com.markwell.app"
+            # 注意：set -e 下 node 失败会直接终止脚本、跳过收尸与诊断，
+            # 因此临时关闭 set -e 手动接管退出码（诊断逻辑内置在冒烟脚本内）
+            set +e
+            node e2e/smoke-ci.mjs
+            EXIT_CODE=$?
+            set -e
+            if [ $EXIT_CODE -ne 0 ]; then
+              echo "=== 路径 A 应用输出 ==="
+              cat "/c/Users/$SMOKE_USER/AppData/Local/Temp/markwell-app.log" 2>/dev/null || true
+            fi
+            # 路径 A 收尸
+            taskkill //IM typora-replica.exe //F 2>/dev/null || true
+            taskkill //IM msedgewebview2.exe //F 2>/dev/null || true
+            schtasks //Delete //TN markwell-smoke //F >/dev/null 2>&1 || true
+            net user "$SMOKE_USER" //delete 2>/dev/null || true
+          else
+            echo "=== 路径 A 不可用，转入路径 B ==="
+            EXIT_CODE=1
+          fi
 
           # ── 冒烟路径 B（A 失败时的回退）：151 固定版本运行库 + 策略注入调试端口 ──
           # 本地实验结论：固定版本运行库不理会 WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
