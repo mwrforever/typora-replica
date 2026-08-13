@@ -1,0 +1,14 @@
+# 强制 LF 行尾（AGENTS.md 3.1），覆盖 Windows 的 core.autocrlf 默认行为
+* text=auto eol=lf
+
+# 二进制文件不做行尾转换
+*.png binary
+*.ico binary
+*.icns binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.pdf binary
+*.exe binary
+*.msi binary

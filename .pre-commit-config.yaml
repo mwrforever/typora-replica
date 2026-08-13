@@ -1,0 +1,62 @@
+# 本地 git hook 配置（AGENTS.md 八、CI/CD 强制集成）
+# 每次提交前执行通用文本检查 + 前端 lint/format + Rust 格式化；
+# 全量测试（cargo test / vitest / clippy）走 pre-push 钩子，避免拖慢每次提交。
+repos:
+  # 通用钩子：尾随空白、行尾、yaml 校验、大文件拦截、合并冲突检测
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+
+  # 本地钩子：调用项目自身工具链
+  # 注：未指定 stages 的钩子默认只挂 pre-commit 阶段
+  - repo: local
+    hooks:
+      # 前端 ESLint：仅检查 JS/TS/Vue 源码
+      - id: eslint
+        name: eslint（前端代码静态检查）
+        entry: npx eslint
+        language: system
+        types_or: [javascript, ts, vue]
+      # 前端 Prettier：格式化一致性检查
+      - id: prettier
+        name: prettier（前端格式化检查）
+        entry: npx prettier --check
+        language: system
+        types_or: [javascript, ts, vue, json, css, scss, html, markdown]
+      # Rust rustfmt：格式化一致性检查
+      - id: rustfmt
+        name: rustfmt（Rust 格式化检查）
+        entry: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+        language: system
+        files: ^src-tauri/.*\.rs$
+
+  # pre-push 阶段的重量级检查：静态分析 + 全量测试（避免拖慢每次提交）
+  - repo: local
+    hooks:
+      # Rust clippy：静态分析，warnings 视为错误
+      - id: clippy
+        name: clippy（Rust 静态分析）
+        entry: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+        language: system
+        files: ^src-tauri/.*\.rs$
+        stages: [pre-push]
+      # Rust 全量单元测试
+      - id: cargo-test
+        name: cargo test（Rust 全量测试）
+        entry: cargo test --manifest-path src-tauri/Cargo.toml
+        language: system
+        files: ^src-tauri/.*\.rs$
+        stages: [pre-push]
+      # 前端全量单元测试（Vitest）
+      - id: vitest
+        name: vitest（前端全量测试）
+        entry: npm test
+        language: system
+        types_or: [javascript, ts, vue]
+        stages: [pre-push]
