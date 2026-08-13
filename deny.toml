@@ -25,6 +25,7 @@ multiple-versions = "warn"
 
 [advisories]
 version = 2
-# gtk-rs GTK3 bindings 已停止维护：仅为 tauri 的 Linux 支持传递引入，
-# 本项目目标平台为 Windows（发布产物不含该依赖），降级为警告不阻断
-unmaintained = "warn"
+# 只对直接依赖的未维护 crate 报错（workspace）；传递依赖不阻断
+# 背景：gtk-rs GTK3 bindings 已停止维护，仅为 tauri 的 Linux 支持传递引入
+# （Windows 发布产物不含该依赖），直接依赖的未维护 crate 仍会被 CI 拦截
+unmaintained = "workspace"
