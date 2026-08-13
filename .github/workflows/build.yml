@@ -105,8 +105,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # WebView2 调试参数注入：--remote-debugging-port=0 让 WebView2 自动开启
-          # 调试端口并写 DevToolsActivePort 文件（冒烟脚本通过 CDP 连接）
+          # WebView2 调试参数注入（两者缺一不可）：
+          # 1. TAURI_WEBVIEW_AUTOMATION=true：tauri 侧允许自动化
+          #    （tauri-runtime-wry 检测该变量后 WebView2 环境才启用调试协议）
+          # 2. WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=0：
+          #    注入调试端口参数，WebView2 开启端口并写 DevToolsActivePort 文件
+          export TAURI_WEBVIEW_AUTOMATION=true
           export WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=0"
           ls -la src-tauri/target/debug/typora-replica.exe
           # 启动应用（加载 vite dev server 前端）
