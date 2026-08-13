@@ -46,3 +46,6 @@ e2e/logs
 # E2E 驱动缓存（msedgedriver，体积大不入库）
 e2e/.driver/
 e2e/.driver/webview-data/
+
+# CI 冒烟运行时生成的降权启动批处理
+e2e/run-smoke-app.cmd
