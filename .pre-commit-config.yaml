@@ -37,26 +37,28 @@ repos:
         files: ^src-tauri/.*\.rs$
 
   # pre-push 阶段的重量级检查：静态分析 + 全量测试（避免拖慢每次提交）
+  # 注：entry 用 bash -c 包装，忽略 pre-commit 自动追加的文件参数
+  #     （否则 cargo test / vitest 会把文件名当作测试过滤条件导致误失败）
   - repo: local
     hooks:
       # Rust clippy：静态分析，warnings 视为错误
       - id: clippy
         name: clippy（Rust 静态分析）
-        entry: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+        entry: bash -c 'cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings'
         language: system
         files: ^src-tauri/.*\.rs$
         stages: [pre-push]
       # Rust 全量单元测试
       - id: cargo-test
         name: cargo test（Rust 全量测试）
-        entry: cargo test --manifest-path src-tauri/Cargo.toml
+        entry: bash -c 'cargo test --manifest-path src-tauri/Cargo.toml'
         language: system
         files: ^src-tauri/.*\.rs$
         stages: [pre-push]
       # 前端全量单元测试（Vitest）
       - id: vitest
         name: vitest（前端全量测试）
-        entry: npm test
+        entry: bash -c 'npm test'
         language: system
         types_or: [javascript, ts, vue]
         stages: [pre-push]
