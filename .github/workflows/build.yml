@@ -119,6 +119,13 @@ jobs:
           # 运行 CDP 冒烟脚本（窗口渲染 + Rust 命令链路断言）
           node e2e/smoke-ci.mjs
           EXIT_CODE=$?
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "=== 失败诊断：全盘搜索 DevToolsActivePort ==="
+            find "$LOCALAPPDATA" "$TEMP" -name "DevToolsActivePort" 2>/dev/null | head -5 || true
+            echo "=== app 数据目录内容 ==="
+            ls -la "$LOCALAPPDATA/com.markwell.app" 2>/dev/null || true
+            ls -la "$LOCALAPPDATA/com.markwell.app/EBWebView" 2>/dev/null | head -10 || true
+          fi
           taskkill //IM typora-replica.exe //F 2>/dev/null || true
           taskkill //IM msedgewebview2.exe //F 2>/dev/null || true
           exit $EXIT_CODE
