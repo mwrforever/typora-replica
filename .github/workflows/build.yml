@@ -86,6 +86,18 @@ jobs:
         run: npm ci
       - name: 编译 debug 二进制（E2E 目标，rust-cache 命中时快速）
         run: cargo build --manifest-path src-tauri/Cargo.toml
+      - name: 安装 WebView2 Runtime（规避 runner 自带版本问题）
+        shell: bash
+        run: |
+          # runner 镜像自带的 WebView2 Runtime（150.x）在本环境存在自动化兼容问题
+          # （msedgedriver 启动 app 后 DevTools 端口不产生，DevToolsActivePort 错误）。
+          # 安装 Evergreen 最新版（1.7MB 引导安装器，静默安装）后按新版本适配驱动。
+          set -euo pipefail
+          curl -L --fail --connect-timeout 15 --max-time 300 -o /tmp/wv2-setup.exe \
+            "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
+          /tmp/wv2-setup.exe /silent /install
+          echo "WebView2 Runtime 安装完成"
+
       - name: 读取 WebView2 运行时版本
         id: wv2ver
         shell: bash

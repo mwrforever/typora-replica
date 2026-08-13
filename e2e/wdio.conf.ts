@@ -37,13 +37,6 @@ export const config: Options.Testrunner = {
         application: "src-tauri/target/debug/typora-replica.exe",
         args: ["--use-localhost"],
         webviewUrl: "http://localhost:1420",
-        // 关键：显式指定 WebView2 user data 目录（相对 tauri-driver CWD）
-        // CI 环境中默认 user data 位置写入 DevToolsActivePort 失败，
-        // 导致 "DevToolsActivePort file doesn't exist" 会话创建失败
-        // （tauri-apps/tauri#10670 同类问题，设置后解决）
-        webviewOptions: {
-          userDataFolder: "e2e/.driver/webview-data",
-        },
       },
     } as unknown as Capabilities.Capability,
   ],
