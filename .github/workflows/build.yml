@@ -110,22 +110,8 @@ jobs:
           # ── 环境前置诊断（每次运行都输出，便于对照 WebView2 版本与提权状态）──
           echo "=== 运行身份与完整性级别 ==="
           whoami || true
-          whoami /groups 2>/dev/null | grep -i "S-1-16" || true
           net session >/dev/null 2>&1 && echo "（当前进程为提权/管理员）" || echo "（当前进程非提权）"
-          echo "=== WebView2 Runtime 版本（升级前）==="
-          reg query "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" //v pv 2>/dev/null || true
-          # ── 升级 WebView2 Runtime 到 151（规避 150 的 CDP 调试端口回归）──
-          # 根因：CI 镜像自带 WebView2 150.0.4078.105 存在回归——宿主应用使用
-          # host object（Tauri 应用必然使用）后 CDP 调试端口静默不监听
-          # （WebView2Feedback#5639，150 起引入的 trusted origin check）。
-          # 本地 151.0.4129.78 验证正常；runner 为一次性环境，机器级升级安全。
-          # 安装包 URL 取自 winget 官方清单（Microsoft.EdgeWebView2Runtime）。
-          # 待 runner 镜像自带 151+ 后，此步骤退化为无害的同版本覆盖。
-          WV2_INSTALLER_URL="https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/e4dd9b83-b7e3-4d17-8d7c-e14cdd7c3a51/MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
-          echo "=== 安装 WebView2 Runtime 151 ==="
-          curl -L --fail --connect-timeout 15 --max-time 300 -o "$TEMP/WebView2Setup151.exe" "$WV2_INSTALLER_URL"
-          "$TEMP/WebView2Setup151.exe" /silent /install
-          echo "=== WebView2 Runtime 版本（升级后）==="
+          echo "=== WebView2 Runtime 版本（镜像自带）==="
           reg query "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" //v pv 2>/dev/null || true
           # WebView2 调试参数注入（固定端口方案）：
           # 1. TAURI_WEBVIEW_AUTOMATION=true：声明自动化意图（Windows 上 wry 当前
@@ -136,8 +122,40 @@ jobs:
           export WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9222"
           export SMOKE_CDP_PORT=9222
           ls -la src-tauri/target/debug/typora-replica.exe
-          # ── 启动应用并运行冒烟（主路径：直接启动）──
-          src-tauri/target/debug/typora-replica.exe --use-localhost > e2e/app.log 2>&1 &
+
+          # ── 冒烟路径 A：非管理员用户运行应用（确定性降权）──
+          # 背景：镜像自带 WebView2 150.0.4078.105 存在回归——提权（High Integrity）
+          # 进程下 CDP 调试端口静默不监听（WebView2Feedback#5639）；runner 的 job
+          # 进程本身提权，直接拉起的应用继承提权，调试端口必然失效。
+          # 上一轮 schtasks /IT 对管理员用户未真正降权（端口仍未开启）。
+          # 本轮改为新建非管理员用户运行计划任务：其令牌必为中等完整性，降权确定。
+          SMOKE_USER="markwell-smoke"
+          SMOKE_PASS="MarkwellSmoke#2026a"
+          net user "$SMOKE_USER" "$SMOKE_PASS" //add 2>/dev/null || true
+          WINPWD=$(pwd -W)
+          cat > e2e/run-smoke-app.cmd <<EOF
+          @echo off
+          whoami /groups > "%TEMP%\markwell-token.log" 2>&1
+          set TAURI_WEBVIEW_AUTOMATION=true
+          set WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222
+          "$WINPWD\src-tauri\target\debug\typora-replica.exe" --use-localhost > "%TEMP%\markwell-app.log" 2>&1
+          EOF
+          schtasks //Delete //TN markwell-smoke //F >/dev/null 2>&1 || true
+          schtasks //Create //F //TN markwell-smoke //SC ONCE //ST 00:00 \
+            //RU "$SMOKE_USER" //RP "$SMOKE_PASS" //RL LIMITED //TR "$WINPWD\\e2e\\run-smoke-app.cmd"
+          echo "=== 路径 A：非管理员用户降权启动应用 ==="
+          schtasks //Run //TN markwell-smoke
+          for i in $(seq 1 25); do
+            if tasklist //FI "IMAGENAME eq typora-replica.exe" 2>/dev/null | grep -qi typora; then
+              echo "降权实例已存活"; break
+            fi
+            sleep 1
+          done
+          tasklist //FI "IMAGENAME eq typora-replica.exe" //FO LIST 2>/dev/null | grep -E "Session|Image" || echo "（未发现应用进程）"
+          echo "=== 降权任务令牌（whoami /groups）==="
+          cat "/c/Users/$SMOKE_USER/AppData/Local/Temp/markwell-token.log" 2>/dev/null | grep -iE "S-1-16|Administrat" || cat "/c/Users/$SMOKE_USER/AppData/Local/Temp/markwell-token.log" 2>/dev/null || echo "令牌信息缺失"
+          # 冒烟诊断里的 user data 目录指向任务用户（非 runneradmin）
+          export SMOKE_APP_DATA_DIR="C:\\Users\\$SMOKE_USER\\AppData\\Local\\com.markwell.app"
           # 注意：set -e 下 node 失败会直接终止脚本、跳过收尸与诊断，
           # 因此临时关闭 set -e 手动接管退出码（诊断逻辑内置在冒烟脚本内）
           set +e
@@ -145,47 +163,51 @@ jobs:
           EXIT_CODE=$?
           set -e
           if [ $EXIT_CODE -ne 0 ]; then
-            # ── 回退路径：降权启动再试（若 151 仍残留提权相关限制）──
-            # schtasks /RL LIMITED + /IT：Basic User 非提权令牌，交互会话运行。
-            # 任务进程不继承调用方环境变量，调试参数由批处理内联注入。
-            echo "=== 直接启动冒烟失败，回退：计划任务降权启动再试 ==="
-            taskkill //IM typora-replica.exe //F 2>/dev/null || true
-            taskkill //IM msedgewebview2.exe //F 2>/dev/null || true
-            WINPWD=$(pwd -W)
-            cat > e2e/run-smoke-app.cmd <<EOF
-            @echo off
-            whoami /groups > "$WINPWD\e2e\task-token.log" 2>&1
-            set TAURI_WEBVIEW_AUTOMATION=true
-            set WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222
-            "$WINPWD\src-tauri\target\debug\typora-replica.exe" --use-localhost > "$WINPWD\e2e\app.log" 2>&1
-            EOF
-            schtasks //Delete //TN markwell-smoke //F >/dev/null 2>&1 || true
-            schtasks //Create //F //TN markwell-smoke //SC ONCE //ST 00:00 //IT //RL LIMITED \
-              //RU "$USERNAME" //TR "$WINPWD\\e2e\\run-smoke-app.cmd"
-            schtasks //Run //TN markwell-smoke
-            for i in $(seq 1 20); do
-              if tasklist //FI "IMAGENAME eq typora-replica.exe" 2>/dev/null | grep -qi typora; then
-                echo "降权实例已存活"
-                break
-              fi
-              sleep 1
-            done
-            tasklist //FI "IMAGENAME eq typora-replica.exe" //FO LIST 2>/dev/null | grep -E "Session|Image" || true
-            echo "=== 降权任务令牌（whoami /groups）==="
-            cat e2e/task-token.log 2>/dev/null | grep -i "S-1-16" || cat e2e/task-token.log 2>/dev/null || echo "令牌信息缺失"
+            echo "=== 路径 A 应用输出 ==="
+            cat "/c/Users/$SMOKE_USER/AppData/Local/Temp/markwell-app.log" 2>/dev/null || true
+          fi
+          # 路径 A 收尸
+          taskkill //IM typora-replica.exe //F 2>/dev/null || true
+          taskkill //IM msedgewebview2.exe //F 2>/dev/null || true
+          schtasks //Delete //TN markwell-smoke //F >/dev/null 2>&1 || true
+          net user "$SMOKE_USER" //delete 2>/dev/null || true
+
+          # ── 冒烟路径 B（A 失败时的回退）：151 固定版本运行库 + 策略注入调试端口 ──
+          # 本地实验结论：固定版本运行库不理会 WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
+          # 环境变量（端口不开、不写 DevToolsActivePort），须改由 BrowserArguments
+          # 策略注入；同时以 BrowserExecutableFolder 策略指向固定版本目录。
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "=== 路径 A 失败，进入路径 B：151 固定版本运行库 ==="
+            WV2_CAB_URL="https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/355004fc-ebbc-42d3-b319-d43be39f8d39/Microsoft.WebView2.FixedVersionRuntime.151.0.4129.78.x64.cab"
+            curl -L --fail --connect-timeout 15 --max-time 420 -o "$TEMP/wv2-151.cab" "$WV2_CAB_URL"
+            rm -rf "$PWD/e2e/.webview2-runtime" && mkdir -p "$PWD/e2e/.webview2-runtime"
+            # 注：Git Bash 的 expand 是 coreutils（制表符工具），必须用 Windows 自带
+            "$WINDIR\\System32\\expand.exe" "$TEMP/wv2-151.cab" -F:* "$PWD/e2e/.webview2-runtime" >/dev/null
+            WV2_EXE_DIR=$(dirname "$(find "$PWD/e2e/.webview2-runtime" -iname "msedgewebview2.exe" | head -1)")
+            [ -n "$WV2_EXE_DIR" ] || { echo "::error::固定版本运行库解包失败"; find "$PWD/e2e/.webview2-runtime" -maxdepth 2 | head -20; exit 1; }
+            echo "=== 固定版本运行库目录: $WV2_EXE_DIR ==="
+            # Fixed Version v120+ 渲染进程跑在 App Container 内，需授予读取权限
+            icacls "$WV2_EXE_DIR" //grant "*S-1-15-2-2:(OI)(CI)(RX)" //grant "*S-1-15-2-1:(OI)(CI)(RX)" >/dev/null 2>&1 || true
+            # 指向固定版本 + 策略注入调试端口（HKLM 需提权，runner 满足）
+            reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge\\WebView2" //v BrowserExecutableFolder //t REG_SZ //d "$WV2_EXE_DIR" //f
+            reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge\\WebView2" //v BrowserArguments //t REG_SZ //d "--remote-debugging-port=9222" //f
+            # 清掉旧 profile（150 创建）
+            rm -rf "$LOCALAPPDATA/com.markwell.app"
+            unset SMOKE_APP_DATA_DIR
+            src-tauri/target/debug/typora-replica.exe --use-localhost > e2e/app.log 2>&1 &
             set +e
             node e2e/smoke-ci.mjs
             EXIT_CODE=$?
             set -e
+            if [ $EXIT_CODE -ne 0 ]; then
+              echo "=== 路径 B 应用输出 ==="
+              cat e2e/app.log 2>/dev/null || true
+            fi
+            taskkill //IM typora-replica.exe //F 2>/dev/null || true
+            taskkill //IM msedgewebview2.exe //F 2>/dev/null || true
+            reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge\\WebView2" //v BrowserExecutableFolder //f 2>/dev/null || true
+            reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge\\WebView2" //v BrowserArguments //f 2>/dev/null || true
           fi
-          if [ $EXIT_CODE -ne 0 ]; then
-            echo "=== app.log（应用输出）==="
-            cat e2e/app.log 2>/dev/null || true
-          fi
-          # 收尸：残留的 WebView2 子进程会锁定 user data 目录；删除一次性任务
-          taskkill //IM typora-replica.exe //F 2>/dev/null || true
-          taskkill //IM msedgewebview2.exe //F 2>/dev/null || true
-          schtasks //Delete //TN markwell-smoke //F >/dev/null 2>&1 || true
           exit $EXIT_CODE
       - name: 上传冒烟日志（失败时可排查）
         if: failure()

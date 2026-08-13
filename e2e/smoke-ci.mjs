@@ -25,7 +25,9 @@ import path from "node:path";
 // WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS 中的 --remote-debugging-port 保持一致
 const CDP_PORT = process.env.SMOKE_CDP_PORT ?? "9222";
 // 应用 user data 目录（与 tauri identifier 对应，见 tauri.conf.json）
-const APP_DATA_DIR = path.join(process.env.LOCALAPPDATA ?? "", "com.markwell.app");
+// 可经 SMOKE_APP_DATA_DIR 覆盖：CI 冒烟路径 A 中应用以其他用户运行，目录随之变化
+const APP_DATA_DIR =
+  process.env.SMOKE_APP_DATA_DIR ?? path.join(process.env.LOCALAPPDATA ?? "", "com.markwell.app");
 
 /** 在指定根目录递归查找 DevToolsActivePort 文件（仅失败诊断用，结果有界） */
 function findPortFiles(root) {
