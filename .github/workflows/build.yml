@@ -30,12 +30,30 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # 额外缓存 tauri bundler 下载的工具链（NSIS 等），避免每次打包重新下载
+          cache-directories: |
+            $LOCALAPPDATA/tauri
+            ~/.cache/tauri
       - name: 安装前端依赖
         run: npm ci
       - name: 前端类型检查与构建
         run: npm run build
       - name: Tauri 构建（release 安装包）
-        run: npx tauri build
+        shell: bash
+        run: |
+          set -euo pipefail
+          # bundler 需下载 NSIS 等工具，网络偶发中断（io: Peer disconnected）时自动重试
+          for attempt in 1 2 3; do
+            echo "=== Tauri 构建尝试 $attempt/3 ==="
+            if npx tauri build; then
+              echo "Tauri 构建成功"
+              exit 0
+            fi
+            echo "构建失败（疑似 bundler 下载工具的网络问题），清理部分缓存后重试..."
+            rm -rf "$LOCALAPPDATA/tauri" "$HOME/.cache/tauri" 2>/dev/null || true
+          done
+          echo "::error::Tauri 构建连续 3 次失败"
+          exit 1
       - name: 上传安装包产物
         uses: actions/upload-artifact@v4
         with:
