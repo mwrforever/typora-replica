@@ -71,20 +71,27 @@ jobs:
       - name: 下载 Edge WebDriver（msedgedriver，版本匹配 WebView2 运行时）
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p e2e/.driver
-          # 关键：tauri-driver 的 WebView2 模式要求 msedgedriver 与 WebView2 运行时版本匹配
-          # （而非 Edge 版本——两者在 runner 上可能不同步，不匹配会报
-          #   DevToolsActivePort file doesn't exist 导致会话创建失败）
-          WV2_VERSION=$(reg query "HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" //v pv 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          echo "--- 系统组件版本诊断 ---"
+          echo "[WebView2 运行时注册表]"
+          reg query "HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" //v pv || echo "（注册表键不存在）"
+          echo "[Edge 浏览器版本]"
+          "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" --version || echo "（Edge 不存在）"
+          # tauri-driver 的 WebView2 模式要求 msedgedriver 与 WebView2 运行时版本匹配
+          # （而非 Edge 版本），不匹配会报 DevToolsActivePort 错误
+          WV2_VERSION=$(reg query "HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" //v pv 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
           if [ -z "$WV2_VERSION" ]; then
-            # 注册表不可用时回退到 Edge 版本
-            WV2_VERSION=$("C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+            echo "::error::无法读取 WebView2 运行时版本（CI 环境异常，需人工排查）"
+            exit 1
           fi
-          echo "WebView2/Edge 版本: $WV2_VERSION"
+          echo "WebView2 运行时版本: $WV2_VERSION"
           export EDGEDRIVER_CACHE_DIR="$PWD/e2e/.driver"
           export EDGEDRIVER_VERSION="$WV2_VERSION"
           npx edgedriver --version
-          test -f e2e/.driver/msedgedriver.exe && echo "Edge WebDriver 就绪"
+          echo "[下载的驱动版本]"
+          e2e/.driver/msedgedriver.exe --version || echo "（驱动文件缺失）"
+          echo "Edge WebDriver 就绪"
       - name: 启动 Vite dev server
         shell: bash
         run: |
@@ -98,14 +105,21 @@ jobs:
       - name: 启动 tauri-driver 并运行 E2E 测试
         shell: bash
         run: |
-          # 拉起 WebDriver 服务（显式指定 Edge 驱动路径），就绪后执行测试
+          set -euo pipefail
           export PATH="$HOME/.cargo/bin:$PATH"
+          # 启动前确认关键文件存在（app 二进制 / 驱动）
+          echo "[E2E 前置文件检查]"
+          ls -la src-tauri/target/debug/typora-replica.exe
+          ls -la e2e/.driver/msedgedriver.exe
+          # 拉起 WebDriver 服务（显式指定 Edge 驱动路径），就绪后执行测试
           tauri-driver --native-driver e2e/.driver/msedgedriver.exe > e2e/tauri-driver.log 2>&1 &
           DRIVER_PID=$!
           for i in $(seq 1 30); do
             if curl -s http://localhost:4444/status > /dev/null; then echo "tauri-driver 已就绪"; break; fi
             sleep 2
           done
+          # 诊断：驱动进程是否存活（msedgedriver 异常退出会直接导致会话失败）
+          tasklist //FI "IMAGENAME eq msedgedriver.exe" 2>/dev/null | grep -i msedgedriver || echo "::warning::msedgedriver 进程未存活"
           npm run test:e2e
           EXIT_CODE=$?
           kill $DRIVER_PID 2>/dev/null || true
