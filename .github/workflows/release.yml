@@ -1,0 +1,93 @@
+# Release：tag 推送触发 —— 构建 → 自签名 → 校验和 → GitHub Release
+#
+# 签名策略（自签名先跑通）：
+#   - 当前用 CI 内 openssl 生成自签证书 + signtool 签名，密码用 workflow 变量（非敏感）
+#   - 接入正式证书：配置仓库 Secrets（SIGNING_CERT_BASE64 / SIGNING_PASSWORD），
+#     并取消下方「正式证书签名」步骤的注释、注释掉自签证书生成步骤
+#   - 自签名包在 Windows 首次运行会有 SmartScreen 警告，属预期
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: 构建签名并发布
+    runs-on: windows-latest
+    env:
+      # 自签名测试阶段的固定密码（正式证书接入后改为读取 Secrets）
+      SIGNING_PASSWORD: typora-replica-dev-signing-2026
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: 安装前端依赖
+        run: npm ci
+      - name: 前端构建
+        run: npm run build
+      - name: Tauri 构建（release 安装包）
+        run: npx tauri build
+
+      # ── 代码签名 ─────────────────────────────────────────────
+      - name: 生成自签代码签名证书（仅自签名阶段）
+        shell: bash
+        run: |
+          # 生成自签证书与私钥，并打包为 PFX（signtool 需要）
+          openssl req -x509 -newkey rsa:2048 \
+            -keyout signing-key.pem -out signing-cert.pem \
+            -days 365 -nodes \
+            -subj "/CN=Typora Replica Dev Signing/O=Typora Replica"
+          openssl pkcs12 -export \
+            -out signing.pfx -inkey signing-key.pem -in signing-cert.pem \
+            -passout pass:"$SIGNING_PASSWORD"
+
+      # 正式证书签名步骤（接入正式证书后启用，需 Secrets：SIGNING_CERT_BASE64/SIGNING_PASSWORD）
+      # - name: 解密正式签名证书
+      #   shell: bash
+      #   run: |
+      #     echo "${{ secrets.SIGNING_CERT_BASE64 }}" | base64 --decode > signing.pfx
+
+      - name: signtool 签名安装包（SHA256 + RFC3161 时间戳）
+        shell: bash
+        run: |
+          # 定位 Windows SDK 自带的 signtool
+          SIGNOOL=$(ls "C:/Program Files (x86)/Windows Kits/10/bin"/*/x64/signtool.exe 2>/dev/null | sort -V | tail -1)
+          if [ -z "$SIGNOOL" ]; then echo "未找到 signtool"; exit 1; fi
+          echo "使用 signtool: $SIGNOOL"
+          "$SIGNOOL" sign /f signing.pfx /p "$SIGNING_PASSWORD" \
+            /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 \
+            src-tauri/target/release/bundle/nsis/*.exe
+          # 签名校验：确认签名与证书链有效
+          "$SIGNOOL" verify /pa /v src-tauri/target/release/bundle/nsis/*.exe 2>&1 | grep -E "verified|OK" || true
+
+      # ── 校验和与发布 ─────────────────────────────────────────
+      - name: 生成 SHA256 校验和
+        shell: bash
+        run: |
+          # 生成安装包与签名证书的校验和清单
+          cd src-tauri/target/release/bundle/nsis
+          sha256sum *.exe > ../../../../../checksums.txt
+          cd ../../../../..
+          sha256sum signing-cert.pem >> checksums.txt
+          cat checksums.txt
+
+      - name: 发布 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            checksums.txt
+            signing-cert.pem
+          generate_release_notes: true

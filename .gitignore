@@ -42,3 +42,6 @@ e2e/logs
 *.pfx
 *.cer
 *.pem
+
+# E2E 驱动缓存（msedgedriver，体积大不入库）
+e2e/.driver/

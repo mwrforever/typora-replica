@@ -1,0 +1,26 @@
+# cargo-deny 配置：许可证与依赖审查（AGENTS.md 八、CI/CD 强制集成）
+# 本文件用于 quality-gate workflow 的 cargo-deny check 步骤。
+
+[licenses]
+# 允许的许可证清单：Tauri 生态（tauri/wry/tao/serde 等）均为宽松许可
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "Unicode-3.0",
+  "CC0-1.0",
+  "MPL-2.0",
+]
+# 未声明许可证的依赖一律拒绝（发现新依赖需评估后加入 allow 清单）
+unlicensed = "deny"
+
+[bans]
+# 同一依赖多版本共存：警告不阻断（避免过度严格导致 CI 频繁误伤）
+multiple-versions = "warn"
+
+[advisories]
+# 已被 yanked 的版本：警告（漏洞通告级别由 cargo-deny 数据库决定）
+yanked = "warn"

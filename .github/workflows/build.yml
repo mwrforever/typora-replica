@@ -1,0 +1,112 @@
+# Build Verification：Windows 构建 + E2E/Smoke 测试 + 产物归档
+# PR 与 main 推送触发（合入需 Quality Gate 与 Build 均绿，由 GitHub 分支保护规则保证）。
+name: Build Verification
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Windows 构建 ─────────────────────────────────────────────
+  tauri-build:
+    name: Windows 构建（Tauri Build）
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: 安装前端依赖
+        run: npm ci
+      - name: 前端类型检查与构建
+        run: npm run build
+      - name: Tauri 构建（release 安装包）
+        run: npx tauri build
+      - name: 上传安装包产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ github.sha }}
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: warn
+
+  # ── E2E / Smoke Test ─────────────────────────────────────────
+  e2e:
+    name: E2E / Smoke（WebdriverIO + tauri-driver）
+    runs-on: windows-latest
+    needs: tauri-build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: 安装前端依赖
+        run: npm ci
+      - name: 编译 debug 二进制（E2E 目标，rust-cache 命中时快速）
+        run: cargo build --manifest-path src-tauri/Cargo.toml
+      - name: 安装 tauri-driver（WebDriver 服务）
+        run: cargo install tauri-driver --locked
+      - name: 下载 Edge WebDriver（msedgedriver）
+        shell: bash
+        run: |
+          # 下载与 runner 上 Edge 版本匹配的驱动到项目内缓存目录
+          mkdir -p e2e/.driver
+          export EDGEDRIVER_CACHE_DIR="$PWD/e2e/.driver"
+          npx edgedriver --version
+          test -f e2e/.driver/msedgedriver.exe && echo "Edge WebDriver 就绪"
+      - name: 启动 Vite dev server
+        shell: bash
+        run: |
+          # 后台启动前端开发服务器，等待端口就绪后退出（供 E2E 窗口加载）
+          nohup npm run dev > e2e/vite.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:1420 > /dev/null; then echo "vite 已就绪"; exit 0; fi
+            sleep 2
+          done
+          echo "vite 启动超时"; exit 1
+      - name: 启动 tauri-driver 并运行 E2E 测试
+        shell: bash
+        run: |
+          # 拉起 WebDriver 服务（显式指定 Edge 驱动路径），就绪后执行测试
+          export PATH="$HOME/.cargo/bin:$PATH"
+          tauri-driver --native-driver e2e/.driver/msedgedriver.exe > e2e/tauri-driver.log 2>&1 &
+          DRIVER_PID=$!
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:4444/status > /dev/null; then echo "tauri-driver 已就绪"; break; fi
+            sleep 2
+          done
+          npm run test:e2e
+          EXIT_CODE=$?
+          kill $DRIVER_PID 2>/dev/null || true
+          exit $EXIT_CODE
+      - name: 上传 E2E 日志（失败时可排查）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: |
+            e2e/logs
+            e2e/vite.log
+          if-no-files-found: ignore

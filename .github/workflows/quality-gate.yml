@@ -1,0 +1,77 @@
+# Quality Gate：PR 合入前的质量闸门（AGENTS.md 八、CI/CD 强制集成）
+# 任何 PR 与 main 推送都会触发；任一 job 失败即阻断合入，禁止人工绕过。
+#
+# 组成：
+#   frontend - ESLint / Prettier / vue-tsc / Vitest
+#   rust     - rustfmt / clippy / cargo test（windows-latest：避免 Linux 缺 webkit2gtk 系统依赖）
+#   security - gitleaks / npm audit / cargo-deny
+name: Quality Gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  # 同一分支的重复触发自动取消旧任务，节省 runner 资源
+  group: quality-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── 前端质量检查 ──────────────────────────────────────────────
+  frontend:
+    name: 前端（ESLint/Prettier/vue-tsc/Vitest）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: 安装依赖
+        run: npm ci
+      - name: ESLint 静态检查
+        run: npx eslint .
+      - name: Prettier 格式化检查
+        run: npx prettier --check .
+      - name: vue-tsc 类型检查
+        run: npx vue-tsc --noEmit
+      - name: Vitest 单元测试
+        run: npm test
+
+  # ── Rust 质量检查（windows runner：Tauri 在 Linux 需额外系统库）──
+  rust:
+    name: Rust（fmt/clippy/test）
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: rustfmt 格式化检查
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+      - name: clippy 静态分析（warnings 视为错误）
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - name: 全量单元测试
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  # ── 安全检查 ──────────────────────────────────────────────────
+  security:
+    name: 安全（gitleaks/npm audit/cargo-deny）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: gitleaks 密钥泄露扫描
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: npm audit 依赖漏洞扫描（high 以上失败）
+        run: npm audit --audit-level=high
+      - name: cargo-deny 许可证与依赖审查
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
