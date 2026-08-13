@@ -13,7 +13,11 @@
 // 启动（固定端口方案，与 Playwright 官方 WebView2 文档同款），脚本直接轮询
 // http://127.0.0.1:<port>/json/list。不依赖 DevToolsActivePort 文件——
 // 该文件机制在 WebView2 150（CI runner 自带版本）上不可靠，固定端口则跨版本稳定。
-import { readdirSync, existsSync } from "node:fs";
+//
+// 环境要求：应用必须以非提权进程运行。WebView2 150.x 存在回归——提权进程下
+// 调试端口静默不监听（WebView2Feedback#5639），CI 的 job 进程本身提权，
+// 故 workflow 中用 runas /trustlevel:0x20000 降权启动应用后再运行本脚本。
+import { readdirSync, existsSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
@@ -58,8 +62,9 @@ function fail(message) {
   console.error(`[冒烟失败] ${message}`);
   console.error("=== 失败诊断：WebView2 子进程 ===");
   try {
+    // 注：Node 直启 tasklist 不经 MSYS，参数用单斜杠（bash 里才需要 //FI）
     console.error(
-      execFileSync("tasklist", ["//FI", "IMAGENAME eq msedgewebview2.exe"], {
+      execFileSync("tasklist", ["/FI", "IMAGENAME eq msedgewebview2.exe"], {
         encoding: "utf8",
       }).trim(),
     );
@@ -72,6 +77,14 @@ function fail(message) {
   if (found.length === 0) console.error("  （未找到，WebView2 未按预期开启调试端口）");
   dumpDir(APP_DATA_DIR);
   dumpDir(path.join(APP_DATA_DIR, "EBWebView"));
+  // EBWebView/Last Version 记录了实际加载的 WebView2 Runtime 版本
+  try {
+    console.error(
+      `=== WebView2 Runtime 版本: ${readFileSync(path.join(APP_DATA_DIR, "EBWebView", "Last Version"), "utf8").trim()}`,
+    );
+  } catch {
+    console.error("=== WebView2 Runtime 版本: 未知（Last Version 文件不存在）");
+  }
   process.exit(1);
 }
 

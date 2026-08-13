@@ -107,6 +107,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # ── 环境前置诊断（每次运行都输出，便于对照 WebView2 版本与提权状态）──
+          echo "=== 运行身份与完整性级别 ==="
+          whoami || true
+          whoami /groups 2>/dev/null | grep -i "S-1-16" || true
+          net session >/dev/null 2>&1 && echo "（当前进程为提权/管理员）" || echo "（当前进程非提权）"
+          echo "=== WebView2 Runtime 版本 ==="
+          reg query "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" //v pv 2>/dev/null || true
           # WebView2 调试参数注入（固定端口方案）：
           # 1. TAURI_WEBVIEW_AUTOMATION=true：声明自动化意图（Windows 上 wry 当前
           #    无操作，保留以对齐 tauri-driver 的行为契约）
@@ -118,8 +125,30 @@ jobs:
           export WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9222"
           export SMOKE_CDP_PORT=9222
           ls -la src-tauri/target/debug/typora-replica.exe
-          # 启动应用（加载 vite dev server 前端）
-          src-tauri/target/debug/typora-replica.exe --use-localhost > e2e/app.log 2>&1 &
+          # ── 降权启动应用（WebView2 150 提权回归规避）──
+          # 根因：WebView2 150.x 存在回归——提权（High Integrity）进程下即使注入
+          # 调试端口参数，CDP 端口也不监听（WebView2Feedback#5639）；runner 的 job
+          # 进程本身是提权的，直接拉起的应用继承提权，调试端口必然失效。
+          # 规避：runas /trustlevel:0x20000 以 Basic User 令牌降权启动应用，
+          # 该令牌下 WebView2 150 正常开启调试端口。
+          echo "=== 降权启动应用 ==="
+          runas //trustlevel:0x20000 "$PWD/src-tauri/target/debug/typora-replica.exe" --use-localhost > e2e/runas.log 2>&1 || {
+            echo "::error::runas 降权启动失败（非提权环境或策略限制）"
+            cat e2e/runas.log || true
+            exit 1
+          }
+          # 确认降权实例已存活（runas 立即返回，需轮询进程出现）
+          for i in $(seq 1 10); do
+            if tasklist //FI "IMAGENAME eq typora-replica.exe" 2>/dev/null | grep -qi typora; then
+              echo "降权实例已存活"
+              break
+            fi
+            sleep 1
+          done
+          tasklist //FI "IMAGENAME eq typora-replica.exe" 2>/dev/null | grep -i typora || {
+            echo "::error::降权启动后应用未存活（WebView2 初始化失败？）"
+            exit 1
+          }
           # 运行 CDP 冒烟脚本（窗口渲染 + Rust 命令链路断言）
           # 注意：set -e 下 node 失败会直接终止脚本、跳过收尸与诊断，
           # 因此临时关闭 set -e 手动接管退出码（诊断逻辑内置在冒烟脚本内）
