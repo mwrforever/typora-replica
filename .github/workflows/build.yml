@@ -137,13 +137,13 @@ jobs:
           net user "$SMOKE_USER" "$SMOKE_PASS" //add 2>/dev/null || true
           if net user "$SMOKE_USER" >/dev/null 2>&1; then
             WINPWD=$(pwd -W)
-            cat > e2e/run-smoke-app.cmd <<EOF
-            @echo off
-            whoami /groups > "%TEMP%\markwell-token.log" 2>&1
-            set TAURI_WEBVIEW_AUTOMATION=true
-            set WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222
-            "$WINPWD\src-tauri\target\debug\typora-replica.exe" --use-localhost > "%TEMP%\markwell-app.log" 2>&1
-            EOF
+          cat > e2e/run-smoke-app.cmd <<EOF
+          @echo off
+          whoami /groups > "%TEMP%\markwell-token.log" 2>&1
+          set TAURI_WEBVIEW_AUTOMATION=true
+          set WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222
+          "$WINPWD\src-tauri\target\debug\typora-replica.exe" --use-localhost > "%TEMP%\markwell-app.log" 2>&1
+          EOF
             schtasks //Delete //TN markwell-smoke //F >/dev/null 2>&1 || true
             if schtasks //Create //F //TN markwell-smoke //SC ONCE //ST 00:00 \
               //RU "$SMOKE_USER" //RP "$SMOKE_PASS" //RL LIMITED //TR "$WINPWD\\e2e\\run-smoke-app.cmd"; then
