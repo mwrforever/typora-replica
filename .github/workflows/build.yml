@@ -68,12 +68,21 @@ jobs:
         run: cargo build --manifest-path src-tauri/Cargo.toml
       - name: 安装 tauri-driver（WebDriver 服务）
         run: cargo install tauri-driver --locked
-      - name: 下载 Edge WebDriver（msedgedriver）
+      - name: 下载 Edge WebDriver（msedgedriver，版本匹配 WebView2 运行时）
         shell: bash
         run: |
-          # 下载与 runner 上 Edge 版本匹配的驱动到项目内缓存目录
           mkdir -p e2e/.driver
+          # 关键：tauri-driver 的 WebView2 模式要求 msedgedriver 与 WebView2 运行时版本匹配
+          # （而非 Edge 版本——两者在 runner 上可能不同步，不匹配会报
+          #   DevToolsActivePort file doesn't exist 导致会话创建失败）
+          WV2_VERSION=$(reg query "HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" //v pv 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          if [ -z "$WV2_VERSION" ]; then
+            # 注册表不可用时回退到 Edge 版本
+            WV2_VERSION=$("C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          fi
+          echo "WebView2/Edge 版本: $WV2_VERSION"
           export EDGEDRIVER_CACHE_DIR="$PWD/e2e/.driver"
+          export EDGEDRIVER_VERSION="$WV2_VERSION"
           npx edgedriver --version
           test -f e2e/.driver/msedgedriver.exe && echo "Edge WebDriver 就绪"
       - name: 启动 Vite dev server
@@ -109,4 +118,5 @@ jobs:
           path: |
             e2e/logs
             e2e/vite.log
+            e2e/tauri-driver.log
           if-no-files-found: ignore
