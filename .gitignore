@@ -45,3 +45,4 @@ e2e/logs
 
 # E2E 驱动缓存（msedgedriver，体积大不入库）
 e2e/.driver/
+e2e/.driver/webview-data/
