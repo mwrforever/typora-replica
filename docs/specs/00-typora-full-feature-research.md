@@ -213,15 +213,171 @@
 ## 9. 功能裁剪汇总（首版范围决策）
 
 **首版采纳**：E1-E16、E19-E21、F1-F6、F10-F14、F16-F31、T1-T8、X1-X3、X6-X8、P1-P5、P10-P11、S1-S3、C1-C5
-**首版不做**（标注原因）：E13 Callouts（需启用非核心）、E17/E18 emoji 与上下标（延后）、E20 全量 HTML（白名单子集）、F7 树内拖拽、F8 撤销文件操作、F15 JumpList、T9 市场、X4 图片导出、X5 Pandoc、P6-P9 图片管理增强与云上传
+**首版强制范围（用户校准新增）**：
+
+- **完整菜单栏**：第 11 节全部菜单项实现（含源码模式切换 Ctrl+/、窗口置顶、缩放等）
+- **偏好设置全项**：第 12 节各分区设置项（云上传相关项以禁用状态占位）
+- **搜索范围**：跨文件搜索覆盖 `.txt` 等全部文本文件
+  **首版不做**（标注原因）：E13 Callouts（需启用非核心）、E17/E18 emoji 与上下标（延后）、E20 全量 HTML（白名单子集）、F7 树内拖拽、F8 撤销文件操作、F15 JumpList、T9 市场、X4 图片导出、X5 Pandoc（自定义命令导出保留）、P6-P9 图片管理增强与云上传（上传器占位禁用）
 
 ---
 
-## 10. 待用户校准清单
+## 10. 待用户校准清单（用户已答复项见标注）
 
 1. **标签页**：Typora Windows 无标签页，我们按需求统一支持——确认 OK？
 2. **导出格式**：首版 HTML + PDF（打印路径），Pandoc 全格式延后——是否接受？
 3. **云上传**：全部不做（第三方依赖）——是否接受？
-4. **搜索范围**：跨文件搜索首版是否覆盖 `.txt` 等非 md 文件？
+4. **搜索范围**：~~是否覆盖 `.txt` 等非 md 文件？~~ → **✅ 已确认：覆盖 `.txt` 等全部文本文件**
 5. **自动保存间隔**：默认 5 分钟（可配）——是否调整？
 6. 其他你在使用 Typora 时觉得**必须复刻**、但本清单遗漏的行为？
+   → **✅ 已补充：完整菜单栏结构（第 11 节）+ 全部偏好设置可控制项（第 12 节）纳入实现范围**
+
+---
+
+## 11. 完整菜单栏结构（必须实现）
+
+来源：support.typora.io Shortcut-Keys 等官方文档（快捷键为 Windows/Linux 版）。**菜单即功能清单——每个菜单项都必须有对应实现或明确禁用状态**。
+
+### 11.1 File（文件）
+
+| 菜单项                | 快捷键       | 对应功能                   |
+| --------------------- | ------------ | -------------------------- |
+| New 新建              | Ctrl+N       | 新建文档（未命名标签）     |
+| New Window 新窗口     | Ctrl+Shift+N | 打开新应用窗口             |
+| New Tab 新建标签页    | -（Win 无）  | 我们的产品支持（差异项）   |
+| Open 打开             | Ctrl+O       | 打开文件/文件夹对话框      |
+| Open Quickly 快速打开 | Ctrl+P       | 模糊搜索打开（F11）        |
+| Reopen Closed File    | Ctrl+Shift+T | 重开最近关闭的文件         |
+| Save 保存             | Ctrl+S       | 写盘                       |
+| Save As / Duplicate   | Ctrl+Shift+S | 另存为 / 复制文档          |
+| Preference 偏好设置   | Ctrl+,       | 设置弹窗（S1）             |
+| Close 关闭            | Ctrl+W       | 关闭当前标签（脏状态确认） |
+
+### 11.2 Edit（编辑）
+
+| 菜单项                                  | 快捷键                        | 对应功能             |
+| --------------------------------------- | ----------------------------- | -------------------- |
+| New Paragraph / New Line                | Enter / Shift+Enter           | 编辑器行为（E1）     |
+| Cut / Copy / Paste                      | Ctrl+X/C/V                    | 剪贴板               |
+| Copy As Markdown                        | Ctrl+Shift+C                  | 复制为 Markdown 源码 |
+| Paste As Plain Text                     | Ctrl+Shift+V                  | 粘贴 Markdown 源码   |
+| Select All                              | Ctrl+A                        | 全选                 |
+| Select Line/Sentence（表格 Select Row） | Ctrl+L                        | 行/句选择            |
+| Delete Row（表格）                      | Ctrl+Shift+Backspace          | 表格行删除           |
+| Select Style Scope（表格 Select Cell）  | Ctrl+E                        | 样式范围/单元格选择  |
+| Select Word / Delete Word               | Ctrl+D / Ctrl+Shift+D         | 词级选择/删除        |
+| Jump to Top / Bottom / Selection        | Ctrl+Home / Ctrl+End / Ctrl+J | 光标跳转             |
+| Find / Replace                          | Ctrl+F / Ctrl+H               | F24/F25              |
+| Find Next / Previous                    | F3 / Shift+F3                 | 查找导航             |
+
+### 11.3 Paragraph（段落）
+
+| 菜单项                            | 快捷键                           | 对应功能       |
+| --------------------------------- | -------------------------------- | -------------- |
+| Heading 1-6                       | Ctrl+1~6                         | 标题级别（E2） |
+| Paragraph 正文                    | Ctrl+0                           | 转段落         |
+| Increase / Decrease Heading Level | Ctrl+= / Ctrl+-                  | 级别增减       |
+| Table                             | Ctrl+T                           | 插入表格（E8） |
+| Code Fences                       | Ctrl+Shift+K                     | 代码围栏（E6） |
+| Math Block                        | Ctrl+Shift+M                     | 数学块（E7）   |
+| Quote                             | Ctrl+Shift+Q                     | 引用块（E3）   |
+| Ordered / Unordered List          | Ctrl+Shift+[ / ]                 | 列表（E4）     |
+| Indent / Outdent                  | Ctrl+[ / Ctrl+]（Tab/Shift+Tab） | 缩进           |
+
+### 11.4 Format（格式）
+
+| 菜单项            | 快捷键             | 对应功能             |
+| ----------------- | ------------------ | -------------------- |
+| Strong / Emphasis | Ctrl+B / Ctrl+I    | 加粗/斜体（E16）     |
+| Underline         | Ctrl+U             | 下划线（HTML `<u>`） |
+| Code 行内代码     | Ctrl+Shift+`` ` `` | 行内代码（E16）      |
+| Strike 删除线     | Alt+Shift+5        | 删除线（E16）        |
+| Hyperlink         | Ctrl+K             | 链接（E14）          |
+| Image             | Ctrl+Shift+I       | 插入图片（P1）       |
+| Clear Format      | Ctrl+\             | 清除格式             |
+
+### 11.5 View（视图）
+
+| 菜单项                           | 快捷键               | 对应功能                                              |
+| -------------------------------- | -------------------- | ----------------------------------------------------- |
+| Toggle Sidebar                   | Ctrl+Shift+L         | 侧边栏开关（F2）                                      |
+| Outline / Articles / File Tree   | Ctrl+Shift+1 / 2 / 3 | 面板切换（F2/F16）                                    |
+| Source Code Mode                 | Ctrl+/               | 源码模式（**新增：编辑器需支持源码/所见即所得切换**） |
+| Focus Mode                       | F8                   | 专注模式（F27）                                       |
+| Typewriter Mode                  | F9                   | 打字机模式（F28）                                     |
+| Toggle Fullscreen                | F11                  | 全屏                                                  |
+| Actual Size / Zoom In / Zoom Out | Ctrl+Shift+0 / = / - | 界面缩放                                              |
+| Switch Between Opened Documents  | Ctrl+Tab             | 标签切换（F29）                                       |
+| Toggle DevTools                  | Shift+F12            | 开发者工具（T7）                                      |
+| Always on Top                    | -                    | 窗口置顶                                              |
+
+### 11.6 Themes（主题，动态菜单）
+
+- 列出主题目录全部 `.css`（文件名自动转菜单标签，T1-T4）
+- 浅色/深色模式各自指定主题（T5）
+
+### 11.7 Help（帮助）
+
+- Markdown Reference、Custom Themes 等帮助入口（低优先，静态页面）
+
+### 11.8 上下文右键菜单（编辑器内 + 文件树）
+
+- 编辑器：Copy as Markdown / Copy as HTML / Paste as Plain Text / 表格单元格动态项（增删行列）
+- 文件树：打开/新建/重命名/删除/复制路径/在资源管理器中显示（F4）
+
+---
+
+## 12. 偏好设置可控制项（必须实现）
+
+来源：support.typora.io 各文档（Images/Export/Code-Fences/Advance-Config 等）。**每个分区都做对应设置项，值持久化到配置文件**。
+
+### 12.1 Appearance（外观）
+
+- 浅色/深色主题分别选择（T5）
+- Show Status Bar 状态栏显隐（S3 依赖）
+- Font Size 字号
+- Reading Speed 阅读速度（words/min，阅读时间统计）
+- 高级：defaultFontFamily、autoHideMenuBar（Alt 切换菜单栏）、monocolorEmoji
+
+### 12.2 Editor（编辑器）
+
+- Image Insert：copy images to given folder（P2）、relative path（P3）、./ prefix（默认关）、URL 转义
+- Auto pair brackets/quotes、auto pair markdown syntax（自动配对 `$`/`^`/`==`）
+- Default Line Ending（CRLF/LF）
+- Auto Save 间隔（默认 5 分钟，`autoSaveTimer`，F30）
+
+### 12.3 Markdown（语法开关，多为需重启生效）
+
+- Inline Math 行内数学开关（E19）
+- Legacy inline math parsing 兼容模式
+- Diagrams 图表开关（E21）
+- Strict Mode 严格模式（需重启）
+- Code Fences：行号显示、长行自动换行、Shift+Tab 行为、缩进宽度、默认代码语言/Last Used（E6）
+- Highlight / Superscript 等行内语法开关（E18）
+- 拼写检查（语言选择，低优先）
+
+### 12.4 Image（图片）
+
+- 上传器接入（❌ 首版不做，占位设置项禁用）
+- 插入时行为（仅本地/含在线）
+- YAML 触发自动上传（❌ 配合云上传，不做）
+
+### 12.5 Export（导出）
+
+- 默认导出目录（auto/同文件目录/自定义）
+- YAML 覆盖导出设置开关（安全，默认关）
+- 导出项管理（增删改序，内置项锁定，X7）
+- HTML：Include Outline / append head-body / 主题
+- PDF：纸张/边距/主题（Win 仅浅色）/分页/页眉页脚变量（X2）
+- 自定义命令导出（X5 Pandoc 延后，自定义命令保留）
+
+### 12.6 General（通用）
+
+- 启动行为：新建文件/恢复上次文件夹/恢复上次文件与文件夹/自定义文件夹（F14）
+- Open Theme Folder / Open Advanced Settings 入口（T2/S2）
+- 界面语言（跟随系统，低优先）
+- Reset Advanced Settings（重置高级配置）
+
+### 12.7 高级设置 conf.user.json（S2）
+
+- defaultFontFamily、autoHideMenuBar、searchService、keyBinding（自定义快捷键）、monocolorEmoji、flags、autoSaveTimer
