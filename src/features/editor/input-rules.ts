@@ -4,6 +4,7 @@
 // - E1-3 行尾两空格 + Enter → 硬换行（hardBreak 节点）转换（按键规则，经 keymapCtx 注册）
 // - E3-2 引用块内行首实时输入 `>> ` → 嵌套引用块（输入规则，经 inputRulesCtx 注册）
 // - E10-3 非空行后输入 `---` → 前置段落转 setext 二级标题（输入规则，优先于内置 hr 规则注册）
+// - E2-2 行首 `###Header`（无空格）+ Enter → H3 宽松 ATX 标题（输入规则，内置规则要求 `# ` 带空格）
 // 后续扩展（Task 13）：E8 Typora 式建表、E19 Pandoc 行内数学（经 inputRulesCtx 注册）。
 //
 // 注入方式：Crepe create() 前通过 editor.config 调用 registerEditorInputRules(ctx)，
@@ -154,6 +155,53 @@ export function createSetextH2InputRule(): InputRule {
 }
 
 /**
+ * 宽松 ATX 标题触发正则：行首 # 号串（1-6 个）+ 首个非空白字符 + 行余文 + Enter 换行
+ *
+ * 内置 wrapInHeadingInputRule（/^(#+)\s$/）要求 # 后跟空白才会在输入空格时即时转换；
+ * Typora 非严格模式下 `###Header`（无空格）按 Enter 同样渲染为 H3（AC-E2-2）。
+ * Milkdown 的 customInputRules 插件在 Enter 按下时以 "\n" 作为拟输入文本重跑规则链，
+ * 本正则即锚定该形态（行余文 + 换行），与内置严格规则互斥（后者要求 # 后立即空白）：
+ * `# ` 场景在空格落字时已被内置规则即时消费，本规则仅在无空格形态的 Enter 时命中。
+ */
+export const LENIENT_ATX_HEADING_INPUT_PATTERN = /^(#{1,6})\S.*\n$/;
+
+/**
+ * 构造宽松 ATX 标题输入规则（E2-2：`###Header` 无空格按 Enter 转 H3）
+ *
+ * 转换动作：光标所在段落整段 setBlockType 为 heading（级别 = # 号数），
+ * 再删除行首 # 标记（`###Header` → `Header`），光标落至转换后的行尾。
+ * 仅在父块为普通段落时生效：标题块内（内置严格规则已升级/已转换场景）
+ * 返回 null 回落内置 Enter 拆段行为。
+ *
+ * 节点类型在 handler 内经 state.schema 取用（与 createSetextH2InputRule 同理：
+ * 注册期 SchemaReady 未就绪，不能提前解析）。
+ *
+ * @returns 已解析的 ProseMirror InputRule（含 match 正则与 handler，不依赖 ctx）
+ */
+export function createLenientAtxHeadingInputRule(): InputRule {
+  return new InputRule(LENIENT_ATX_HEADING_INPUT_PATTERN, (state, match) => {
+    // 仅转换普通段落行：父块非段落（如标题内继续输入、行中光标）回落内置 Enter 行为
+    const { $from } = state.selection;
+    if ($from.parent.type.name !== "paragraph") return null;
+    // # 号串长度即标题级别（正则 {1,6} 已钳制上限，match[1] 恒为命中的 # 串）
+    const level = match[1].length;
+    // 内容起点：$from.start() = 父块（段落）内容起点（= 段落节点起点 + 1，开标签恒宽 1）；
+    // 文本宽度取 textContent 长度——text 节点 nodeSize 含闭标签宽度，不能直接用于坐标换算
+    const contentStart = $from.start();
+    const textLength = $from.parent.textContent.length;
+    const tr = state.tr;
+    // 整段转标题：from/to 取内容起点（节点起点位置 nodesBetween 不访问任何节点，
+    // 转换会静默失效——与 setext 规则的既有结论一致）
+    tr.setBlockType(contentStart, contentStart, state.schema.nodes.heading, { level });
+    // 删除行首 # 标记，仅保留标题文本（`###Header` → `Header`）
+    tr.delete(contentStart, contentStart + match[1].length);
+    // 光标落至转换后的行尾（标题内容末尾，位于标题节点内部）
+    tr.setSelection(TextSelection.create(tr.doc, contentStart + textLength - match[1].length));
+    return tr;
+  });
+}
+
+/**
  * 将模块级自定义规则写入编辑器上下文（create() 前调用一次）
  * @param ctx milkdown 编辑器配置上下文（由 editor.config 回调注入）
  */
@@ -167,9 +215,12 @@ export function registerEditorInputRules(ctx: Ctx): void {
   // 输入规则列表无 priority 概念，按列表顺序尝试、先命中先消费：
   // - E10-3 setext 规则必须排在最前，抢在内置 hr 规则（`---` 直接替换为水平线）之前拦截；
   //   其正则与前置块校验限定场景，未命中即返回 null 回落内置，空行 `---` 生成 hr 不受影响
+  // - E2-2 宽松 ATX 规则仅在 Enter 时命中（正则锚定行尾换行），与内置严格规则
+  //   （空格落字即消费）触发时机互斥，位置不影响正确性
   // - E3-2 嵌套引用规则与内置 `> ` 规则正则互斥，追加在末尾顺序不影响命中
   ctx.update(inputRulesCtx, (rules: InputRule[]) => [
     createSetextH2InputRule(),
+    createLenientAtxHeadingInputRule(),
     ...rules,
     createNestedBlockquoteInputRule(),
   ]);

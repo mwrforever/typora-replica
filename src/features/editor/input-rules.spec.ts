@@ -1,9 +1,10 @@
 // 自定义语法规则单测：行尾两空格硬换行命令分支全覆盖 + 嵌套引用输入规则正则边界 + setext 二级标题规则
-// （核心语法转换 100% 覆盖）
+// + 宽松 ATX 标题规则分支全覆盖（核心语法转换 100% 覆盖）
 import { describe, expect, it, vi } from "vitest";
 import type { Transaction } from "@milkdown/kit/prose/state";
 import { makeTestEditor } from "../../test/editor-test-utils";
 import {
+  LENIENT_ATX_HEADING_INPUT_PATTERN,
   NESTED_BLOCKQUOTE_INPUT_PATTERN,
   SETEXT_H2_INPUT_PATTERN,
   trailingSpacesHardBreakCommand,
@@ -188,5 +189,51 @@ describe("createSetextH2InputRule 非空行后 `---` setext 转换分支", () =>
     te.press("Enter");
     te.insertText("---");
     expect(te.view.dom.querySelector("hr")).not.toBeNull();
+  });
+});
+
+describe("LENIENT_ATX_HEADING_INPUT_PATTERN 宽松 ATX 标题触发正则边界", () => {
+  it("命中：行首 `###Header` + Enter 换行，捕获组为 3 个 # 号", () => {
+    const match = LENIENT_ATX_HEADING_INPUT_PATTERN.exec("###Header\n");
+    expect(match?.[1]).toBe("###");
+  });
+
+  it("命中：`#x` 单 # 无空格形态同样触发（非严格模式宽容）", () => {
+    expect(LENIENT_ATX_HEADING_INPUT_PATTERN.exec("#x\n")?.[1]).toBe("#");
+  });
+
+  it("未命中：`# Header` 带空格形态（内置严格规则已即时消费，两规则互斥）", () => {
+    expect(LENIENT_ATX_HEADING_INPUT_PATTERN.exec("# Header\n")).toBeNull();
+  });
+
+  it("未命中：无 Enter 换行的行内输入（Enter 是本规则触发时机）", () => {
+    expect(LENIENT_ATX_HEADING_INPUT_PATTERN.exec("###Header")).toBeNull();
+  });
+
+  it("未命中：普通文本行", () => {
+    expect(LENIENT_ATX_HEADING_INPUT_PATTERN.exec("普通文本\n")).toBeNull();
+  });
+});
+
+describe("createLenientAtxHeadingInputRule 宽松 ATX 标题转换分支", () => {
+  it("转换：`###Header` 按 Enter 整段转 H3 并删除行首 # 标记", async () => {
+    const te = await makeTestEditor();
+    te.insertText("###Header");
+    te.press("Enter"); // Enter 触发规则链（milkdown 将 "\n" 作为拟输入文本跑规则）
+    // 整段转为 H3（level = # 号数），行首 # 标记删除仅剩标题文本
+    expect(te.view.state.doc.child(0).type.name).toBe("heading");
+    expect(te.view.state.doc.child(0).attrs.level).toBe(3);
+    expect(te.view.state.doc.child(0).textContent).toBe("Header");
+  });
+
+  it("回落：父块非段落（标题块内）返回 null，Enter 回落内置拆段行为", async () => {
+    // `# #甲` 解析为 H1（文本 "#甲"）——文本以 # 开头保证本规则正则命中
+    const te = await makeTestEditor("# #甲");
+    // 光标置于标题文本行尾（父节点为标题块，非段落）
+    te.setSelection(te.view.state.doc.content.size - 1, te.view.state.doc.content.size - 1);
+    te.press("Enter");
+    // 判别点：本规则若消费按键会删除行首 # 并保持单块 H1；实测文档被拆为两块，
+    // 说明本规则对非段落父块返回 null 回落，Enter 由内置拆段行为接管
+    expect(te.view.state.doc.childCount).toBe(2);
   });
 });

@@ -22,6 +22,19 @@ describe("keymap 注册表", () => {
     expect(listEditorKeymaps().find((e) => e.key === "Mod-Shift-`")?.priority).toBe(200);
   });
 
+  it("内置 Typora 标题级别键位已注册（Ctrl+1~6 设级别、Ctrl+0 转段落、Ctrl+=/- 增减级别）", () => {
+    // 级别循环 1-6 全部注册
+    for (let level = 1; level <= 6; level++) {
+      expect(hasEditorKeymap(`Mod-${level}`)).toBe(true);
+    }
+    expect(hasEditorKeymap("Mod-0")).toBe(true);
+    expect(hasEditorKeymap("Mod-=")).toBe(true);
+    expect(hasEditorKeymap("Mod--")).toBe(true);
+    // 默认优先级 200，压制表格内置（100）与 baseKeymap（50）
+    expect(listEditorKeymaps().find((e) => e.key === "Mod-=")?.priority).toBe(200);
+    expect(listEditorKeymaps().find((e) => e.key === "Mod--")?.priority).toBe(200);
+  });
+
   it("默认优先级为 200（压制表格内置 100 与 baseKeymap 50）", () => {
     const entry = listEditorKeymaps().find((e) => e.key === "Mod-[");
     expect(entry?.priority).toBe(200);

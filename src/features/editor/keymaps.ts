@@ -6,7 +6,15 @@
 // onRun(ctx) 返回 ProseMirror Command，build 时按 priority 降序 chainCommands。
 import type { Ctx } from "@milkdown/kit/ctx";
 import { commandsCtx, keymapCtx } from "@milkdown/kit/core";
-import { listItemSchema, toggleInlineCodeCommand } from "@milkdown/kit/preset/commonmark";
+import {
+  headingSchema,
+  listItemSchema,
+  paragraphSchema,
+  setBlockTypeCommand,
+  toggleInlineCodeCommand,
+  wrapInHeadingCommand,
+} from "@milkdown/kit/preset/commonmark";
+import { findParentNode } from "@milkdown/kit/prose";
 import { liftListItem, sinkListItem } from "@milkdown/kit/prose/schema-list";
 import type { Command } from "@milkdown/kit/prose/state";
 
@@ -88,3 +96,75 @@ addEditorKeymap({
     return () => commands.call(toggleInlineCodeCommand.key);
   },
 });
+
+// ── 标题级别键位（Typora 官方键位表：Ctrl+1~6 设级别、Ctrl+0 转段落、Ctrl+=/- 增减级别）──
+// 内置 headingKeymap 仅绑定 Mod-Alt-1~6（TurnIntoH1~6）与 Mod-Alt-0（TurnIntoText），
+// Ctrl+数字/=/ - 均无内置占用（修饰键不同不冲突），priority 默认 200 压制表格与 baseKeymap。
+
+/**
+ * 标题级别转换命令工厂：经 commandsCtx 注册表按 key 调用 wrapInHeadingCommand
+ *
+ * wrapInHeadingCommand 是 $Command 插件（MilkdownPlugin & { key, run }）而非可调用函数，
+ * 与预设内置 headingKeymap 的 TurnIntoH1~6 绑定走同一条 commands.call 调用路径。
+ * 命令在按键时经 KeymapManager.build 链执行；commands.call 即时对当前 view 状态生效。
+ *
+ * @param ctx milkdown 配置上下文（onRun 阶段注入）
+ * @param level 目标标题级别（1-6）
+ * @returns 消费按键的 ProseMirror Command
+ */
+function turnIntoHeadingCommand(ctx: Ctx, level: number): Command {
+  const commands = ctx.get(commandsCtx);
+  return () => commands.call(wrapInHeadingCommand.key, level);
+}
+
+// Ctrl+1~6：当前块直接设为对应级别（段落/标题/引用等统一收编，Typora 行为）
+for (let level = 1; level <= 6; level++) {
+  addEditorKeymap({
+    key: `Mod-${level}`,
+    onRun: (ctx) => turnIntoHeadingCommand(ctx, level),
+  });
+}
+
+// Ctrl+0：当前块转为普通段落（Typora 的 TurnIntoText 等价键位，但走 setBlockType 命令路径）
+addEditorKeymap({
+  key: "Mod-0",
+  onRun: (ctx) => {
+    const commands = ctx.get(commandsCtx);
+    return () => commands.call(setBlockTypeCommand.key, { nodeType: paragraphSchema.type(ctx) });
+  },
+});
+
+/**
+ * 增减标题级别命令工厂：读取光标所在 heading 级别并按 delta 增减，级别钳制在 1-6
+ *
+ * 与内置 DowngradeHeading（Delete/Backspace 降级）不同，本命令提供「升级/降级」成对操作：
+ * Ctrl+=（delta 1）级别数字减一（H3→H2），Ctrl+-（delta -1）级别数字加一（H3→H4）。
+ * 越界保护：H1 升级保持 H1、H6 降级保持 H6（AC-E2-5 钳制要求）；
+ * 非标题上下文返回 false 不消费按键，自然回落后续键位链（表格内置/baseKeymap）。
+ *
+ * 命令本体经 commandsCtx 注册表以 key 获取（wrapInHeadingCommand 为 $Command 插件，
+ * 与 turnIntoHeadingCommand 同路径），并以 keymap 处理器传入的 state/dispatch 执行。
+ *
+ * @param delta 级别变化量：1 = 升级（级别数字减一）；-1 = 降级（级别数字加一）
+ * @returns onRun 闭包：解析命令注册表后返回消费按键的 ProseMirror Command
+ */
+function headingLevelCommand(delta: 1 | -1) {
+  return (ctx: Ctx): Command => {
+    const commands = ctx.get(commandsCtx);
+    // 标题节点类型在 onRun 阶段解析（SchemaReady 之后，与 listItemSchema.type(ctx) 同理）
+    const headingType = headingSchema.type(ctx);
+    return (state, dispatch?, view?) => {
+      // 从选区 $from 向上逐层查找所在 heading 节点；非标题上下文返回 undefined
+      const parent = findParentNode((node) => node.type === headingType)(state.selection);
+      if (!parent) return false; // 非标题上下文不消费按键，回落内置行为
+      const currentLevel = parent.node.attrs.level as number;
+      // 级别钳制：Math.max 防 H1 升级越界、Math.min 防 H6 降级越界
+      const nextLevel = Math.min(6, Math.max(1, currentLevel - delta));
+      return commands.get(wrapInHeadingCommand.key)(nextLevel)(state, dispatch, view);
+    };
+  };
+}
+
+// Ctrl+= 升级（级别数字减小）、Ctrl+- 降级（级别数字增大），级别钳制 1-6 无越界
+addEditorKeymap({ key: "Mod-=", onRun: headingLevelCommand(1) });
+addEditorKeymap({ key: "Mod--", onRun: headingLevelCommand(-1) });
