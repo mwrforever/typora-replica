@@ -184,8 +184,10 @@ addEditorKeymap({ key: "Mod--", onRun: headingLevelCommand(-1) });
  *
  * 命令本体在 onRun 阶段解析节点类型（SchemaReady 之后，与 listItemSchema.type(ctx) 同理），
  * 并以 keymap 处理器传入的 state/dispatch 执行。
+ * 导出供单测直调：dry-run（dispatch 缺省）路径在真实 keymap 链中不可达（键位处理恒传
+ * dispatch），需在单测中以 dispatch=undefined 显式触发覆盖。
  */
-function insertCodeFenceCommand(ctx: Ctx): Command {
+export function insertCodeFenceCommand(ctx: Ctx): Command {
   const commands = ctx.get(commandsCtx);
   // 代码块节点类型在 onRun 阶段解析（SchemaReady 之后）
   const codeBlockType = codeBlockSchema.type(ctx);

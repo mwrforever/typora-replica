@@ -2,6 +2,7 @@
 import { fireEvent } from "@testing-library/dom";
 import { describe, expect, it } from "vitest";
 import { makeTestEditor } from "../../test/editor-test-utils";
+import { insertCodeFenceCommand } from "./keymaps";
 
 /** 等待 CodeMirror 懒初始化完成：轮询宏任务直到 CM 编辑器挂载（语言异步加载由用例内 waitFor 兜底） */
 async function waitForCodeBlock(te: Awaited<ReturnType<typeof makeTestEditor>>) {
@@ -87,11 +88,18 @@ describe("E6 代码围栏", () => {
     );
     fireEvent.click(option);
 
+    // 高亮随之切换：CSS 语言包异步加载并重配后产生高亮 token
+    // （oneDark 色值型高亮，token 使用 ͼ 前缀生成类名；切换前无语言块不存在任何 token span）
+    const token = await waitForElement(() =>
+      document.querySelector(".milkdown-code-block .cm-content span[class^='ͼ']"),
+    );
+    expect(token).not.toBeNull();
+
+    // 落盘断言：语言确已从未指定切换为 css，且为 Typora 平价的小写形态
+    // （toMarkdown 归一化处理 language-data 规范名，AC 要求精确小写匹配）
     const md = te.getMarkdown();
-    // 落盘断言：语言确已从未指定切换为 css。Crepe 内置选择器落盘 language-data 规范名
-    // （首字母大写 CSS），与 Typora 小写别名语义一致，大小写不敏感断言同时覆盖两种规范形态
     expect(md).not.toBe("```\nbody { color: red; }\n```");
-    expect(md.toLowerCase()).toContain("```css");
+    expect(md).toContain("```css");
   });
 
   it("AC-E6-5 不存在的语言名 foobar 按纯文本渲染不报错", async () => {
@@ -101,5 +109,26 @@ describe("E6 代码围栏", () => {
     expect(block).not.toBeNull();
     // 落盘保持原语言名，渲染不抛异常
     expect(te.getMarkdown()).toContain("```foobar");
+  });
+});
+
+describe("insertCodeFenceCommand dry-run（dispatch 缺省）", () => {
+  it("光标在代码块内：返回 true 且文档不变异", async () => {
+    const te = await makeTestEditor("```js\nconst a = 1;\n```");
+    te.setSelection(6, 6);
+    const before = te.getMarkdown();
+    // 键位链恒传 dispatch，dry-run 分支仅能经直调显式覆盖
+    const command = insertCodeFenceCommand(te.editor.action((ctx) => ctx));
+    expect(command(te.view.state, undefined, te.view)).toBe(true);
+    expect(te.getMarkdown()).toBe(before);
+  });
+
+  it("光标在普通段落：返回 true 且文档不变异", async () => {
+    const te = await makeTestEditor("plain text");
+    te.setSelection(3, 3);
+    const before = te.getMarkdown();
+    const command = insertCodeFenceCommand(te.editor.action((ctx) => ctx));
+    expect(command(te.view.state, undefined, te.view)).toBe(true);
+    expect(te.getMarkdown()).toBe(before);
   });
 });

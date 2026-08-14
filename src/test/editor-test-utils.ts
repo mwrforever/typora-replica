@@ -4,7 +4,10 @@ import { editorViewCtx, type Editor } from "@milkdown/kit/core";
 import { TextSelection } from "@milkdown/kit/prose/state";
 import type { EditorView } from "@milkdown/kit/prose/view";
 import { fireEvent } from "@testing-library/dom";
-import { applyMarkwellStringifyOptions } from "../features/editor/create-editor";
+import {
+  applyMarkwellStringifyOptions,
+  lowerLanguageCodeBlockSchema,
+} from "../features/editor/create-editor";
 import { registerEditorInputRules } from "../features/editor/input-rules";
 import { applyEditorKeymaps } from "../features/editor/keymaps";
 
@@ -71,6 +74,8 @@ export async function makeTestEditor(
   });
   // 与产品工厂（create-editor.ts）同源注入自定义语法规则、Typora 式键位与序列化形态，
   // 保证测试环境覆盖自定义行为
+  // 代码围栏语言落盘小写归一化（E6-4），与产品工厂同源插件
+  crepe.editor.use(lowerLanguageCodeBlockSchema);
   crepe.editor.config((ctx) => {
     registerEditorInputRules(ctx);
     applyEditorKeymaps(ctx);

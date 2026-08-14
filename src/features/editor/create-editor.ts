@@ -2,6 +2,7 @@
 import { Crepe, type CrepeConfig } from "@milkdown/crepe";
 import type { Ctx } from "@milkdown/kit/ctx";
 import { remarkStringifyOptionsCtx } from "@milkdown/kit/core";
+import { codeBlockSchema } from "@milkdown/kit/preset/commonmark";
 import type { Handlers } from "mdast-util-to-markdown";
 import type { Options } from "remark-stringify";
 // mhchem 副作用导入：KaTeX 化学式扩展（E7），全应用只需一次
@@ -101,6 +102,34 @@ export function applyMarkwellStringifyOptions(ctx: Ctx): void {
   }));
 }
 
+/**
+ * 代码围栏语言落盘小写归一化（Typora 平价，E6-4）
+ *
+ * 内置语言选择器把 language-data 规范名（首字母大写，如 CSS/JavaScript）写入节点
+ * language 属性，落盘形态 ```CSS 与 Typora 的小写 ```css 不一致。以 extendSchema 扩展
+ * codeBlockSchema 的 toMarkdown（与 Crepe latex feature 的 blockLatexSchema 同模式），
+ * 仅序列化时把 language 小写输出；解析/高亮不受影响——parseMarkdown 保持原样，
+ * LanguageLoader 对语言名小写不敏感（审查已核实 loader 按小写别名建映射）。
+ */
+export const lowerLanguageCodeBlockSchema = codeBlockSchema.extendSchema((prev) => {
+  return (ctx) => {
+    const baseSchema = prev(ctx);
+    return {
+      ...baseSchema,
+      toMarkdown: {
+        match: baseSchema.toMarkdown.match,
+        runner: (state, node) => {
+          // language 属性小写后落盘。attrs.language 恒为字符串（ProseMirror computeAttrs
+          // 对缺省值填充 schema 默认值 ""，parseDOM 的 undefined 同样被归一），无需空值兜底
+          state.addNode("code", void 0, node.content.firstChild?.text || "", {
+            lang: String(node.attrs.language).toLowerCase(),
+          });
+        },
+      },
+    };
+  };
+});
+
 /** 编辑器工厂可选配置 */
 export interface MarkwellEditorOptions {
   /** 图片上传回调（07 图片模块注入实现；缺省时 Crepe 自动回落 blob URL） */
@@ -131,6 +160,8 @@ export function createMarkwellEditor(
       ...(options.onUpload ? { [Crepe.Feature.ImageBlock]: { onUpload: options.onUpload } } : {}),
     },
   });
+  // 代码围栏语言落盘小写归一化：以 extendSchema 扩展 codeBlockSchema（E6-4 Typora 平价）
+  crepe.editor.use(lowerLanguageCodeBlockSchema);
   // 自定义语法规则注入：config 回调在 create() 时执行，与内置规则统一编排
   crepe.editor.config((ctx) => {
     registerEditorInputRules(ctx);
