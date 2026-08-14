@@ -5,8 +5,8 @@
 // 注册机制：keymapCtx（KeymapManager），add 接受 { key, priority, onRun }；
 // onRun(ctx) 返回 ProseMirror Command，build 时按 priority 降序 chainCommands。
 import type { Ctx } from "@milkdown/kit/ctx";
-import { keymapCtx } from "@milkdown/kit/core";
-import { listItemSchema } from "@milkdown/kit/preset/commonmark";
+import { commandsCtx, keymapCtx } from "@milkdown/kit/core";
+import { listItemSchema, toggleInlineCodeCommand } from "@milkdown/kit/preset/commonmark";
 import { liftListItem, sinkListItem } from "@milkdown/kit/prose/schema-list";
 import type { Command } from "@milkdown/kit/prose/state";
 
@@ -73,4 +73,18 @@ addEditorKeymap({
 addEditorKeymap({
   key: "Mod-]",
   onRun: (ctx) => liftListItem(listItemSchema.type(ctx)),
+});
+
+// Typora 行内代码快捷键 Ctrl+Shift+`（Mod-Shift-`）：
+// commonmark 预设仅绑定 Mod-e（ToggleInlineCode），未提供反引号键位；
+// priority 200 与内置 Indent/Outdent 一致，选中文字后切换行内代码标记。
+// 注意：$command 宏产物是插件而非命令本体，需经 commandsCtx 注册表以 key 调用
+// （与预设 inlineCodeKeymap 的 Mod-e 绑定同一条调用路径）。
+addEditorKeymap({
+  key: "Mod-Shift-`",
+  priority: 200,
+  onRun: (ctx) => {
+    const commands = ctx.get(commandsCtx);
+    return () => commands.call(toggleInlineCodeCommand.key);
+  },
 });

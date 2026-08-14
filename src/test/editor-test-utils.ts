@@ -1,9 +1,10 @@
 // 编辑器行为测试助手：直连 Crepe 实例，模拟输入与按键（@testing-library 官方测试模式的封装）
 import { Crepe, CrepeFeature } from "@milkdown/crepe";
-import { editorViewCtx, remarkStringifyOptionsCtx, type Editor } from "@milkdown/kit/core";
+import { editorViewCtx, type Editor } from "@milkdown/kit/core";
 import { TextSelection } from "@milkdown/kit/prose/state";
 import type { EditorView } from "@milkdown/kit/prose/view";
 import { fireEvent } from "@testing-library/dom";
+import { applyMarkwellStringifyOptions } from "../features/editor/create-editor";
 import { registerEditorInputRules } from "../features/editor/input-rules";
 import { applyEditorKeymaps } from "../features/editor/keymaps";
 
@@ -73,8 +74,8 @@ export async function makeTestEditor(
   crepe.editor.config((ctx) => {
     registerEditorInputRules(ctx);
     applyEditorKeymaps(ctx);
-    // Typora 落盘形态：无序列表序列化为 `- `（Crepe 默认 `*`，与 Typora 文档不兼容）
-    ctx.update(remarkStringifyOptionsCtx, (prev) => ({ ...prev, bullet: "-" as const }));
+    // Typora 落盘形态（列表 `- ` 前缀、GFM 单词内下划线不转义），直接复用产品工厂同源函数
+    applyMarkwellStringifyOptions(ctx);
   });
   await crepe.create();
   liveEditors.push(crepe);

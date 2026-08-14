@@ -17,6 +17,11 @@ describe("keymap 注册表", () => {
     expect(hasEditorKeymap("Mod-]")).toBe(true);
   });
 
+  it("内置 Typora 行内代码键位 Ctrl+Shift+` 已注册（commonmark 预设仅绑 Mod-e）", () => {
+    expect(hasEditorKeymap("Mod-Shift-`")).toBe(true);
+    expect(listEditorKeymaps().find((e) => e.key === "Mod-Shift-`")?.priority).toBe(200);
+  });
+
   it("默认优先级为 200（压制表格内置 100 与 baseKeymap 50）", () => {
     const entry = listEditorKeymaps().find((e) => e.key === "Mod-[");
     expect(entry?.priority).toBe(200);

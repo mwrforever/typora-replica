@@ -1,10 +1,89 @@
 // Crepe 工厂：统一组装 featureConfigs 与 keymap 注册注入点（10 模块扩展入口）
 import { Crepe, type CrepeConfig } from "@milkdown/crepe";
+import type { Ctx } from "@milkdown/kit/ctx";
 import { remarkStringifyOptionsCtx } from "@milkdown/kit/core";
+import type { Handlers } from "mdast-util-to-markdown";
+import type { Options } from "remark-stringify";
 // mhchem 副作用导入：KaTeX 化学式扩展（E7），全应用只需一次
 import "katex/contrib/mhchem";
 import { registerEditorInputRules } from "./input-rules";
 import { applyEditorKeymaps } from "./keymaps";
+
+/** CommonMark Unicode 标点判断（`_` 本身属 Pc 类别，同样命中） */
+const UNICODE_PUNCT_RE = /^\p{P}$/u;
+/** CommonMark 空白判断 */
+const UNICODE_WS_RE = /^\s$/u;
+
+const isUnicodePunct = (ch: string | undefined): boolean =>
+  ch !== undefined && UNICODE_PUNCT_RE.test(ch);
+const isUnicodeWhitespace = (ch: string | undefined): boolean =>
+  ch !== undefined && UNICODE_WS_RE.test(ch);
+
+/** 单词内下划线的临时占位（私有区字符，safe() 的转义表不会命中） */
+const UNDERSCORE_SENTINEL = "\uE000";
+
+/**
+ * Typora 式 text 序列化处理器：GFM 单词内下划线不转义
+ *
+ * mdast-util-to-markdown 默认对 phrasing 中所有 `_` 一律反斜杠转义
+ * （wow_great_stuff → wow\_great\_stuff），而 CommonMark/GFM 规定单词内下划线
+ * 不构成强调（Typora 落盘亦不转义）。本处理器仅在 `_` 可能充当强调开/闭标记
+ * （满足左/右 flanking 条件）时保留默认转义；可证明惰性的单词内下划线以私有区
+ * 字符暂代、safe() 处理后还原，其余行为与内置 text 处理器一致。
+ */
+const gfmUnderscoreTextHandler: Handlers["text"] = (node, _, state, info) => {
+  const value = node.value;
+  // 与内置处理器一致：无转义需要的纯尾随空格文本直接返回，保留尾部空格
+  if (/^[^*_\\]*\s+$/.test(value)) return value;
+
+  // 逐字符扫描：仅对可能形成强调的 `_` 保留默认转义，惰性下划线以哨兵暂代
+  let protectedValue = "";
+  const chars = Array.from<string>(value);
+  for (let i = 0; i < chars.length; i++) {
+    if (chars[i] !== "_") {
+      protectedValue += chars[i];
+      continue;
+    }
+    // 节点边缘借用序列化上下文（containerPhrasing 传入）还原相邻字符；
+    // 上下文缺省按 safe() 的 `|| ""` 语义视为行首/行尾
+    const prevChar: string | undefined =
+      i > 0 ? chars[i - 1] : info.before ? info.before.slice(-1) : undefined;
+    const nextChar: string | undefined =
+      i < chars.length - 1 ? chars[i + 1] : info.after ? info.after.charAt(0) : undefined;
+    // 左 flanking：可开启强调（前为行首/空白/标点，后为非空白）
+    const canOpen =
+      (prevChar === undefined || isUnicodeWhitespace(prevChar) || isUnicodePunct(prevChar)) &&
+      nextChar !== undefined &&
+      !isUnicodeWhitespace(nextChar);
+    // 右 flanking：可闭合强调（前为非空白，后为行尾/空白/标点）
+    const canClose =
+      prevChar !== undefined &&
+      !isUnicodeWhitespace(prevChar) &&
+      (nextChar === undefined || isUnicodeWhitespace(nextChar) || isUnicodePunct(nextChar));
+    protectedValue += canOpen || canClose ? "_" : UNDERSCORE_SENTINEL;
+  }
+  const out = state.safe(protectedValue, { ...info, encode: [] });
+  return out.split(UNDERSCORE_SENTINEL).join("_");
+};
+
+/** Typora 式序列化 handlers 增量（覆盖内置 text 处理器） */
+export const markwellRemarkHandlers: NonNullable<Required<Options>["handlers"]> = {
+  text: gfmUnderscoreTextHandler,
+};
+
+/**
+ * 注入 Typora 式序列化选项（产品工厂与测试助手同源调用，避免两处配置漂移）
+ * @param ctx milkdown 配置上下文（create() 前 config 阶段调用）
+ */
+export function applyMarkwellStringifyOptions(ctx: Ctx): void {
+  ctx.update(remarkStringifyOptionsCtx, (prev) => ({
+    ...prev,
+    // Typora 落盘形态：无序列表序列化为 `- `（Crepe 默认 `*`，与 Typora 文档不兼容）
+    bullet: "-" as const,
+    // 覆盖内置 text 处理器：GFM 单词内下划线不转义（Typora 落盘形态）
+    handlers: { ...prev.handlers, ...markwellRemarkHandlers },
+  }));
+}
 
 /** 编辑器工厂可选配置 */
 export interface MarkwellEditorOptions {
@@ -41,8 +120,8 @@ export function createMarkwellEditor(
     registerEditorInputRules(ctx);
     // Typora 式 keymap 注入（Ctrl+[ 缩进 / Ctrl+] 反向配对，10 设置快捷键模块扩展入口）
     applyEditorKeymaps(ctx);
-    // Typora 落盘形态：无序列表序列化为 `- `（Crepe 默认 `*`，与 Typora 文档不兼容）
-    ctx.update(remarkStringifyOptionsCtx, (prev) => ({ ...prev, bullet: "-" as const }));
+    // Typora 式落盘序列化选项（列表 `- ` 前缀、GFM 单词内下划线不转义）
+    applyMarkwellStringifyOptions(ctx);
   });
   return crepe;
 }
