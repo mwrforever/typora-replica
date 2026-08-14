@@ -73,6 +73,7 @@ export function detachEditorEvents(): void {
 /** 编辑器实例生命周期内的事件桥入口（editor-manager 调用） */
 export function setupEditorEvents(crepe: Crepe): void {
   // 01 阶段无固定消费者，仅暴露挂载入口；02/05/11 接入后在此订阅
+  // TODO(02-文档管理): markdownUpdated 消费者（自动保存）接入点，计划于 02 模块接入
   void crepe;
 }
 

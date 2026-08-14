@@ -29,6 +29,15 @@ describe("revealRange 定位", () => {
     spy.mockRestore();
   });
 
+  it("选区起点落在文本节点边界（块起点+1）时高亮父元素不崩溃", async () => {
+    const te = await makeTestEditor("一二三四五六七八九十");
+    // nodeDOM(1) 返回 Text 节点（无 classList），实现必须回退到父元素，否则 classList.add 抛 TypeError
+    expect(() => revealRange(te.editor, 1, 4)).not.toThrow();
+    // 高亮类应落在文本节点的父元素（段落）上
+    const highlighted = te.view.dom.querySelector(".markwell-reveal-highlight");
+    expect(highlighted?.tagName).toBe("P");
+  });
+
   it("空文档（选区落在块节点边界）定位不崩溃", async () => {
     const te = await makeTestEditor();
     expect(() => revealRange(te.editor, 0, 0)).not.toThrow();

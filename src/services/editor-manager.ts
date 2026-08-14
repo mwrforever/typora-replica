@@ -24,6 +24,10 @@ class EditorManager {
   private crepe: Crepe | undefined;
   /** 当前编辑器底层实例 */
   private editor: Editor | undefined;
+  /** 挂载根元素（destroy 时自行移除，@milkdown/core 的 view-clear 不负责） */
+  private root: HTMLElement | undefined;
+  /** 上一次销毁的异步流程（create 入口串行等待，避免 teardown 与初始化重叠） */
+  private pendingDestroy: Promise<unknown> | undefined;
   /** 文档级转换器（默认透传） */
   private transformers: DocumentTransformers = {};
 
@@ -33,10 +37,15 @@ class EditorManager {
    */
   async create(doc: string): Promise<void> {
     this.destroy();
+    // 等待旧实例异步销毁完成，避免 teardown 与本次初始化重叠（Editor.destroy 为异步流程）
+    if (this.pendingDestroy) {
+      await this.pendingDestroy;
+      this.pendingDestroy = undefined;
+    }
     const body = (this.transformers.parse ?? ((d: string) => d))(doc);
     const root = document.createElement("div");
     document.body.appendChild(root);
-    // 挂载根元素保留引用语义：Crepe 内部持有该元素，销毁时一并移除
+    this.root = root;
     this.crepe = createMarkwellEditor(root, body);
     this.editor = this.crepe.editor;
     await this.crepe.create();
@@ -47,11 +56,15 @@ class EditorManager {
   destroy(): void {
     if (this.crepe) {
       destroyEditorEvents();
-      // Crepe 销毁为异步流程（含插件清理），此处只发起不等待：同步清空引用即可保证状态一致
-      this.crepe.destroy();
+      // Editor.destroy 为异步流程（含插件清理）：登记 promise 供下次 create 串行等待，
+      // 同步清空引用维持「destroy 后即为空态」的对外契约
+      this.pendingDestroy = Promise.resolve(this.crepe.destroy());
       this.crepe = undefined;
       this.editor = undefined;
     }
+    // 移除挂载根元素：@milkdown/core 的 view-clear 只清理编辑器内部容器，root div 须自行移除
+    this.root?.remove();
+    this.root = undefined;
   }
 
   /** 获取 Crepe 实例（未创建返回 undefined） */

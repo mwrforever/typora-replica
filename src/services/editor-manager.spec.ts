@@ -26,6 +26,27 @@ describe("编辑器实例管理", () => {
     expect(editorManager.getMarkdown()).toBe("新内容");
   });
 
+  it("destroy 后挂载根元素从文档移除", async () => {
+    const childIndex = document.body.childNodes.length;
+    await editorManager.create("根元素");
+    // create 向 body 追加的第一个节点即挂载根元素（Crepe 内部结构均在其子树内）
+    const root = document.body.childNodes[childIndex] as HTMLElement;
+    expect(root).toBeInstanceOf(HTMLDivElement);
+    editorManager.destroy();
+    // 挂载根 div 必须由 destroy 自行移除，不得残留 document.body
+    expect(root.isConnected).toBe(false);
+    expect(document.body.contains(root)).toBe(false);
+  });
+
+  it("连续 create 两次无重叠（先完成旧实例销毁再创建新实例）", async () => {
+    await editorManager.create("第一份");
+    const afterFirst = document.body.querySelectorAll("div").length;
+    await editorManager.create("第二份");
+    // 第二次 create 应先完成旧实例销毁：div 数量与单实例时持平（无残留、无重叠挂载）
+    expect(document.body.querySelectorAll("div").length).toBe(afterFirst);
+    expect(editorManager.getMarkdown()).toBe("第二份");
+  });
+
   it("setReadonly 切换编辑器只读状态", async () => {
     await editorManager.create("只读测试");
     editorManager.setReadonly(true);

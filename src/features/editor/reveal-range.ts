@@ -29,9 +29,11 @@ export function revealRange(editor: Editor, from: number, to: number): void {
         .scrollIntoView(),
     );
 
-    // 临时高亮：nodeDOM 在块边界返回元素、文本中间返回 null，直接对元素加类并定时移除
+    // 临时高亮：nodeDOM 在块边界返回元素、文本节点边界可能返回 Text 节点（无 classList），
+    // 仅对 Element 操作 classList；Text 节点回退到其父元素，定时移除
     const { from: selFrom } = view.state.selection;
-    const dom = view.nodeDOM(selFrom) as HTMLElement | null;
+    const node = view.nodeDOM(selFrom);
+    const dom = (node?.nodeType === 1 ? node : (node?.parentElement ?? null)) as HTMLElement | null;
     if (dom) {
       dom.classList.add(HIGHLIGHT_CLASS);
       setTimeout(() => dom.classList.remove(HIGHLIGHT_CLASS), HIGHLIGHT_DURATION);
