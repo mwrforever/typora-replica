@@ -121,8 +121,19 @@ export const lowerLanguageCodeBlockSchema = codeBlockSchema.extendSchema((prev) 
         runner: (state, node) => {
           // language 属性小写后落盘。attrs.language 恒为字符串（ProseMirror computeAttrs
           // 对缺省值填充 schema 默认值 ""，parseDOM 的 undefined 同样被归一），无需空值兜底
+          const language = String(node.attrs.language).toLowerCase();
+          // latex 数学块：保持 $$...$$ 落盘形态（复刻 latex feature 的 blockLatexSchema
+          // runner 语义）。注意：extendSchema 的 prev 恒为原始 schema 而非 latex 扩展
+          // （实测委托 baseSchema.runner 输出 ```LaTeX 围栏而非 $$）——本扩展与 latex 扩展
+          // 同 id（code_block）经 upsertById 原地替换，本扩展最后注册成为生效 schema，
+          // latex 的 toMarkdown 分支必须在此直接实现，否则数学块重载后解析回普通代码块
+          if (language === "latex") {
+            state.addNode("math", void 0, node.content.firstChild?.text || "");
+            return;
+          }
+          // 其余语言：复刻 base 默认 addNode 行为 + language 小写归一化（Typora 平价）
           state.addNode("code", void 0, node.content.firstChild?.text || "", {
-            lang: String(node.attrs.language).toLowerCase(),
+            lang: language,
           });
         },
       },

@@ -164,3 +164,25 @@ describe("markwellRemarkHandlers.text（GFM 单词内下划线不转义）", () 
     expect(out).toBe("foo&#x20;");
   });
 });
+
+describe("lowerLanguageCodeBlockSchema（E6-4 落盘小写归一化 + latex 扩展委托链接）", () => {
+  it("$$ 数学块落盘保持 $$...$$ 形态（委托 prev 链中的 latex 扩展，不得产出 ```latex）", async () => {
+    const te = await makeTestEditor("$$\nE=mc^2\n$$");
+    const md = te.getMarkdown();
+    // latex feature 的落盘格式是 $$ 围栏；若被小写归一化扩展覆盖，会以 ```latex
+    // 落盘，重载后解析回普通代码块，数学块格式被静默摧毁
+    expect(md).not.toContain("```latex");
+    expect(md).toBe("$$\nE=mc^2\n$$");
+  });
+
+  it("空数学块（无文本子节点）落盘保持 $$ 围栏（math 输出空值分支）", async () => {
+    const te = await makeTestEditor("$$\n$$");
+    // 空 math 值不产生文本子节点，序列化走 firstChild 缺省分支，仍须 $$ 形态
+    expect(te.getMarkdown()).toBe("$$\n$$");
+  });
+
+  it("大写语言名 ```JS 落盘归一化为 ```js（小写归一化仍生效）", async () => {
+    const te = await makeTestEditor("```JS\nconst a = 1;\n```");
+    expect(te.getMarkdown()).toBe("```js\nconst a = 1;\n```");
+  });
+});
