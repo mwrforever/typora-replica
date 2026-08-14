@@ -1,10 +1,11 @@
-// 自定义语法规则单测：行尾两空格硬换行命令分支全覆盖（核心语法转换 100% 覆盖）
+// 自定义语法规则单测：行尾两空格硬换行命令分支全覆盖 + 嵌套引用输入规则正则边界
+// （核心语法转换 100% 覆盖）
 import { describe, expect, it, vi } from "vitest";
 import type { Transaction } from "@milkdown/kit/prose/state";
 import { makeTestEditor } from "../../test/editor-test-utils";
-import { trailingSpacesHardBreakCommand } from "./input-rules";
+import { NESTED_BLOCKQUOTE_INPUT_PATTERN, trailingSpacesHardBreakCommand } from "./input-rules";
 
-/** 在空文档光标处字面插入带行尾两空格的文本（绕过 markdown 解析的尾空格吞并） */
+/** 在空文档光标处字面插入带行尾两空格的文本（经事务直插保证两空格字面落位，不经过输入规则链） */
 function typeTrailingSpaces(te: Awaited<ReturnType<typeof makeTestEditor>>): void {
   te.view.dispatch(te.view.state.tr.insertText("行一  ", te.view.state.selection.from));
 }
@@ -66,5 +67,31 @@ describe("trailingSpacesHardBreakCommand 行尾两空格硬换行", () => {
     te.setSelection(0, 0); // 深度 0 光标：父节点为 doc 而非文本块
     const ok = trailingSpacesHardBreakCommand(te.view.state, () => {});
     expect(ok).toBe(false);
+  });
+});
+
+describe("NESTED_BLOCKQUOTE_INPUT_PATTERN 嵌套引用输入规则正则边界", () => {
+  it("命中：行首 `>> ` 触发嵌套引用输入规则", () => {
+    expect(NESTED_BLOCKQUOTE_INPUT_PATTERN.exec(">> ")?.[0]).toBe(">> ");
+  });
+
+  it("命中：行首空白后的 `>> ` 同样触发（正则 ^\\s* 前缀）", () => {
+    expect(NESTED_BLOCKQUOTE_INPUT_PATTERN.exec("  >> ")?.[0]).toBe("  >> ");
+  });
+
+  it("未命中：单层 `> ` 由内置引用规则处理（两规则互斥，不冲突）", () => {
+    expect(NESTED_BLOCKQUOTE_INPUT_PATTERN.exec("> ")).toBeNull();
+  });
+
+  it("未命中：`>>` 无尾随空格（空格是触发字符）", () => {
+    expect(NESTED_BLOCKQUOTE_INPUT_PATTERN.exec(">>")).toBeNull();
+  });
+
+  it("未命中：`>>> ` 三连引用（正则要求恰好两个 `>`，多级形态不在 AC 范围）", () => {
+    expect(NESTED_BLOCKQUOTE_INPUT_PATTERN.exec(">>> ")).toBeNull();
+  });
+
+  it("未命中：普通文本", () => {
+    expect(NESTED_BLOCKQUOTE_INPUT_PATTERN.exec("普通文本")).toBeNull();
   });
 });

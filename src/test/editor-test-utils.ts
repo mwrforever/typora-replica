@@ -1,7 +1,6 @@
 // 编辑器行为测试助手：直连 Crepe 实例，模拟输入与按键（@testing-library 官方测试模式的封装）
 import { Crepe, CrepeFeature } from "@milkdown/crepe";
 import { editorViewCtx, type Editor } from "@milkdown/kit/core";
-import { insert } from "@milkdown/kit/utils";
 import { TextSelection } from "@milkdown/kit/prose/state";
 import type { EditorView } from "@milkdown/kit/prose/view";
 import { fireEvent } from "@testing-library/dom";
@@ -87,7 +86,13 @@ export async function makeTestEditor(
       crepe.getMarkdown().replace(/\n$/, ""),
     insertText(text: string) {
       view.focus();
-      editor.action(insert(text));
+      // 逐字模拟实时击键：每字符先走 handleTextInput 输入规则链（与真实键入路径一致，
+      // 输入规则插件借此触发）；无规则命中时按 ProseMirror 真实输入路径直插文本
+      for (const ch of text) {
+        const { from, to } = view.state.selection;
+        const handled = view.someProp("handleTextInput", (f) => f(view, from, to, ch));
+        if (!handled) view.dispatch(view.state.tr.insertText(ch));
+      }
     },
     press(key: string, mods: KeyMods = {}) {
       // 通过 ProseMirror 的 DOM keydown 监听链触发 keymap

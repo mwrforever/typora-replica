@@ -33,7 +33,7 @@ describe("E1 段落与换行", () => {
 
   it("AC-E1-3 行尾两个空格后换行落盘为兼容性硬换行", async () => {
     const te = await makeTestEditor();
-    // 字面键入行尾两个空格（insertText 走 markdown 解析会吞掉行尾空格，改用事务直插文本）
+    // 字面键入行尾两个空格（经事务直插保证两空格字面落位，不经过 insertText 的输入规则链逐字模拟）
     te.view.dispatch(te.view.state.tr.insertText("行一  ", te.view.state.selection.from));
     te.press("Enter");
 

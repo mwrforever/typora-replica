@@ -2,12 +2,13 @@
 //
 // Crepe 内置规则与 Typora 行为不一致时的补充层。当前收录：
 // - E1-3 行尾两空格 + Enter → 硬换行（hardBreak 节点）转换（按键规则，经 keymapCtx 注册）
+// - E3-2 引用块内行首实时输入 `>> ` → 嵌套引用块（输入规则，经 inputRulesCtx 注册）
 // 后续扩展（Task 13）：E8 Typora 式建表、E19 Pandoc 行内数学（经 inputRulesCtx 注册）。
 //
 // 注入方式：Crepe create() 前通过 editor.config 调用 registerEditorInputRules(ctx)，
 // 产品侧注入点为 create-editor.ts 工厂，测试侧为 makeTestEditor 助手（二者保持同源）。
-import type { Ctx } from "@milkdown/kit/ctx";
-import { keymapCtx } from "@milkdown/kit/core";
+import { inputRulesCtx, keymapCtx, type Ctx } from "@milkdown/kit/core";
+import { InputRule, wrappingInputRule } from "@milkdown/kit/prose/inputrules";
 import { TextSelection, type EditorState, type Transaction } from "@milkdown/kit/prose/state";
 
 /** ProseMirror Command 派发函数类型（允许 dry-run 空派发） */
@@ -45,6 +46,41 @@ export function trailingSpacesHardBreakCommand(state: EditorState, dispatch?: Di
 }
 
 /**
+ * 嵌套引用输入规则触发正则：行首空白后恰好两个 `>` 加一个空格（`>> `）
+ *
+ * 与内置引用规则（/^\s*>\s$/）正则互斥——内置规则对 `>> ` 不命中、本规则对 `> ` 不命中，
+ * 两条规则共存无冲突；刻意不含 `>>> ` 等多级形态（AC-E3-2 只要求两级嵌套，
+ * 需要更深的嵌套可连续多次触发 `>> `）。
+ */
+export const NESTED_BLOCKQUOTE_INPUT_PATTERN = /^\s*>>\s$/;
+
+/**
+ * 构造嵌套引用输入规则（E3-2：引用块内行首实时输入 `>> ` 生成嵌套引用块）
+ *
+ * 动作与内置 `wrapInBlockquoteCommand` 语义一致（blockRange + findWrapping 包裹当前块，
+ * 已核实该导出名存在于 @milkdown/kit/preset/commonmark）：当前段落已在引用块内时，
+ * 包裹即在原有层级上嵌套一级；在顶层触发时得到单级引用（可接受）。
+ * 委托 prosemirror 的 wrappingInputRule 标准模板：删除触发文本 `>> ` → 包裹当前块 → 相邻同型合并。
+ *
+ * 节点类型不在注册期经 blockquoteSchema.type(ctx) 解析：registerEditorInputRules 运行于
+ * editor.config 回调（ConfigReady 之前，SchemaReady 未就绪），提前解析实测抛
+ * 「Cannot read properties of undefined (reading 'blockquote')」；改为 handler 命中时
+ * 从 state.schema 取节点类型，时机与内置 $inputRule 插件内部 await SchemaReady 等价。
+ *
+ * @returns 已解析的 ProseMirror InputRule（含 match 正则与 handler，不依赖 ctx）
+ */
+export function createNestedBlockquoteInputRule(): InputRule {
+  return new InputRule(NESTED_BLOCKQUOTE_INPUT_PATTERN, (state, match, start, end) =>
+    wrappingInputRule(NESTED_BLOCKQUOTE_INPUT_PATTERN, state.schema.nodes.blockquote).handler(
+      state,
+      match,
+      start,
+      end,
+    ),
+  );
+}
+
+/**
  * 将模块级自定义规则写入编辑器上下文（create() 前调用一次）
  * @param ctx milkdown 编辑器配置上下文（由 editor.config 回调注入）
  */
@@ -55,4 +91,7 @@ export function registerEditorInputRules(ctx: Ctx): void {
     priority: 200,
     onRun: () => trailingSpacesHardBreakCommand,
   });
+  // E3-2：嵌套引用输入规则（`>> ` 触发）追加进输入规则列表。
+  // 输入规则列表无 priority 概念，按列表顺序尝试；本规则与内置 `> ` 规则正则互斥，顺序不影响命中
+  ctx.update(inputRulesCtx, (rules) => [...rules, createNestedBlockquoteInputRule()]);
 }
