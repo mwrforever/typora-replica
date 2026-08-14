@@ -95,8 +95,11 @@ export async function makeTestEditor(
       // 输入规则插件借此触发）；无规则命中时按 ProseMirror 真实输入路径直插文本
       for (const ch of text) {
         const { from, to } = view.state.selection;
-        const handled = view.someProp("handleTextInput", (f) => f(view, from, to, ch));
-        if (!handled) view.dispatch(view.state.tr.insertText(ch));
+        // handleTextInput 完整签名为 (view, from, to, text, deflt)，
+        // 第 5 参 deflt 为默认插入动作（无规则命中时执行，等价于 ProseMirror 内部直插）
+        const deflt = () => view.state.tr.insertText(ch);
+        const handled = view.someProp("handleTextInput", (f) => f(view, from, to, ch, deflt));
+        if (!handled) view.dispatch(deflt());
       }
     },
     press(key: string, mods: KeyMods = {}) {

@@ -95,3 +95,37 @@ describe("NESTED_BLOCKQUOTE_INPUT_PATTERN 嵌套引用输入规则正则边界",
     expect(NESTED_BLOCKQUOTE_INPUT_PATTERN.exec("普通文本")).toBeNull();
   });
 });
+
+describe("createNestedBlockquoteInputRule 包裹与合并行为", () => {
+  it("顶层段落行首 `>> ` 包裹为单级引用（前置节点不存在，走 before 为空分支）", async () => {
+    const te = await makeTestEditor();
+    te.insertText(">>");
+    te.insertText(" "); // 空格触发规则：包裹当前段落
+    te.insertText("顶层引用");
+
+    // 首节点为引用块且内容正确，无嵌套（单级）
+    expect(te.view.state.doc.child(0).type.name).toBe("blockquote");
+    expect(te.view.state.doc.child(0).textContent).toBe("顶层引用");
+    expect(te.getMarkdown()).toContain("> 顶层引用");
+  });
+
+  it("紧邻引用块后的段落触发 `>> ` 与前一引用块合并（join 分支）", async () => {
+    const te = await makeTestEditor();
+    te.insertText("> 已有引用");
+    te.press("Enter"); // 引用内空行
+    te.press("Enter"); // 退出引用块，得到普通段落
+    te.insertText(">>");
+    te.insertText(" "); // 空格触发规则：包裹当前段落并与前置引用块合并
+    te.insertText("并入行");
+
+    // 合并结果：整个文档仅一个引用块，两段文本同处其中
+    const blockquotes: string[] = [];
+    te.view.state.doc.descendants((n) => {
+      if (n.type.name === "blockquote") blockquotes.push(n.textContent);
+    });
+    expect(blockquotes).toHaveLength(1);
+    expect(blockquotes[0]).toContain("已有引用");
+    expect(blockquotes[0]).toContain("并入行");
+    expect(te.getMarkdown()).toContain("> 并入行");
+  });
+});

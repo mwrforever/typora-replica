@@ -7,9 +7,11 @@
 //
 // 注入方式：Crepe create() 前通过 editor.config 调用 registerEditorInputRules(ctx)，
 // 产品侧注入点为 create-editor.ts 工厂，测试侧为 makeTestEditor 助手（二者保持同源）。
-import { inputRulesCtx, keymapCtx, type Ctx } from "@milkdown/kit/core";
-import { InputRule, wrappingInputRule } from "@milkdown/kit/prose/inputrules";
+import type { Ctx } from "@milkdown/kit/ctx";
+import { inputRulesCtx, keymapCtx } from "@milkdown/kit/core";
+import { InputRule } from "@milkdown/kit/prose/inputrules";
 import { TextSelection, type EditorState, type Transaction } from "@milkdown/kit/prose/state";
+import { findWrapping } from "@milkdown/kit/prose/transform";
 
 /** ProseMirror Command 派发函数类型（允许 dry-run 空派发） */
 type Dispatch = (tr: Transaction) => void;
@@ -57,10 +59,10 @@ export const NESTED_BLOCKQUOTE_INPUT_PATTERN = /^\s*>>\s$/;
 /**
  * 构造嵌套引用输入规则（E3-2：引用块内行首实时输入 `>> ` 生成嵌套引用块）
  *
- * 动作与内置 `wrapInBlockquoteCommand` 语义一致（blockRange + findWrapping 包裹当前块，
- * 已核实该导出名存在于 @milkdown/kit/preset/commonmark）：当前段落已在引用块内时，
- * 包裹即在原有层级上嵌套一级；在顶层触发时得到单级引用（可接受）。
- * 委托 prosemirror 的 wrappingInputRule 标准模板：删除触发文本 `>> ` → 包裹当前块 → 相邻同型合并。
+ * 动作与内置 `wrapInBlockquoteCommand` 语义一致：删除触发文本 `>> ` 后，
+ * 用 findWrapping 计算包裹方案并 wrap 当前块，再合并相邻同型引用块（等价于
+ * prosemirror wrappingInputRule 的 findWrapping + wrap + join 三段流程）。
+ * 当前段落已在引用块内时，包裹即在原有层级上嵌套一级；在顶层触发时得到单级引用（可接受）。
  *
  * 节点类型不在注册期经 blockquoteSchema.type(ctx) 解析：registerEditorInputRules 运行于
  * editor.config 回调（ConfigReady 之前，SchemaReady 未就绪），提前解析实测抛
@@ -70,14 +72,24 @@ export const NESTED_BLOCKQUOTE_INPUT_PATTERN = /^\s*>>\s$/;
  * @returns 已解析的 ProseMirror InputRule（含 match 正则与 handler，不依赖 ctx）
  */
 export function createNestedBlockquoteInputRule(): InputRule {
-  return new InputRule(NESTED_BLOCKQUOTE_INPUT_PATTERN, (state, match, start, end) =>
-    wrappingInputRule(NESTED_BLOCKQUOTE_INPUT_PATTERN, state.schema.nodes.blockquote).handler(
-      state,
-      match,
-      start,
-      end,
-    ),
-  );
+  return new InputRule(NESTED_BLOCKQUOTE_INPUT_PATTERN, (state, _match, start, end) => {
+    // 先删除触发文本 `>> `，包裹目标为删除后 start 位置所在的块
+    const tr = state.tr.delete(start, end);
+    const $start = tr.doc.resolve(start);
+    // 输入规则触发时光标必在文本块内（空文档也是 doc(paragraph)），blockRange 恒可解析；
+    // blockquote 对任意块都是合法包裹节点，findWrapping 恒非空。
+    // `!` 仅作类型收窄，运行时不可达 null（与 wrappingInputRule 行为等价）
+    const range = $start.blockRange()!;
+    const wrapping = findWrapping(range, state.schema.nodes.blockquote)!;
+    tr.wrap(range, wrapping);
+    // 与紧邻的前置引用块合并（等价 wrappingInputRule 的 join 步骤，避免断开的同级引用）。
+    // 前置节点已是 blockquote 时两者必然可合并，无需 canJoin 再判
+    const before = tr.doc.resolve(start - 1).nodeBefore;
+    if (before && before.type === state.schema.nodes.blockquote) {
+      tr.join(start - 1);
+    }
+    return tr;
+  });
 }
 
 /**
@@ -93,5 +105,5 @@ export function registerEditorInputRules(ctx: Ctx): void {
   });
   // E3-2：嵌套引用输入规则（`>> ` 触发）追加进输入规则列表。
   // 输入规则列表无 priority 概念，按列表顺序尝试；本规则与内置 `> ` 规则正则互斥，顺序不影响命中
-  ctx.update(inputRulesCtx, (rules) => [...rules, createNestedBlockquoteInputRule()]);
+  ctx.update(inputRulesCtx, (rules: InputRule[]) => [...rules, createNestedBlockquoteInputRule()]);
 }
