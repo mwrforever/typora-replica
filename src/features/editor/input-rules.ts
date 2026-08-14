@@ -7,7 +7,7 @@
 // - E2-2 行首 `###Header`（无空格）+ Enter → H3 宽松 ATX 标题（输入规则，内置规则要求 `# ` 带空格）
 // - E8-1 整行 `| 表头 | 表头 |` + Enter → Typora 式建表（表头行含输入文本 + 空数据行，
 //   输入规则，经模块级 addEditorInputRule 登记后由 registerEditorInputRules 注入）
-// 后续扩展：E19 Pandoc 行内数学（经 inputRulesCtx 注册）。
+// - E19-1~4 Pandoc 行内数学（三条规则 + 转义保护 + 数字回退，输入规则，前置注册压制内置 `$...$` 规则）
 //
 // 注入方式：Crepe create() 前通过 editor.config 调用 registerEditorInputRules(ctx)，
 // 产品侧注入点为 create-editor.ts 工厂，测试侧为 makeTestEditor 助手（二者保持同源）。
@@ -308,6 +308,128 @@ const typoraTableRule = new InputRule(TYPORA_TABLE_INPUT_PATTERN, (state, match,
 addEditorInputRule(typoraTableRule);
 
 /**
+ * Pandoc 行内数学触发正则：光标前文本以 `$内容$` 结尾（内容非空、不含 $ 与换行）
+ *
+ * 匹配范围刻意放宽（不在正则内联 Pandoc 三条约束）：三条约束需在 handler 内结合
+ * 文档与匹配内容判定（转义保护要回看匹配起点前一字符、闭 $ 后紧跟数字要跨节点回退），
+ * 正则只负责圈定 `$...$` 形态。内置 latex 规则 /(?:\$)([^$]+)(?:\$)$/ 对 `$ x$`、
+ * `$x $`、`$x\$` 均会误转（`[^$]+` 不排除空白/反斜杠），本规则命中后由 handler 决定
+ * 转换或字面消费，返回非 null 即阻止内置规则继续尝试。
+ */
+export const PANDOC_INLINE_MATH_PATTERN = /\$([^$\n]+)\$$/;
+
+/**
+ * Pandoc 行内数学转换 handler（创建 math_inline 节点或字面消费输入）
+ *
+ * Pandoc 三条规则（用户实测校准，见 01 调研第 2 节）：
+ *   1. 开 `$` 后无空格/制表符（内容首字符非空白）
+ *   2. 闭 `$` 前无空格/制表符且前一字符非反斜杠（内容末字符非空白/反斜杠）
+ *   3. 闭 `$` 后不紧跟数字（`$x$2` 保持文本）——闭 `$` 落字时后续字符尚不存在，
+ *      由 createInlineMathDigitRevertRule 在数字落字时回退兑现（见下）
+ * 另含转义保护（AC-E19-4）：开 `$` 前一字符为反斜杠时按字面处理，不进入公式态。
+ *
+ * 字面分支的消费动作 = 仅插入本次键入字符（match[0] 末尾，即闭 $），
+ * 保证输入不丢失、文档保持字面 `$...$` 文本；转换分支将匹配区间整体替换为
+ * math_inline 节点（节点类型与 attrs 字段经实测核对安装源码：节点名 `math_inline`、
+ * 属性 `value`，见 @milkdown/crepe latex feature inline-latex.ts）。
+ *
+ * @param state 编辑器当前状态（命中输入规则时的 ProseMirror State）
+ * @param match 正则命中结果（match[0] 为光标前匹配文本、match[1] 为 $ 间内容）
+ * @param start 匹配区间起点（开 $ 所在文档位置）
+ * @param end 光标位置（匹配区间终点，键入字符尚未落入文档）
+ * @returns 转换事务；无 math_inline 节点类型时返回 null 回落后续规则
+ */
+export function pandocInlineMathHandler(
+  state: EditorState,
+  match: RegExpMatchArray,
+  start: number,
+  end: number,
+): Transaction | null {
+  // 转义保护：开 $ 前一字符为反斜杠 → 字面消费（文档位置 start-1 取单字符，
+  // 段落边界处 textBetween 返回空串，天然不命中转义）
+  const before = state.doc.textBetween(Math.max(0, start - 1), start);
+  // 正则 [^$\n]+ 保证捕获组恒为非空内容，! 仅作类型收窄（运行时不可达 null）
+  const content = match[1]!;
+  if (before === "\\" || /^\s/.test(content) || /[\s\\]$/.test(content)) {
+    // 仅插入本次键入的闭 $，既有 `$...` 文本保持字面，阻止内置规则误转
+    return state.tr.insertText(match[0].slice(end - start), end);
+  }
+  const mathInline = state.schema.nodes["math_inline"];
+  if (!mathInline) return null;
+  // 匹配区间（含开 $ 与内容，不含刚键入的闭 $）整体替换为行内数学节点
+  return state.tr.replaceRangeWith(start, end, mathInline.create({ value: content }));
+}
+
+/**
+ * 构造 Pandoc 行内数学输入规则（E19：`$...$` 渲染 + 三条约束 + 转义保护）
+ *
+ * 必须注册在内置 latex 规则之前（registerEditorInputRules 中前置插入）：
+ * 输入规则列表按序尝试、先命中先消费，本规则命中（含字面消费）即压制内置误转。
+ * 节点类型在 handler 内经 state.schema 取用（注册期 SchemaReady 未就绪，与既有规则同理）。
+ *
+ * @returns 已解析的 ProseMirror InputRule（含 match 正则与 handler，不依赖 ctx）
+ */
+export function createPandocInlineMathRule(): InputRule {
+  return new InputRule(PANDOC_INLINE_MATH_PATTERN, pandocInlineMathHandler);
+}
+
+/**
+ * 行内数学数字回退触发正则：光标前为叶子节点占位符 + 单个数字
+ *
+ * `\ufffc` 是 ProseMirror 输入规则链对叶子节点的占位符（textBetween leafText 参数），
+ * 即「任意叶子节点之后紧跟着键入数字」；是否为 math_inline 节点由 handler 判定，
+ * 其他叶子节点（如脚注引用）后输入数字不受影响。
+ */
+export const INLINE_MATH_DIGIT_REVERT_PATTERN = /\ufffc(\d)$/;
+
+/**
+ * 行内数学数字回退 handler（Pandoc 规则 3：闭 $ 后紧跟数字不成立式）
+ *
+ * 背景：闭 `$` 落字时规则 3 无法判定（后续字符尚未键入），行内数学已按 `$x$` 实时渲染；
+ * 随后键入数字即触发本规则，将 math_inline 节点整体回退为字面 `$内容$` 文本并
+ * 接上键入的数字，最终文档为纯文本 `$x$2`（Typora/Pandoc 行为：不渲染公式）。
+ *
+ * 定位方式不依赖输入规则链传入的 start 坐标（叶子占位符使 start 落入节点内部、
+ * 与实际节点起点存在偏移），改由光标 end 前向取 nodeBefore 精确定位前置叶子节点。
+ *
+ * @param state 编辑器当前状态（命中输入规则时的 ProseMirror State）
+ * @param match 正则命中结果（match[1] 为紧随叶子节点键入的数字）
+ * @param start 输入规则链计算的匹配起点（叶内坐标，仅占位不使用）
+ * @param end 光标位置（键入数字尚未落入文档）
+ * @returns 回退事务；前置节点非 math_inline 时返回 null 回落后续规则
+ */
+export function inlineMathDigitRevertHandler(
+  state: EditorState,
+  match: RegExpMatchArray,
+  _start: number,
+  end: number,
+): Transaction | null {
+  // 光标前紧邻节点必须恰为行内数学节点：文本节点、其他叶子节点（脚注引用等）均不干预
+  const nodeBefore = state.doc.resolve(end).nodeBefore;
+  if (!nodeBefore || nodeBefore.type.name !== "math_inline") return null;
+  // schema 声明 value 默认空串，实际恒为字符串内容
+  const value = String(nodeBefore.attrs.value);
+  // 数学节点与键入数字整体回退为字面文本（`$x$` + `2` → `$x$2`）
+  return state.tr.replaceRangeWith(
+    end - nodeBefore.nodeSize,
+    end,
+    state.schema.text(`$${value}$${match[1]}`),
+  );
+}
+
+/**
+ * 构造行内数学数字回退输入规则（E19：`$x$2` 闭 $ 后紧跟数字保持文本）
+ *
+ * 与 createPandocInlineMathRule 同处前置注册区：二者正则互斥（$...$ 文本 vs 叶子占位符），
+ * 顺序无冲突；回退规则必须同样排在内置规则之前，先于任何可能命中 `\ufffc\d` 的规则。
+ *
+ * @returns 已解析的 ProseMirror InputRule（含 match 正则与 handler，不依赖 ctx）
+ */
+export function createInlineMathDigitRevertRule(): InputRule {
+  return new InputRule(INLINE_MATH_DIGIT_REVERT_PATTERN, inlineMathDigitRevertHandler);
+}
+
+/**
  * 将模块级自定义规则写入编辑器上下文（create() 前调用一次）
  * @param ctx milkdown 编辑器配置上下文（由 editor.config 回调注入）
  */
@@ -323,11 +445,15 @@ export function registerEditorInputRules(ctx: Ctx): void {
   //   其正则与前置块校验限定场景，未命中即返回 null 回落内置，空行 `---` 生成 hr 不受影响
   // - E2-2 宽松 ATX 规则仅在 Enter 时命中（正则锚定行尾换行），与内置严格规则
   //   （空格落字即消费）触发时机互斥，位置不影响正确性
+  // - E19 Pandoc 行内数学与数字回退规则同样前置：内置 latex 规则 /(?:\$)([^$]+)(?:\$)$/
+  //   对 `$ x$`/`$x $`/`$x\$` 误转，本规则命中（转换或字面消费）即压制内置误转
   // - E3-2 嵌套引用规则与内置 `> ` 规则正则互斥，追加在末尾顺序不影响命中
   // - E8-1 Typora 建表规则同样仅在 Enter 时命中，与内置 `|2x2| ` 规则正则互斥，末尾追加
   ctx.update(inputRulesCtx, (rules: InputRule[]) => [
     createSetextH2InputRule(),
     createLenientAtxHeadingInputRule(),
+    createPandocInlineMathRule(),
+    createInlineMathDigitRevertRule(),
     ...rules,
     createNestedBlockquoteInputRule(),
     ...moduleInputRules,

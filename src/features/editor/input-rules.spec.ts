@@ -1,15 +1,21 @@
 // 自定义语法规则单测：行尾两空格硬换行命令分支全覆盖 + 嵌套引用输入规则正则边界 + setext 二级标题规则
 // + 宽松 ATX 标题规则分支全覆盖 + Typora 建表规则（注册表 + 正则边界 + 转换/回落分支）
+// + Pandoc 行内数学（正则边界 + 转换/字面回落/数字回退分支 + 无节点类型回落）
 // （核心语法转换 100% 覆盖）
 import { describe, expect, it, vi } from "vitest";
-import type { Transaction } from "@milkdown/kit/prose/state";
+import { Schema } from "@milkdown/kit/prose/model";
+import { EditorState, TextSelection, type Transaction } from "@milkdown/kit/prose/state";
 import { makeTestEditor } from "../../test/editor-test-utils";
 import {
+  INLINE_MATH_DIGIT_REVERT_PATTERN,
   LENIENT_ATX_HEADING_INPUT_PATTERN,
   NESTED_BLOCKQUOTE_INPUT_PATTERN,
+  PANDOC_INLINE_MATH_PATTERN,
   SETEXT_H2_INPUT_PATTERN,
   TYPORA_TABLE_INPUT_PATTERN,
+  inlineMathDigitRevertHandler,
   listEditorInputRules,
+  pandocInlineMathHandler,
   trailingSpacesHardBreakCommand,
 } from "./input-rules";
 
@@ -311,5 +317,158 @@ describe("Typora 建表输入规则转换与回落分支", () => {
     // 判别点：未建表且 Enter 回落内置拆段（长段落拆为两块）
     expect(te.view.dom.querySelector("table")).toBeNull();
     expect(te.view.state.doc.childCount).toBe(2);
+  });
+});
+
+/** 统计文档中 math_inline 节点数量（断言转换/回退结果的判别点） */
+function countMathInlineNodes(te: Awaited<ReturnType<typeof makeTestEditor>>): number {
+  let count = 0;
+  te.view.state.doc.descendants((n) => {
+    if (n.type.name === "math_inline") count++;
+  });
+  return count;
+}
+
+/**
+ * 最小 schema（doc/paragraph/text）：构造不含 math_inline 节点类型的裸状态，
+ * 供 handler 分支单测直调（真实编辑器 schema 恒含 math_inline，无节点类型分支不可达）
+ */
+const tinySchema = new Schema({
+  nodes: {
+    doc: { content: "block+" },
+    paragraph: { content: "inline*", group: "block" },
+    text: { group: "inline" },
+  },
+});
+
+describe("PANDOC_INLINE_MATH_PATTERN 行内数学触发正则边界", () => {
+  it("命中：`$x$` 捕获内容 x", () => {
+    expect(PANDOC_INLINE_MATH_PATTERN.exec("$x$")?.[1]).toBe("x");
+  });
+
+  it("命中：`$x^2$` 捕获内容 x^2（内容含 ^ 与数字）", () => {
+    expect(PANDOC_INLINE_MATH_PATTERN.exec("$x^2$")?.[1]).toBe("x^2");
+  });
+
+  it("命中：`$a b$` 内容含中间空格（Pandoc 仅约束首尾字符）", () => {
+    expect(PANDOC_INLINE_MATH_PATTERN.exec("$a b$")?.[1]).toBe("a b");
+  });
+
+  it("未命中：`$$` 内容为空（空公式不成立，回落内置 $$ 数学块路径）", () => {
+    expect(PANDOC_INLINE_MATH_PATTERN.exec("$$")).toBeNull();
+  });
+
+  it("未命中：`$x` 无闭 $", () => {
+    expect(PANDOC_INLINE_MATH_PATTERN.exec("$x")).toBeNull();
+  });
+
+  it("未命中：无 $ 普通文本", () => {
+    expect(PANDOC_INLINE_MATH_PATTERN.exec("普通文本")).toBeNull();
+  });
+});
+
+describe("INLINE_MATH_DIGIT_REVERT_PATTERN 数字回退触发正则边界", () => {
+  it("命中：叶子占位符后紧跟数字，捕获数字", () => {
+    expect(INLINE_MATH_DIGIT_REVERT_PATTERN.exec("\ufffc2")?.[1]).toBe("2");
+  });
+
+  it("未命中：占位符后无数字", () => {
+    expect(INLINE_MATH_DIGIT_REVERT_PATTERN.exec("\ufffc")).toBeNull();
+  });
+
+  it("未命中：占位符后是字母", () => {
+    expect(INLINE_MATH_DIGIT_REVERT_PATTERN.exec("\ufffcx")).toBeNull();
+  });
+
+  it("未命中：无占位符的数字", () => {
+    expect(INLINE_MATH_DIGIT_REVERT_PATTERN.exec("2")).toBeNull();
+  });
+});
+
+describe("Pandoc 行内数学转换与字面回落分支", () => {
+  it("转换：`$x$` 闭合时转换为 math_inline 节点并渲染 KaTeX", async () => {
+    const te = await makeTestEditor();
+    te.insertText("$x$");
+    expect(te.view.dom.querySelector(".katex")).not.toBeNull();
+    expect(countMathInlineNodes(te)).toBe(1);
+    expect(te.getMarkdown()).toBe("$x$");
+  });
+
+  it("字面回落：`$x $` 闭 $ 前有空格（Pandoc 规则 2），保持文本不转换", async () => {
+    const te = await makeTestEditor();
+    te.insertText("$x $");
+    expect(te.view.dom.querySelector(".katex")).toBeNull();
+    expect(countMathInlineNodes(te)).toBe(0);
+    expect(te.view.state.doc.textContent).toBe("$x $");
+  });
+
+  it("字面回落：`$x\\$` 闭 $ 前有反斜杠（转义闭 $），保持文本不转换", async () => {
+    const te = await makeTestEditor();
+    te.insertText("$x\\$");
+    expect(te.view.dom.querySelector(".katex")).toBeNull();
+    expect(countMathInlineNodes(te)).toBe(0);
+    expect(te.view.state.doc.textContent).toBe("$x\\$");
+  });
+
+  it("数字回退：`$x$2` 数字落字后回退为字面文本（无 math_inline 节点）", async () => {
+    const te = await makeTestEditor();
+    te.insertText("$x$2");
+    expect(te.view.dom.querySelector(".katex")).toBeNull();
+    expect(countMathInlineNodes(te)).toBe(0);
+    expect(te.view.state.doc.textContent).toBe("$x$2");
+  });
+});
+
+describe("pandocInlineMathHandler 无节点类型回落分支", () => {
+  it("schema 缺 math_inline 时返回 null 回落后续规则", () => {
+    // 裸 schema 状态：doc(paragraph("$x$"))——开 $ 位于 2、光标在文本末（end=5）
+    const doc = tinySchema.node(
+      "doc",
+      null,
+      tinySchema.node("paragraph", null, tinySchema.text("$x$")),
+    );
+    // 显式选区落在段落内容内（EditorState.create 默认 doc 级选区会触发
+    // ProseMirror 的 TextSelection 越界警告）
+    const state = EditorState.create({
+      doc,
+      schema: tinySchema,
+      selection: TextSelection.create(doc, 2),
+    });
+    const match = PANDOC_INLINE_MATH_PATTERN.exec("$x$")!;
+    expect(pandocInlineMathHandler(state, match, 2, 5)).toBeNull();
+  });
+});
+
+describe("inlineMathDigitRevertHandler 非数学节点回落分支", () => {
+  it("前置节点为普通文本节点（非 math_inline）返回 null", () => {
+    // 裸 schema 状态：doc(paragraph("x2"))——光标在文本末，nodeBefore 为文本节点
+    const doc = tinySchema.node(
+      "doc",
+      null,
+      tinySchema.node("paragraph", null, tinySchema.text("x2")),
+    );
+    const state = EditorState.create({
+      doc,
+      schema: tinySchema,
+      selection: TextSelection.create(doc, 2),
+    });
+    const match = INLINE_MATH_DIGIT_REVERT_PATTERN.exec("\ufffc2")!;
+    expect(inlineMathDigitRevertHandler(state, match, 2, 4)).toBeNull();
+  });
+
+  it("光标位于段首（nodeBefore 为空）返回 null", () => {
+    // 裸 schema 状态：doc(paragraph("x2"))——光标在段落内容起点，无前置节点
+    const doc = tinySchema.node(
+      "doc",
+      null,
+      tinySchema.node("paragraph", null, tinySchema.text("x2")),
+    );
+    const state = EditorState.create({
+      doc,
+      schema: tinySchema,
+      selection: TextSelection.create(doc, 2),
+    });
+    const match = INLINE_MATH_DIGIT_REVERT_PATTERN.exec("\ufffc2")!;
+    expect(inlineMathDigitRevertHandler(state, match, 0, 1)).toBeNull();
   });
 });
