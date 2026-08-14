@@ -9,6 +9,7 @@
 import { Milkdown, MilkdownProvider, useEditor } from "@milkdown/vue";
 import { defineComponent, onBeforeUnmount } from "vue";
 import { createMarkwellEditor } from "../../features/editor/create-editor";
+import { parseFrontMatter } from "../../features/editor/frontmatter/frontmatter";
 import { editorManager } from "../../services/editor-manager";
 
 /** 组件属性 */
@@ -32,8 +33,11 @@ const EditorSurface = defineComponent({
     // 通过 @milkdown/vue 的 useEditor 创建实例（集成层自动 create/destroy），
     // 同时登记到 editorManager 单例供各模块服务消费
     useEditor((root) => {
-      const crepe = createMarkwellEditor(root, props.initialDoc);
-      editorManager.adopt(crepe);
+      // E11：Front Matter 剥离——FM 不进文档树（仅用正文建编辑器），
+      // 内文经 adopt 登记到实例管理服务，保存时 getMarkdown 原样回写
+      const { frontMatter, body } = parseFrontMatter(props.initialDoc);
+      const crepe = createMarkwellEditor(root, body);
+      editorManager.adopt(crepe, frontMatter);
       return crepe;
     });
     return () => slots.default?.();

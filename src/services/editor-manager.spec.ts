@@ -72,9 +72,9 @@ describe("编辑器实例管理", () => {
 
   it("setDocumentTransformers 注册的解析器参与 create 入文", async () => {
     editorManager.setDocumentTransformers({
-      parse: (doc) => doc.replace(/^---\ntitle: x\n---\n/, ""),
+      parse: (doc) => doc.replace("标题", "正文"),
     });
-    await editorManager.create("---\ntitle: x\n---\n# 正文");
+    await editorManager.create("# 标题");
     expect(editorManager.getMarkdown()).toBe("# 正文");
     editorManager.setDocumentTransformers({});
   });
@@ -101,5 +101,47 @@ describe("编辑器实例管理", () => {
     expect(editorManager.getCrepe()).toBeUndefined();
     expect(editorManager.getEditor()).toBeUndefined();
     expect(editorManager.getMarkdown()).toBe("");
+  });
+
+  it("内建 Front Matter 剥离：create 含 FM 文档后 getMarkdown 原样回写", async () => {
+    const md = "---\ntitle: 测试\n---\n# 正文";
+    await editorManager.create(md);
+    expect(editorManager.getMarkdown()).toBe(md);
+  });
+
+  it("内建 Front Matter 不影响无 FM 文档", async () => {
+    await editorManager.create("# 纯正文");
+    expect(editorManager.getMarkdown()).toBe("# 纯正文");
+  });
+
+  it("destroy 清空内建 Front Matter：随后 create 无 FM 文档不残留回写", async () => {
+    await editorManager.create("---\ntitle: x\n---\n# 甲");
+    editorManager.destroy();
+    await editorManager.create("# 乙");
+    expect(editorManager.getMarkdown()).toBe("# 乙");
+  });
+
+  it("adopt 携带 FM 内文后 getMarkdown 回写（EditorPage 装配路径）", async () => {
+    const test = await makeTestEditor("# 采用正文");
+    editorManager.adopt(test.crepe, "title: 元数据");
+    expect(editorManager.getMarkdown()).toBe("---\ntitle: 元数据\n---\n# 采用正文");
+  });
+
+  it("内建 FM 剥离优先于外部 parse：转换器只作用于剥离后的正文", async () => {
+    editorManager.setDocumentTransformers({
+      parse: (doc) => doc.replace("正文", "转换后"),
+    });
+    await editorManager.create("---\ntitle: x\n---\n# 正文");
+    expect(editorManager.getMarkdown()).toBe("---\ntitle: x\n---\n# 转换后");
+    editorManager.setDocumentTransformers({});
+  });
+
+  it("外部 serialize 与内建 FM 并存：转换器作用于正文后 FM 原样回写", async () => {
+    await editorManager.create("---\ntitle: 测试\n---\n# 正文");
+    editorManager.setDocumentTransformers({
+      serialize: (body) => `${body}\n尾部标注`,
+    });
+    expect(editorManager.getMarkdown()).toBe("---\ntitle: 测试\n---\n# 正文\n尾部标注");
+    editorManager.setDocumentTransformers({});
   });
 });

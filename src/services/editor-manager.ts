@@ -9,6 +9,7 @@ import type { Editor } from "@milkdown/kit/core";
 import { editorViewCtx } from "@milkdown/kit/core";
 import type { Crepe } from "@milkdown/crepe";
 import { createMarkwellEditor } from "../features/editor/create-editor";
+import { parseFrontMatter, reinsertFrontMatter } from "../features/editor/frontmatter/frontmatter";
 import { destroyEditorEvents, setupEditorEvents } from "./editor-events";
 
 /** 文档级转换器挂载点（E11 Front Matter 使用） */
@@ -30,10 +31,12 @@ class EditorManager {
   private pendingDestroy: Promise<unknown> | undefined;
   /** 文档级转换器（默认透传） */
   private transformers: DocumentTransformers = {};
+  /** 当前文档的 Front Matter 内文（null 表示无 FM）；create/adopt 解析登记，getMarkdown 回写 */
+  private currentFrontMatter: string | null = null;
 
   /**
    * 创建编辑器实例（销毁旧实例后创建新实例）
-   * @param doc 原始文档内容（可含 Front Matter，由 transformers.parse 剥离）
+   * @param doc 原始文档内容（可含 Front Matter，由内建 E11 逻辑剥离后再经 transformers.parse）
    */
   async create(doc: string): Promise<void> {
     this.destroy();
@@ -42,7 +45,10 @@ class EditorManager {
       await this.pendingDestroy;
       this.pendingDestroy = undefined;
     }
-    const body = (this.transformers.parse ?? ((d: string) => d))(doc);
+    // 内建 Front Matter 剥离优先于外部 transformers（E11）：FM 不进文档树，仅内存暂存
+    const { frontMatter, body: strippedBody } = parseFrontMatter(doc);
+    this.currentFrontMatter = frontMatter;
+    const body = (this.transformers.parse ?? ((d: string) => d))(strippedBody);
     const root = document.createElement("div");
     document.body.appendChild(root);
     this.root = root;
@@ -57,12 +63,15 @@ class EditorManager {
    *
    * 与 create 的区别：create 自行创建根元素并解析文档；本方法仅登记 @milkdown/vue
    * 集成层（useEditor）已创建的实例——文档已由工厂解析，不再应用 transformers.parse。
+   * 工厂解析出的 Front Matter 内文经参数传入登记，供 getMarkdown 回写（E11）。
    * 挂载根元素由 Vue 组件持有，本服务不接管移除职责（destroy 中 root 为空即安全跳过）。
    * @param crepe 集成层已 create 完成的 Crepe 实例
+   * @param frontMatter 工厂解析出的 FM 内文；无 FM 或未知时传 null（默认）
    */
-  adopt(crepe: Crepe): void {
+  adopt(crepe: Crepe, frontMatter: string | null = null): void {
     this.crepe = crepe;
     this.editor = crepe.editor;
+    this.currentFrontMatter = frontMatter;
     setupEditorEvents(crepe);
   }
 
@@ -76,6 +85,8 @@ class EditorManager {
       this.crepe = undefined;
       this.editor = undefined;
     }
+    // 清空暂存的 Front Matter（销毁后为空态，防止残留到下一文档）
+    this.currentFrontMatter = null;
     // 移除挂载根元素：@milkdown/core 的 view-clear 只清理编辑器内部容器，root div 须自行移除
     this.root?.remove();
     this.root = undefined;
@@ -98,13 +109,17 @@ class EditorManager {
 
   /**
    * 全量序列化当前文档（O(n)）
-   * 未创建返回空串；经 transformers.serialize 回写后返回落盘内容
+   * 未创建返回空串；经 transformers.serialize 后由内建 FM 逻辑回写，返回落盘内容
    */
   getMarkdown(): string {
     if (!this.crepe) return "";
     // Crepe 序列化器恒在文末追加换行；剥离全部尾随换行后再交给转换器，保证精确断言（E11 Front Matter 往返）
     const body = this.crepe.getMarkdown().replace(/\n+$/, "");
-    return (this.transformers.serialize ?? ((b: string) => b))(body);
+    const serialized = (this.transformers.serialize ?? ((b: string) => b))(body);
+    // 内建 FM 回写最后执行：外部转换器不触碰 front matter，保证原样保留（AC-E11-2）
+    return this.currentFrontMatter === null
+      ? serialized
+      : reinsertFrontMatter(this.currentFrontMatter, serialized);
   }
 
   /** 切换编辑器只读状态 */
