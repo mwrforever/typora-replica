@@ -7,6 +7,7 @@ import type { Handlers } from "mdast-util-to-markdown";
 import type { Options } from "remark-stringify";
 // mhchem 副作用导入：KaTeX 化学式扩展（E7），全应用只需一次
 import "katex/contrib/mhchem";
+import { configureFootnoteTooltip, footnoteTooltipPlugin } from "./footnote-tooltip";
 import { registerEditorInputRules } from "./input-rules";
 import { applyEditorKeymaps } from "./keymaps";
 
@@ -173,11 +174,15 @@ export function createMarkwellEditor(
   });
   // 代码围栏语言落盘小写归一化：以 extendSchema 扩展 codeBlockSchema（E6-4 Typora 平价）
   crepe.editor.use(lowerLanguageCodeBlockSchema);
+  // 脚注悬停预览浮层（E9 AC-E9-2）：tooltipFactory 形态插件 + config 阶段注入规格
+  crepe.editor.use(footnoteTooltipPlugin);
   // 自定义语法规则注入：config 回调在 create() 时执行，与内置规则统一编排
   crepe.editor.config((ctx) => {
     registerEditorInputRules(ctx);
     // Typora 式 keymap 注入（Ctrl+[ 缩进 / Ctrl+] 反向配对，10 设置快捷键模块扩展入口）
     applyEditorKeymaps(ctx);
+    // 脚注悬停预览浮层规格（handleDOMEvents + PluginView）注入
+    configureFootnoteTooltip(ctx);
     // Typora 式落盘序列化选项（列表 `- ` 前缀、GFM 单词内下划线不转义）
     applyMarkwellStringifyOptions(ctx);
   });

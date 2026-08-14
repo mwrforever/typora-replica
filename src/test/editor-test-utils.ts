@@ -8,6 +8,10 @@ import {
   applyMarkwellStringifyOptions,
   lowerLanguageCodeBlockSchema,
 } from "../features/editor/create-editor";
+import {
+  configureFootnoteTooltip,
+  footnoteTooltipPlugin,
+} from "../features/editor/footnote-tooltip";
 import { registerEditorInputRules } from "../features/editor/input-rules";
 import { applyEditorKeymaps } from "../features/editor/keymaps";
 
@@ -76,11 +80,15 @@ export async function makeTestEditor(
   // 保证测试环境覆盖自定义行为
   // 代码围栏语言落盘小写归一化（E6-4），与产品工厂同源插件
   crepe.editor.use(lowerLanguageCodeBlockSchema);
+  // 脚注悬停预览浮层（E9），与产品工厂同源插件
+  crepe.editor.use(footnoteTooltipPlugin);
   crepe.editor.config((ctx) => {
     registerEditorInputRules(ctx);
     applyEditorKeymaps(ctx);
     // Typora 落盘形态（列表 `- ` 前缀、GFM 单词内下划线不转义），直接复用产品工厂同源函数
     applyMarkwellStringifyOptions(ctx);
+    // 脚注悬停预览浮层规格（handleDOMEvents + PluginView）注入
+    configureFootnoteTooltip(ctx);
   });
   await crepe.create();
   liveEditors.push(crepe);
