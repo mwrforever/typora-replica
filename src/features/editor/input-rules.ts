@@ -5,18 +5,37 @@
 // - E3-2 引用块内行首实时输入 `>> ` → 嵌套引用块（输入规则，经 inputRulesCtx 注册）
 // - E10-3 非空行后输入 `---` → 前置段落转 setext 二级标题（输入规则，优先于内置 hr 规则注册）
 // - E2-2 行首 `###Header`（无空格）+ Enter → H3 宽松 ATX 标题（输入规则，内置规则要求 `# ` 带空格）
-// 后续扩展（Task 13）：E8 Typora 式建表、E19 Pandoc 行内数学（经 inputRulesCtx 注册）。
+// - E8-1 整行 `| 表头 | 表头 |` + Enter → Typora 式建表（表头行含输入文本 + 空数据行，
+//   输入规则，经模块级 addEditorInputRule 登记后由 registerEditorInputRules 注入）
+// 后续扩展：E19 Pandoc 行内数学（经 inputRulesCtx 注册）。
 //
 // 注入方式：Crepe create() 前通过 editor.config 调用 registerEditorInputRules(ctx)，
 // 产品侧注入点为 create-editor.ts 工厂，测试侧为 makeTestEditor 助手（二者保持同源）。
 import type { Ctx } from "@milkdown/kit/ctx";
 import { inputRulesCtx, keymapCtx } from "@milkdown/kit/core";
 import { InputRule } from "@milkdown/kit/prose/inputrules";
+import type { Node, Schema } from "@milkdown/kit/prose/model";
 import { TextSelection, type EditorState, type Transaction } from "@milkdown/kit/prose/state";
 import { findWrapping } from "@milkdown/kit/prose/transform";
 
 /** ProseMirror Command 派发函数类型（允许 dry-run 空派发） */
 type Dispatch = (tr: Transaction) => void;
+
+/** 模块级追加注册的输入规则（create() 前经 addEditorInputRule 登记，随 registerEditorInputRules 注入） */
+const moduleInputRules: InputRule[] = [];
+
+/**
+ * 追加自定义输入规则（create() 前调用，模块加载期即登记）
+ * @param rule ProseMirror 输入规则
+ */
+export function addEditorInputRule(rule: InputRule): void {
+  moduleInputRules.push(rule);
+}
+
+/** 查询已注册的模块级规则（测试用） */
+export function listEditorInputRules(): readonly InputRule[] {
+  return moduleInputRules;
+}
 
 /**
  * 行尾两空格 + Enter → 硬换行（Typora 行为）
@@ -202,6 +221,93 @@ export function createLenientAtxHeadingInputRule(): InputRule {
 }
 
 /**
+ * 构建 Typora 式建表节点：表头行（含输入文本）+ 一行空数据行
+ *
+ * 与内置 createTable 的区别：表头单元格携带键入文本（内置 `|2x2|` 规则不填充文本）。
+ * table schema 内容模型为 table_header_row table_row+（头行后必须至少一个数据行），
+ * 只建表头行会因内容模型校验失败而损坏文档——补一行空数据行与 Typora 的
+ * `| a | b |` + Enter 产出（表头 + 空数据行）形态一致。
+ * 单元格全空白时文本为 ""，text 节点不允许空串，空单元格退化为空段落。
+ * 节点类型在 handler 内经 state.schema 取用（注册期 SchemaReady 未就绪，与既有规则同理）。
+ *
+ * @param schema 编辑器 schema（handler 传入 state.schema）
+ * @param cells 单元格文本列表（至少 1 个，由触发正则保证）
+ */
+function buildTyporaTable(schema: Schema, cells: string[]): Node {
+  const headerCells = cells.map((text) =>
+    // 表头单元格：段落 + 文本；全空白单元格（trim 后为空串）退化为空段落
+    text
+      ? schema.nodes.table_header.create(
+          null,
+          schema.nodes.paragraph.create(null, schema.text(text)),
+        )
+      : schema.nodes.table_header.create(null, schema.nodes.paragraph.create()),
+  );
+  const headerRow = schema.nodes.table_header_row.create(null, headerCells);
+  // 数据行：与表头同列数的空单元格；createAndFill 自动填充必填段落，
+  // 单元格内容模型恒可填充，null 仅作类型收窄不可达（与内置 createTable 同一写法）
+  const bodyCell = schema.nodes.table_cell.createAndFill()!;
+  const bodyRow = schema.nodes.table_row.create(
+    null,
+    Array.from({ length: cells.length }, () => bodyCell),
+  );
+  return schema.nodes.table.create(null, [headerRow, bodyRow]);
+}
+
+/**
+ * Typora 式建表触发正则：整行 1~N 个竖线分隔单元格 + Enter 换行
+ *
+ * 尾随 `\n` 为触发时机锚点：customInputRules 插件仅在 Enter 按下时以 "\n" 作拟输入
+ * 重跑规则链，本正则锚定该形态后规则只在 Enter 时命中（Typora 行为：键入整行后
+ * Enter 确认建表），打字途中闭合第二个 `|` 不会提前建表；与内置 `|2x2| ` 规则
+ * （单元格为数字、尾随空白）正则互斥，共存无冲突。
+ */
+export const TYPORA_TABLE_INPUT_PATTERN = /^\|(?:\s*[^|\n]+\s*\|)+\s*\n$/;
+
+/**
+ * Typora 式建表输入规则：`| 表头 | 表头 |` + Enter → 创建表头含文本的表格
+ *
+ * 命中后经三重校验：
+ * - 触发文本独占父块整行（行首偏移 0 且光标在父块内容末尾），行中有多余文本或多行
+ *   段落窗口时返回 null 回落内置 Enter 拆段；
+ * - 表格能替换父块（canReplaceWith，与内置 insertTableInputRule 同款守卫）：
+ *   列表项/单元格内的建表语法不转换；
+ * 转换动作：整体替换触发段落节点（不残留空段落），光标移入首个数据行单元格
+ * （Typora 建表后可直接输入数据）。
+ */
+const typoraTableRule = new InputRule(TYPORA_TABLE_INPUT_PATTERN, (state, match, start, end) => {
+  // 触发文本必须从父块内容起点开始（parentOffset 0 = 独占整行起点）
+  const $start = state.doc.resolve(start);
+  if ($start.parentOffset !== 0) return null;
+  // 光标必须在父块内容末尾（行尾无未消费文本才建表）
+  const $end = state.doc.resolve(end);
+  if ($end.parentOffset !== $end.parent.content.size) return null;
+  // 表格必须能替换父块对应子节点区间（doc 可容纳块级表格；列表项/单元格内拒绝转换）
+  if (
+    !$start
+      .node(-1)
+      .canReplaceWith($start.index(-1), $start.indexAfter(-1), state.schema.nodes.table)
+  ) {
+    return null;
+  }
+  // 解析单元格文本：去掉行首行尾竖线与拟输入换行后按 | 切分并去空白
+  const raw = match[0].replace(/\n$/, "");
+  const cells = raw
+    .slice(1, -1)
+    .split("|")
+    .map((c) => c.trim());
+  const table = buildTyporaTable(state.schema, cells);
+  // 整体替换触发段落节点（范围含开闭标签），不留空段落
+  const tr = state.tr.replaceRangeWith(start - 1, end + 1, table);
+  // 光标移入首个数据行单元格：表格起点(start-1) + 开标签(1) + 表头行宽 + 行开标签(1)
+  // + 格开标签(1) + 段落开标签(1) = start + 表头行宽 + 3
+  tr.setSelection(TextSelection.create(tr.doc, start - 1 + 1 + table.child(0).nodeSize + 3));
+  return tr;
+});
+
+addEditorInputRule(typoraTableRule);
+
+/**
  * 将模块级自定义规则写入编辑器上下文（create() 前调用一次）
  * @param ctx milkdown 编辑器配置上下文（由 editor.config 回调注入）
  */
@@ -218,10 +324,12 @@ export function registerEditorInputRules(ctx: Ctx): void {
   // - E2-2 宽松 ATX 规则仅在 Enter 时命中（正则锚定行尾换行），与内置严格规则
   //   （空格落字即消费）触发时机互斥，位置不影响正确性
   // - E3-2 嵌套引用规则与内置 `> ` 规则正则互斥，追加在末尾顺序不影响命中
+  // - E8-1 Typora 建表规则同样仅在 Enter 时命中，与内置 `|2x2| ` 规则正则互斥，末尾追加
   ctx.update(inputRulesCtx, (rules: InputRule[]) => [
     createSetextH2InputRule(),
     createLenientAtxHeadingInputRule(),
     ...rules,
     createNestedBlockquoteInputRule(),
+    ...moduleInputRules,
   ]);
 }

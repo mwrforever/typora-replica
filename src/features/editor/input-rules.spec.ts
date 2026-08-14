@@ -1,5 +1,6 @@
 // 自定义语法规则单测：行尾两空格硬换行命令分支全覆盖 + 嵌套引用输入规则正则边界 + setext 二级标题规则
-// + 宽松 ATX 标题规则分支全覆盖（核心语法转换 100% 覆盖）
+// + 宽松 ATX 标题规则分支全覆盖 + Typora 建表规则（注册表 + 正则边界 + 转换/回落分支）
+// （核心语法转换 100% 覆盖）
 import { describe, expect, it, vi } from "vitest";
 import type { Transaction } from "@milkdown/kit/prose/state";
 import { makeTestEditor } from "../../test/editor-test-utils";
@@ -7,6 +8,8 @@ import {
   LENIENT_ATX_HEADING_INPUT_PATTERN,
   NESTED_BLOCKQUOTE_INPUT_PATTERN,
   SETEXT_H2_INPUT_PATTERN,
+  TYPORA_TABLE_INPUT_PATTERN,
+  listEditorInputRules,
   trailingSpacesHardBreakCommand,
 } from "./input-rules";
 
@@ -234,6 +237,79 @@ describe("createLenientAtxHeadingInputRule 宽松 ATX 标题转换分支", () =>
     te.press("Enter");
     // 判别点：本规则若消费按键会删除行首 # 并保持单块 H1；实测文档被拆为两块，
     // 说明本规则对非段落父块返回 null 回落，Enter 由内置拆段行为接管
+    expect(te.view.state.doc.childCount).toBe(2);
+  });
+});
+
+describe("输入规则注册表（模块级追加规则）", () => {
+  it("Typora 建表规则已注册", () => {
+    expect(listEditorInputRules().length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("建表正则匹配双单元格行（Enter 触发，拟输入文本含换行）", () => {
+    expect(TYPORA_TABLE_INPUT_PATTERN.exec("| a | b |\n")).not.toBeNull();
+  });
+
+  it("建表正则匹配单单元格行", () => {
+    expect(TYPORA_TABLE_INPUT_PATTERN.exec("| a |\n")).not.toBeNull();
+  });
+
+  it("建表正则不匹配无 Enter 的行内输入（Enter 是触发时机，打字中途不提前建表）", () => {
+    expect(TYPORA_TABLE_INPUT_PATTERN.exec("| a | b |")).toBeNull();
+  });
+
+  it("建表正则不匹配非表格文本", () => {
+    expect(TYPORA_TABLE_INPUT_PATTERN.exec("普通文本")).toBeNull();
+  });
+});
+
+describe("Typora 建表输入规则转换与回落分支", () => {
+  it("转换：单格 `| a |` + Enter 创建单列表格（表头含文本）", async () => {
+    const te = await makeTestEditor();
+    te.insertText("| a |");
+    te.press("Enter");
+    expect(te.view.dom.querySelector("table")).not.toBeNull();
+    expect(te.getMarkdown()).toMatch(/^\| a/);
+  });
+
+  it("转换：全空白单元格 `|   |` + Enter 建表（空单元格退化为空段落分支）", async () => {
+    const te = await makeTestEditor();
+    te.insertText("|   |");
+    te.press("Enter");
+    expect(te.view.dom.querySelector("table")).not.toBeNull();
+  });
+
+  it("回落：行尾有未消费文本时 Enter 不建表（回落内置拆段）", async () => {
+    const te = await makeTestEditor();
+    te.insertText("| a | b | 尾文");
+    // 光标移到「尾文」之前：光标前文本恰为表格语法行，但行尾仍有 2 字未消费
+    // （doc.content.size 为段落节点宽：尾文 2 字 + 段落闭标签 1 = 内容终点 - 3）
+    te.setSelection(te.view.state.doc.content.size - 3, te.view.state.doc.content.size - 3);
+    te.press("Enter");
+    // 判别点：未建表且 Enter 将段落拆为两块（表格语法行 + 尾文）
+    expect(te.view.dom.querySelector("table")).toBeNull();
+    expect(te.view.state.doc.childCount).toBe(2);
+  });
+
+  it("回落：列表项内建表语法不转换（canReplaceWith 拒绝表格替换列表项子区间）", async () => {
+    const te = await makeTestEditor();
+    te.insertText("- "); // 内置列表规则转为列表项
+    te.insertText("| a | b |");
+    te.press("Enter");
+    // 判别点：列表项内不产生表格节点（表格语法保持为文本）
+    expect(te.view.dom.querySelector("table")).toBeNull();
+  });
+
+  it("回落：触发文本非父块内容起点（超 500 字窗口）不建表，Enter 回落拆段", async () => {
+    const te = await makeTestEditor();
+    // customInputRules 只回看光标前 500 字窗口：构造「7 字前缀 + | + 490 字 + 表格语法行
+    // （9 字）」共 507 字段落，使窗口恰以 `|` 开头且整窗匹配建表正则、但该 `|` 前仍有
+    // 7 字（非父块内容起点）——触发文本不独占段首时不建表
+    const longText = "x".repeat(7) + "|" + "x".repeat(490) + "| a | b |";
+    te.insertText(longText);
+    te.press("Enter");
+    // 判别点：未建表且 Enter 回落内置拆段（长段落拆为两块）
+    expect(te.view.dom.querySelector("table")).toBeNull();
     expect(te.view.state.doc.childCount).toBe(2);
   });
 });

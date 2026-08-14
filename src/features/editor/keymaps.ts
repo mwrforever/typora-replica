@@ -16,9 +16,11 @@ import {
   toggleInlineCodeCommand,
   wrapInHeadingCommand,
 } from "@milkdown/kit/preset/commonmark";
+import { addRowWithAlignment } from "@milkdown/kit/preset/gfm";
 import { findParentNode } from "@milkdown/kit/prose";
 import { liftListItem, sinkListItem } from "@milkdown/kit/prose/schema-list";
-import type { Command } from "@milkdown/kit/prose/state";
+import { TextSelection, type Command } from "@milkdown/kit/prose/state";
+import { TableMap, findTable, selectedRect } from "@milkdown/kit/prose/tables";
 
 /** 单条 keymap 注册项 */
 export interface EditorKeymapEntry {
@@ -211,3 +213,47 @@ export function insertCodeFenceCommand(ctx: Ctx): Command {
 
 // Ctrl+Shift+K：插入代码围栏（Typora 键位；priority 默认 200 压制表格内置与 baseKeymap）
 addEditorKeymap({ key: "Mod-Shift-k", onRun: insertCodeFenceCommand });
+
+/**
+ * 表格 Tab 末格加行命令工厂（E8-3：任意行最后一个单元格按 Tab 在表格末尾新增一行）
+ *
+ * 内置表格 Tab 键位为 NextCell（priority 100，中间格移格）；本键位 priority 200 先行判定：
+ * 光标所在格为本行最后一格时，把选区定位到表格末行末格并调用 addRowWithAlignment
+ * 在末行之后（rect.bottom）插入与表头同列数、对齐同表头的新行（任意行末格均加在表格末尾）。
+ * 中间格返回 false 放行，由内置 NextCell 接管移格；非表格上下文返回 false
+ * 回落内置缩进行为（indent 插件）。dry-run（dispatch 缺省）仅判定命中不改文档。
+ *
+ * 导出供单测直调：dry-run 路径在真实 keymap 链中不可达（键位处理恒传 dispatch），
+ * 需在单测中以 dispatch=undefined 显式触发覆盖。
+ */
+export function makeTableTabAddRowCommand() {
+  return (ctx: Ctx): Command => {
+    return (state, dispatch?) => {
+      // 表格定位：findTable 从选区 $from 向上查找 tableRole 节点，非表格上下文返回 null
+      const table = findTable(state.selection.$from);
+      if (!table) return false;
+      const rect = selectedRect(state);
+      const map = TableMap.get(table.node);
+      // 当前格是否为本行最后一格（rect.left 为选区左列索引，0 起）
+      const isLastCellOfRow = rect.left === map.width - 1;
+      if (!isLastCellOfRow) return false;
+      if (!dispatch) return true;
+      // 末行末格段落内容位置：TableMap.map 偏移量相对表格内容起点，
+      // 换算绝对坐标 = table.pos + 偏移 + 1（格节点起点）+ 2（段落内容起点）
+      const lastCellPos = table.pos + map.map[map.map.length - 1] + 3;
+      // selectedRect 需要完整 EditorState（内部读 state.selection），不能直接传 TextSelection；
+      // 用末格选区经 state.apply 构造一次性状态求末行矩形，不影响真实选区
+      const lastRowState = state.apply(
+        state.tr.setSelection(TextSelection.create(state.doc, lastCellPos)),
+      );
+      const lastRowRect = selectedRect(lastRowState);
+      // rect.bottom 即末行之后的行号：addRowWithAlignment 在该位置插入新行
+      // （内部以表头对齐填充新单元格，与内置 AddRowAfter 命令同一实现路径）
+      dispatch(addRowWithAlignment(ctx, state.tr, lastRowRect, lastRowRect.bottom));
+      return true;
+    };
+  };
+}
+
+// Tab 末格加行：priority 默认 200，先于内置 NextCell（100）与 indent 插件判定
+addEditorKeymap({ key: "Tab", onRun: makeTableTabAddRowCommand() });

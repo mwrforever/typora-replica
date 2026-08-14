@@ -78,6 +78,15 @@ if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = function () {};
 }
 
+// document.elementFromPoint：jsdom 未实现；Milkdown block 插件的指针悬停
+//（BlockService.mousemoveCallback）依赖其反查命中元素，E8 表格工具栏悬停模拟触发，
+// 测试环境无布局，恒返回 null（无命中目标）
+if (!document.elementFromPoint) {
+  document.elementFromPoint = function () {
+    return null;
+  } as unknown as typeof document.elementFromPoint;
+}
+
 afterEach(() => {
   // 销毁本用例创建的编辑器实例并卸载 Vue 组件
   destroyTestEditors();

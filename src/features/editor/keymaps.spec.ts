@@ -28,6 +28,11 @@ describe("keymap 注册表", () => {
     expect(listEditorKeymaps().find((e) => e.key === "Mod-Shift-k")?.priority).toBe(200);
   });
 
+  it("内置 Typora 表格 Tab 末格加行键位已注册（priority 200 压制内置 NextCell 100）", () => {
+    expect(hasEditorKeymap("Tab")).toBe(true);
+    expect(listEditorKeymaps().find((e) => e.key === "Tab")?.priority).toBe(200);
+  });
+
   it("内置 Typora 标题级别键位已注册（Ctrl+1~6 设级别、Ctrl+0 转段落、Ctrl+=/- 增减级别）", () => {
     // 级别循环 1-6 全部注册
     for (let level = 1; level <= 6; level++) {
