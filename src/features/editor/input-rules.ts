@@ -3,6 +3,7 @@
 // Crepe 内置规则与 Typora 行为不一致时的补充层。当前收录：
 // - E1-3 行尾两空格 + Enter → 硬换行（hardBreak 节点）转换（按键规则，经 keymapCtx 注册）
 // - E3-2 引用块内行首实时输入 `>> ` → 嵌套引用块（输入规则，经 inputRulesCtx 注册）
+// - E10-3 非空行后输入 `---` → 前置段落转 setext 二级标题（输入规则，优先于内置 hr 规则注册）
 // 后续扩展（Task 13）：E8 Typora 式建表、E19 Pandoc 行内数学（经 inputRulesCtx 注册）。
 //
 // 注入方式：Crepe create() 前通过 editor.config 调用 registerEditorInputRules(ctx)，
@@ -57,6 +58,15 @@ export function trailingSpacesHardBreakCommand(state: EditorState, dispatch?: Di
 export const NESTED_BLOCKQUOTE_INPUT_PATTERN = /^\s*>>\s$/;
 
 /**
+ * setext 二级标题触发正则：当前行首到光标处恰为 `---`
+ *
+ * 与内置 hr 规则（/^(?:---|___\s|\*\*\*\s)$/）的 `---` 分支锚定完全相同的文本片段，
+ * 便于在本规则未命中（返回 null）时原样回落内置行为；刻意不含 `----` 等多连字符形态
+ * （内置 hr 规则同样不处理，行为一致），也不含 `=== ` 一级标题形态（不在 AC-E10 范围）。
+ */
+export const SETEXT_H2_INPUT_PATTERN = /^---$/;
+
+/**
  * 构造嵌套引用输入规则（E3-2：引用块内行首实时输入 `>> ` 生成嵌套引用块）
  *
  * 动作与内置 `wrapInBlockquoteCommand` 语义一致：删除触发文本 `>> ` 后，
@@ -93,6 +103,57 @@ export function createNestedBlockquoteInputRule(): InputRule {
 }
 
 /**
+ * 构造 setext 二级标题输入规则（E10-3：非空行后输入 `---` 不误转水平线）
+ *
+ * 冲突背景：Crepe 内置 hr 输入规则（preset-commonmark insertHrInputRule）的正则为
+ * /^(?:---|___\s|\*\*\*\s)$/，其中 `---` 分支无尾随空白要求——只要当前段落行首
+ * 恰好是 `---`（第三个 `-` 落字时）就立即替换为水平线，不区分「文档首个空行」
+ * 与「上一行有文字」两种场景；CommonMark 语义下后者应为 setext 二级标题：
+ * 上一行文字成为 h2、`---` 作为下划线被消费，不产生水平线。
+ *
+ * 拦截方案：本规则同样锚定 /^---$/，因输入规则列表无 priority、按序尝试且先命中先消费，
+ * 注册时必须排在内置 hr 规则之前（registerEditorInputRules 中前置插入）。
+ * 命中后再校验前置块——仅当上一块是非空纯段落（CommonMark setext 对标题/列表项/
+ * 空行均不生效，与内置 hr 保持一致）才执行转换，否则返回 null 回落内置规则
+ * （空文档/空行后的 `---` 仍生成水平线，即 AC-E10-2 行为不变）。
+ *
+ * 转换动作：前置段落 setBlockType 为 heading(level=2)（段落内容 inline 可直接承载），
+ * 再整体删除触发段落（含 `---` 文本，范围 [start-1, end+1]，nodeSize = 文本长 + 2）。
+ * 两步操作基于原始文档坐标，Transform 内部按步映射，顺序不影响正确性；
+ * 光标位于被删段落内，由 ProseMirror 选区自动映射落至新标题末侧（与内置 hr 规则
+ * 同样不显式设选区，行为已被 E10 回归用例验证）。
+ *
+ * 节点类型在 handler 内经 state.schema 取用（与 createNestedBlockquoteInputRule 同理：
+ * 注册期 SchemaReady 未就绪，不能提前解析）。
+ *
+ * @returns 已解析的 ProseMirror InputRule（含 match 正则与 handler，不依赖 ctx）
+ */
+export function createSetextH2InputRule(): InputRule {
+  return new InputRule(SETEXT_H2_INPUT_PATTERN, (state, _match, start, end) => {
+    // 触发时当前段落恰为 `---`（正则锚定行首到光标），start 即段落内容起点，
+    // 段落节点起点为 start - 1；前置块为 doc 层上一个兄弟节点。
+    // 当前段落若是 doc 首个子节点（空文档场景）则无前置块——child 越界会抛
+    // RangeError（而非返回 undefined），必须先按索引判断
+    const $from = state.doc.resolve(start);
+    const before = $from.index(-1) > 0 ? $from.node(-1).child($from.index(-1) - 1) : null;
+    // CommonMark setext 约束：上一块必须是非空纯段落；
+    // 无前置块（空文档）、空行、标题/列表项等场景回落内置 hr 规则
+    if (!before || before.type.name !== "paragraph" || !before.textContent.trim()) return null;
+
+    const tr = state.tr;
+    // 前置段落整体转为二级标题。setBlockType 的 from/to 必须落在块内部——
+    // 块起始位置（如文档首块位置 0）nodesBetween 不会访问任何节点（pos < to 循环条件），
+    // 导致转换静默失效；内容起点 = 节点起点 + 1（块开始标签恒宽 1），恒在块内
+    const beforePos = start - 1 - before.nodeSize;
+    tr.setBlockType(beforePos + 1, beforePos + 1, state.schema.nodes.heading, { level: 2 });
+    // 删除触发段落（含 `---` 文本）；end 为光标位置（= 段落内容末尾），
+    // 段落节点范围 = [start - 1, end + 1]（nodeSize 比内容长 2）
+    tr.delete(start - 1, end + 1);
+    return tr;
+  });
+}
+
+/**
  * 将模块级自定义规则写入编辑器上下文（create() 前调用一次）
  * @param ctx milkdown 编辑器配置上下文（由 editor.config 回调注入）
  */
@@ -103,7 +164,13 @@ export function registerEditorInputRules(ctx: Ctx): void {
     priority: 200,
     onRun: () => trailingSpacesHardBreakCommand,
   });
-  // E3-2：嵌套引用输入规则（`>> ` 触发）追加进输入规则列表。
-  // 输入规则列表无 priority 概念，按列表顺序尝试；本规则与内置 `> ` 规则正则互斥，顺序不影响命中
-  ctx.update(inputRulesCtx, (rules: InputRule[]) => [...rules, createNestedBlockquoteInputRule()]);
+  // 输入规则列表无 priority 概念，按列表顺序尝试、先命中先消费：
+  // - E10-3 setext 规则必须排在最前，抢在内置 hr 规则（`---` 直接替换为水平线）之前拦截；
+  //   其正则与前置块校验限定场景，未命中即返回 null 回落内置，空行 `---` 生成 hr 不受影响
+  // - E3-2 嵌套引用规则与内置 `> ` 规则正则互斥，追加在末尾顺序不影响命中
+  ctx.update(inputRulesCtx, (rules: InputRule[]) => [
+    createSetextH2InputRule(),
+    ...rules,
+    createNestedBlockquoteInputRule(),
+  ]);
 }

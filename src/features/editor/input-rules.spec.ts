@@ -1,9 +1,13 @@
-// 自定义语法规则单测：行尾两空格硬换行命令分支全覆盖 + 嵌套引用输入规则正则边界
+// 自定义语法规则单测：行尾两空格硬换行命令分支全覆盖 + 嵌套引用输入规则正则边界 + setext 二级标题规则
 // （核心语法转换 100% 覆盖）
 import { describe, expect, it, vi } from "vitest";
 import type { Transaction } from "@milkdown/kit/prose/state";
 import { makeTestEditor } from "../../test/editor-test-utils";
-import { NESTED_BLOCKQUOTE_INPUT_PATTERN, trailingSpacesHardBreakCommand } from "./input-rules";
+import {
+  NESTED_BLOCKQUOTE_INPUT_PATTERN,
+  SETEXT_H2_INPUT_PATTERN,
+  trailingSpacesHardBreakCommand,
+} from "./input-rules";
 
 /** 在空文档光标处字面插入带行尾两空格的文本（经事务直插保证两空格字面落位，不经过输入规则链） */
 function typeTrailingSpaces(te: Awaited<ReturnType<typeof makeTestEditor>>): void {
@@ -127,5 +131,62 @@ describe("createNestedBlockquoteInputRule 包裹与合并行为", () => {
     expect(blockquotes[0]).toContain("已有引用");
     expect(blockquotes[0]).toContain("并入行");
     expect(te.getMarkdown()).toContain("> 并入行");
+  });
+});
+
+describe("SETEXT_H2_INPUT_PATTERN setext 二级标题触发正则边界", () => {
+  it("命中：行首恰好 `---`（三个连字符，无尾随空白）", () => {
+    expect(SETEXT_H2_INPUT_PATTERN.exec("---")?.[0]).toBe("---");
+  });
+
+  it("未命中：`--` 两个连字符（未到触发长度）", () => {
+    expect(SETEXT_H2_INPUT_PATTERN.exec("--")).toBeNull();
+  });
+
+  it("未命中：`----` 四个连字符（与内置 hr 规则一致，均不处理）", () => {
+    expect(SETEXT_H2_INPUT_PATTERN.exec("----")).toBeNull();
+  });
+
+  it("未命中：`--- ` 带尾随空格（空格不是本规则触发字符）", () => {
+    expect(SETEXT_H2_INPUT_PATTERN.exec("--- ")).toBeNull();
+  });
+});
+
+describe("createSetextH2InputRule 非空行后 `---` setext 转换分支", () => {
+  it("转换：非空段落后的 `---` 使前置段落转为二级标题且不产生水平线", async () => {
+    const te = await makeTestEditor();
+    te.insertText("前面有文字");
+    te.press("Enter");
+    te.insertText("---");
+
+    // 前置段落整体转为 h2（level 2），触发段落（含 `---`）被消费删除
+    expect(te.view.state.doc.childCount).toBe(1);
+    expect(te.view.state.doc.child(0).type.name).toBe("heading");
+    expect(te.view.state.doc.child(0).attrs.level).toBe(2);
+    expect(te.view.state.doc.child(0).textContent).toBe("前面有文字");
+    expect(te.view.dom.querySelector("hr")).toBeNull();
+  });
+
+  it("回落：空文档中 `---` 无前置块，仍由内置规则生成水平线", async () => {
+    const te = await makeTestEditor();
+    te.insertText("---");
+    expect(te.view.dom.querySelector("hr")).not.toBeNull();
+  });
+
+  it("回落：前置块为空段落（空行分隔）时 `---` 生成水平线", async () => {
+    const te = await makeTestEditor();
+    te.insertText("前面有文字");
+    te.press("Enter");
+    te.press("Enter"); // 再换行得到空前置段落（setext 要求无空行分隔）
+    te.insertText("---");
+    expect(te.view.dom.querySelector("hr")).not.toBeNull();
+  });
+
+  it("回落：前置块为标题（非纯段落）时 `---` 生成水平线", async () => {
+    const te = await makeTestEditor();
+    te.insertText("# 标题");
+    te.press("Enter");
+    te.insertText("---");
+    expect(te.view.dom.querySelector("hr")).not.toBeNull();
   });
 });
