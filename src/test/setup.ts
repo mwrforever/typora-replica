@@ -63,6 +63,11 @@ if (!Range.prototype.getBoundingClientRect) {
   };
 }
 
+// Element.scrollIntoView：jsdom 未实现（revealRange 滚动定位测试需要 spy 目标），注入空实现
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = function () {};
+}
+
 afterEach(() => {
   // 销毁本用例创建的编辑器实例并卸载 Vue 组件
   destroyTestEditors();
