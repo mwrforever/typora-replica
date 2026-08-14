@@ -4,9 +4,19 @@ import { cleanup } from "@testing-library/vue";
 import { afterEach } from "vitest";
 import { destroyTestEditors } from "./editor-test-utils";
 
-// IntersectionObserver：Crepe 代码块懒初始化依赖，测试环境恒视为可见
+// IntersectionObserver：Crepe 代码块懒初始化依赖，测试环境恒视为可见。
+// observe() 时立即以 isIntersecting=true 回调：真实浏览器在元素进入视口后异步回调，
+// 桩同步触发使 CodeMirror 在节点视图创建时即刻初始化（E6 代码围栏用例依赖）。
 class IntersectionObserverStub {
-  observe() {}
+  constructor(private callback: IntersectionObserverCallback) {}
+
+  observe(target: Element) {
+    // 立即上报「可见」，等价真实观察器首次进入视口的上报
+    this.callback(
+      [{ target, isIntersecting: true } as IntersectionObserverEntry],
+      this as unknown as IntersectionObserver,
+    );
+  }
   unobserve() {}
   disconnect() {}
   takeRecords() {

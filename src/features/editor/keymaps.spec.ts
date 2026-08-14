@@ -22,6 +22,12 @@ describe("keymap 注册表", () => {
     expect(listEditorKeymaps().find((e) => e.key === "Mod-Shift-`")?.priority).toBe(200);
   });
 
+  it("内置 Typora 插入代码围栏键位 Ctrl+Shift+K 已注册（commonmark 预设仅绑 Mod-Alt-c）", () => {
+    expect(hasEditorKeymap("Mod-Shift-k")).toBe(true);
+    // 默认优先级 200，压制表格内置（100）与 baseKeymap（50）
+    expect(listEditorKeymaps().find((e) => e.key === "Mod-Shift-k")?.priority).toBe(200);
+  });
+
   it("内置 Typora 标题级别键位已注册（Ctrl+1~6 设级别、Ctrl+0 转段落、Ctrl+=/- 增减级别）", () => {
     // 级别循环 1-6 全部注册
     for (let level = 1; level <= 6; level++) {

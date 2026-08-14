@@ -7,6 +7,8 @@
 import type { Ctx } from "@milkdown/kit/ctx";
 import { commandsCtx, keymapCtx } from "@milkdown/kit/core";
 import {
+  codeBlockSchema,
+  createCodeBlockCommand,
   headingSchema,
   listItemSchema,
   paragraphSchema,
@@ -168,3 +170,42 @@ function headingLevelCommand(delta: 1 | -1) {
 // Ctrl+= 升级（级别数字减小）、Ctrl+- 降级（级别数字增大），级别钳制 1-6 无越界
 addEditorKeymap({ key: "Mod-=", onRun: headingLevelCommand(1) });
 addEditorKeymap({ key: "Mod--", onRun: headingLevelCommand(-1) });
+
+/**
+ * 插入代码围栏命令（E6-3：Ctrl+Shift+K，Typora 键位；Crepe 内置仅绑 Mod-Alt-c）
+ *
+ * 光标在代码块内：在当前代码块之后插入新的空代码块（Typora 行为——插入新围栏，
+ * 而非嵌套包裹）。wrapInBlockTypeCommand 对 code_block 不可嵌套——findWrapping 要求
+ * 被包裹内容能成为包裹节点的子节点，而 code_block 内容为 text* 无法容纳任何块，
+ * findWrapping 恒返回 null（实测段落场景同样为 null：段落是 inline 内容同样不可成为
+ * code_block 子节点），故插入路径自定义为「在其后插入空围栏」。
+ * 非代码块上下文：当前块转换为代码围栏（与内置 CreateCodeBlock 命令同路径——
+ * setBlockType 完成 textblock→textblock 转换，等价内置 Mod-Alt-c 键位行为）。
+ *
+ * 命令本体在 onRun 阶段解析节点类型（SchemaReady 之后，与 listItemSchema.type(ctx) 同理），
+ * 并以 keymap 处理器传入的 state/dispatch 执行。
+ */
+function insertCodeFenceCommand(ctx: Ctx): Command {
+  const commands = ctx.get(commandsCtx);
+  // 代码块节点类型在 onRun 阶段解析（SchemaReady 之后）
+  const codeBlockType = codeBlockSchema.type(ctx);
+  return (state, dispatch) => {
+    // 从光标位置向上逐层查找所在代码块（depth 0 = 文档顶层，未命中）
+    const { $from } = state.selection;
+    let depth = $from.depth;
+    while (depth > 0 && $from.node(depth).type !== codeBlockType) depth--;
+    if (depth === 0) {
+      // 非代码块上下文：当前块转换为代码围栏。
+      // 注意：commands.get 返回命令创建器（Cmd），调用后得到可执行的 ProseMirror Command；
+      // 与 commands.call（立即执行并返回 boolean）语义不同，此处需延迟到按键时执行
+      return commands.get(createCodeBlockCommand.key)()(state, dispatch);
+    }
+    if (!dispatch) return true;
+    // 在当前代码块之后插入新的空代码块（code_block 内容 text* 无必填子节点，空节点合法）
+    dispatch(state.tr.insert($from.after(depth), codeBlockType.create()).scrollIntoView());
+    return true;
+  };
+}
+
+// Ctrl+Shift+K：插入代码围栏（Typora 键位；priority 默认 200 压制表格内置与 baseKeymap）
+addEditorKeymap({ key: "Mod-Shift-k", onRun: insertCodeFenceCommand });
