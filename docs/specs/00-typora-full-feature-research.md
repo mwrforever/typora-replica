@@ -1,6 +1,6 @@
 # Typora 全量功能调研 Spec（行为级）
 
-- 版本：v1.3（2026-08-13）
+- 版本：v1.4（2026-08-13）
 - 状态：已校准（第 10 节 6 项全部经用户确认）
 - 范围：MarkWell（typora-replica）功能范围基准
 
@@ -141,32 +141,32 @@
 
 ## 4. 主题域（9 点）
 
-| #   | 功能            | 行为规范                                                  | 实现机制                      |
-| --- | --------------- | --------------------------------------------------------- | ----------------------------- |
-| T1  | 主题即 CSS      | 菜单列出主题目录下全部 .css；内置亮/暗主题                | CSS 文件扫描 + 菜单           |
-| T2  | 主题目录        | 打开主题目录按钮；应用数据目录 themes/                    | Rust 路径命令                 |
-| T3  | 安装主题        | 复制 css + 资源到主题目录即可用                           | 同 T2 + 热刷新                |
-| T4  | 命名规则        | 小写字母数字连字符；自动转菜单标签                        | 文件名转换                    |
-| T5  | 明暗分离        | 亮/暗模式分别指定主题；prefers-color-scheme               | CSS media query + 设置        |
-| T6  | 自定义 CSS 追加 | `base.user.css` 全主题生效；`{theme}.user.css` 单主题生效 | 样式注入顺序                  |
-| T7  | 调试            | DevTools 开关                                             | WebView2 devtools（dev 构建） |
-| T8  | 自定义字体      | @font-face 引用主题目录 fonts/                            | CSS 能力                      |
-| T9  | 主题市场        | Gallery 网站下载                                          | ❌ 不做（外链第三方）         |
+| #   | 功能            | 行为规范                                                                                                            | 实现机制                      |
+| --- | --------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| T1  | 主题即 CSS      | 菜单列出主题目录下全部 .css；内置亮/暗主题（Typora 官方 6 个：GitHub/Gothic（默认）/Newsprint/Night/Pixyll/Whitey） | CSS 文件扫描 + 菜单           |
+| T2  | 主题目录        | 打开主题目录按钮（Appearance 分区）；应用数据目录 themes/                                                           | Rust 路径命令                 |
+| T3  | 安装主题        | 复制 css + 资源到主题目录；官方行为重启后可见，**热刷新为差异化增强**                                               | 同 T2 + notify 热刷新         |
+| T4  | 命名规则        | 小写字母+连字符（**数字禁用**，官方「非字母字符仅 -」）；菜单标签 = 连字符分词+每词首字母大写                       | 文件名转换                    |
+| T5  | 明暗分离        | 亮/暗模式分别指定主题；系统色系变化联动；prefers-color-scheme                                                       | CSS media query + Tauri Theme |
+| T6  | 自定义 CSS 追加 | 4 层顺序：基础样式→主题 CSS→`base.user.css`→`{theme}.user.css`；大小写敏感                                          | 样式注入顺序                  |
+| T7  | 调试            | DevTools 开关（Shift+F12）                                                                                          | WebView2 devtools（dev 构建） |
+| T8  | 自定义字体      | @font-face 引用主题目录 fonts/；**内置主题须用 rem 字号单位**                                                       | CSS 能力                      |
+| T9  | 主题市场        | Gallery 网站下载                                                                                                    | ❌ 不做（外链第三方）         |
 
 ---
 
 ## 5. 导出域（13 点）
 
-| #   | 功能          | 行为规范                                                                          | 实现机制                                            |
-| --- | ------------- | --------------------------------------------------------------------------------- | --------------------------------------------------- |
-| X1  | HTML 导出     | 内联样式、含大纲可折叠、YAML 变量替换 `${title}`                                  | 前端生成 HTML + 内联                                |
-| X2  | PDF 导出      | 纸张/边距/页眉页脚（`${title}/${pageNo}` 变量）/h1 自动分页/自动生成 PDF 大纲书签 | WebView2 打印另存 PDF + 打印 CSS                    |
-| X3  | HTML 无样式   | 纯内容导出                                                                        | 同 X1 去样式                                        |
-| X4  | 图片长图      | 导出为图片                                                                        | ❌ 首版不做（依赖截图质量）                         |
-| X5  | Pandoc 全格式 | Word/Epub/LaTeX 等                                                                | ❌ 首版不做（依赖 Pandoc 外部程序，后续里程碑评估） |
-| X6  | 重复导出      | 用最近设置再次导出                                                                | 记住上次导出配置                                    |
-| X7  | 导出项管理    | 增删改导出项                                                                      | 设置存储                                            |
-| X8  | 导出位置      | 默认当前文件目录/自定义                                                           | Rust 对话框                                         |
+| #   | 功能          | 行为规范                                                                                                                                                          | 实现机制                                            |
+| --- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| X1  | HTML 导出     | 独立单文件内嵌样式；Include Outline（默认关）形态跟随 Flat/Collapsible；Append head/body；主题默认当前可另选；**YAML 变量替换仅限 `<title>/<meta>` 内（防 XSS）** | 前端生成 HTML + 内联                                |
+| X2  | PDF 导出      | 纸张默认 A4/边距/页眉页脚（默认空，`${title}/${pageNo}/${pageCount}` 变量）/h1 分页开关（默认关）+ 脚注前分页/手动分页 div/PDF 大纲书签/暗色主题（1.10+）         | WebView2 打印管线（PrintToPdfStream/CDP）+ 打印 CSS |
+| X3  | HTML 无样式   | 纯内容导出                                                                                                                                                        | 同 X1 去样式                                        |
+| X4  | 图片长图      | 导出为图片                                                                                                                                                        | ❌ 首版不做（依赖截图质量）                         |
+| X5  | Pandoc 全格式 | Word/Epub/LaTeX 等                                                                                                                                                | ❌ 首版不做（依赖 Pandoc 外部程序，后续里程碑评估） |
+| X6  | 重复导出      | 两命令：Export with Previous / Export and Overwrite with Previous（覆盖警告）；记忆范围=当前窗口+当前文档                                                         | 会话级记忆                                          |
+| X7  | 导出项管理    | 增删改序；内置 4 项（PDF/HTML/HTML 无样式/Image）锁定；实时作用于 File → Export 菜单                                                                              | 设置存储                                            |
+| X8  | 导出位置      | 三选项 auto/同目录/自定义（auto 自定=同当前文档目录）                                                                                                             | Rust 对话框                                         |
 
 ---
 
@@ -190,11 +190,11 @@
 
 ## 7. 设置域（3 点）
 
-| #   | 功能     | 行为规范                                                                 | 实现机制                  |
-| --- | -------- | ------------------------------------------------------------------------ | ------------------------- |
-| S1  | 偏好面板 | Appearance/Editor/General 分区                                           | 前端设置弹窗 + 设置 store |
-| S2  | 高级配置 | config.json（JSON 注释支持）                                             | Rust 设置读写             |
-| S3  | 字数统计 | 状态栏显示；点击弹面板（行数/字数/阅读时间）；选中统计；**中文一字一词** | ProseMirror doc 文本统计  |
+| #   | 功能     | 行为规范                                                                                                                      | 实现机制                         |
+| --- | -------- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| S1  | 偏好面板 | 分区顺序：General（含 Save & Recover 内部区）→ Editor → Image → Appearance → Markdown → Export；面板内 Ctrl+F 搜索设置项      | 前端设置弹窗 + 设置 store        |
+| S2  | 高级配置 | conf.user.json（JSON 支持 `//` 注释，官方明文）                                                                               | 双层设置（store + 行级合并写回） |
+| S3  | 字数统计 | 状态栏显示（默认字数）；点击弹面板（行数/字数/字符数/阅读时间）**可切换计数单位**；选中统计；**中文一字一词**；代码块文本计入 | ProseMirror doc 文本统计         |
 
 ---
 
@@ -202,7 +202,7 @@
 
 | #   | 功能       | 行为规范                                                                                             | 实现机制                     |
 | --- | ---------- | ---------------------------------------------------------------------------------------------------- | ---------------------------- |
-| C1  | 快捷键体系 | 菜单均显示快捷键；平台差异                                                                           | keymap 注册 + 菜单展示       |
+| C1  | 快捷键体系 | 菜单项右侧显示快捷键；平台差异；keyBinding 自定义（conf.user.json，重启生效）                        | keymap 注册 + 菜单展示       |
 | C2  | 未保存提示 | 关闭脏标签确认                                                                                       | 前端状态                     |
 | C3  | 编码       | UTF-8（无 BOM 默认）；Typora 无编码探测（GBK 乱码即所见、保存转 UTF-8）；我们可选 GBK 探测差异化增强 | Rust 编码探测（encoding_rs） |
 | C4  | 安全限制   | HTML script 禁、iframe sandbox                                                                       | 渲染白名单                   |
@@ -240,19 +240,21 @@
 
 ### 11.1 File（文件）
 
-| 菜单项                | 快捷键                          | 对应功能                                 |
-| --------------------- | ------------------------------- | ---------------------------------------- |
-| New 新建              | Ctrl+N                          | 新建文档（未命名标签）                   |
-| New Window 新窗口     | Ctrl+Shift+N                    | 打开新应用窗口                           |
-| New Tab 新建标签页    | -（Win 无，官方 Not Supported） | 我们的产品支持（差异项）                 |
-| Open 打开             | Ctrl+O                          | 打开文件/文件夹对话框                    |
-| Open Quickly 快速打开 | Ctrl+P                          | 模糊搜索打开（F11）                      |
-| Open Recent 最近打开  | -                               | 最近文件/文件夹列表 + Clear Items（F13） |
-| Reopen Closed File    | Ctrl+Shift+T                    | 重开最近关闭的文件                       |
-| Save 保存             | Ctrl+S                          | 写盘                                     |
-| Save As / Duplicate   | Ctrl+Shift+S                    | 另存为 / 复制文档                        |
-| Preference 偏好设置   | Ctrl+,                          | 设置弹窗（S1）                           |
-| Close 关闭            | Ctrl+W                          | 关闭当前标签（脏状态确认）               |
+| 菜单项                | 快捷键                          | 对应功能                                                    |
+| --------------------- | ------------------------------- | ----------------------------------------------------------- |
+| New 新建              | Ctrl+N                          | 新建文档（未命名标签）                                      |
+| New Window 新窗口     | Ctrl+Shift+N                    | 打开新应用窗口                                              |
+| New Tab 新建标签页    | -（Win 无，官方 Not Supported） | 我们的产品支持（差异项）                                    |
+| Open 打开             | Ctrl+O                          | 打开文件/文件夹对话框                                       |
+| Open Quickly 快速打开 | Ctrl+P                          | 模糊搜索打开（F11）                                         |
+| Open Recent 最近打开  | -                               | 最近文件/文件夹列表 + Clear Items（F13）                    |
+| Reopen Closed File    | Ctrl+Shift+T                    | 重开最近关闭的文件                                          |
+| Save 保存             | Ctrl+S                          | 写盘                                                        |
+| Save As / Duplicate   | Ctrl+Shift+S                    | 另存为 / 复制文档                                           |
+| Export 导出           | -（子菜单）                     | PDF/HTML/HTML 无样式/Image/with Previous/overwrite（X1-X8） |
+| Print 打印            | -                               | 打印当前文档（Windows）                                     |
+| Preference 偏好设置   | Ctrl+,                          | 设置弹窗（S1）                                              |
+| Close 关闭            | Ctrl+W                          | 关闭当前标签（脏状态确认）                                  |
 
 ### 11.2 Edit（编辑）
 
@@ -343,11 +345,11 @@
 - Show Status Bar 状态栏显隐（S3 依赖）
 - Font Size 字号
 - Reading Speed 阅读速度（words/min，阅读时间统计）
-- 高级：defaultFontFamily、autoHideMenuBar（Alt 切换菜单栏）、monocolorEmoji
+- 高级：defaultFontFamily、autoHideMenuBar（true 启用自动隐藏，Alt 切换）、monocolorEmoji（默认彩色）
 
 ### 12.2 Editor（编辑器）
 
-- Image Insert：copy images to given folder（P2）、relative path（P3）、./ prefix（默认关）、URL 转义
+- Image Insert：copy images to given folder（P2）、relative path（P3）、./ prefix、URL 转义——四开关默认全关（用户实测）
 - Auto pair brackets/quotes、auto pair markdown syntax（自动配对 `*`/`~`/`` ` ``/`_`；`=`/`$`/`^` 为选中文字后包围）
 - Default Line Ending（CRLF/LF）
 - Auto Save 间隔（默认 5 分钟，`autoSaveTimer`，F30）
