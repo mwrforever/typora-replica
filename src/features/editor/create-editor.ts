@@ -23,19 +23,22 @@ const isUnicodeWhitespace = (ch: string | undefined): boolean =>
 const UNDERSCORE_SENTINEL = "\uE000";
 
 /**
- * Typora 式 text 序列化处理器：GFM 单词内下划线不转义
+ * Typora 式 text 序列化处理器：GFM 单词内下划线不转义 + 硬换行尾随空白保护
  *
  * mdast-util-to-markdown 默认对 phrasing 中所有 `_` 一律反斜杠转义
  * （wow_great_stuff → wow\_great\_stuff），而 CommonMark/GFM 规定单词内下划线
  * 不构成强调（Typora 落盘亦不转义）。本处理器仅在 `_` 可能充当强调开/闭标记
  * （满足左/右 flanking 条件）时保留默认转义；可证明惰性的单词内下划线以私有区
- * 字符暂代、safe() 处理后还原，其余行为与内置 text 处理器一致。
+ * 字符暂代、safe() 处理后还原，其余文本一律交 safe() 处理，不得绕过转义链
+ * （绕过会导致反引号/`&`/方括号等重新解析时改变结构）。
+ *
+ * 唯一例外：safe() 会把换行前最后一个尾随空格编码为 &#x20;（unsafe 规则
+ * {character: ' ', after: '[\r\n]'}），破坏 CommonMark 硬换行语法
+ * （行尾两空格 + 换行，AC-E1-3 依赖）。仅当原文以两个及以上空白字符结尾的
+ * 窄场景把编码还原为原始空白字符，其余输出与 safe() 完全一致。
  */
 const gfmUnderscoreTextHandler: Handlers["text"] = (node, _, state, info) => {
   const value = node.value;
-  // 与内置处理器一致：无转义需要的纯尾随空格文本直接返回，保留尾部空格
-  if (/^[^*_\\]*\s+$/.test(value)) return value;
-
   // 逐字符扫描：仅对可能形成强调的 `_` 保留默认转义，惰性下划线以哨兵暂代
   let protectedValue = "";
   const chars = Array.from<string>(value);
@@ -62,8 +65,21 @@ const gfmUnderscoreTextHandler: Handlers["text"] = (node, _, state, info) => {
       (nextChar === undefined || isUnicodeWhitespace(nextChar) || isUnicodePunct(nextChar));
     protectedValue += canOpen || canClose ? "_" : UNDERSCORE_SENTINEL;
   }
-  const out = state.safe(protectedValue, { ...info, encode: [] });
-  return out.split(UNDERSCORE_SENTINEL).join("_");
+  const out = state.safe(protectedValue, info);
+  // 硬换行保护：safe() 的 unsafe 规则 {character: ' ', after: '[\r\n]'}
+  // （mdast-util-to-markdown/lib/unsafe.js）会把换行前最后一个尾随空格编码为 &#x20;，
+  // 破坏 CommonMark 硬换行语法「行尾两空格 + 换行」（AC-E1-3 落盘断言依赖）。
+  // 仅当原文以两个及以上空白字符结尾（硬换行语法载体）、后续序列化上下文以换行开头、
+  // 且 safe() 确实把最后一个空白编码为字符引用时，才把该编码还原为原始空白字符。
+  // 单个尾随空格不在还原范围（CommonMark 解析会剥离行尾单空格，保留 &#x20; 编码
+  // 才能往返不丢字符）；其余字符（反引号/`&`/方括号等）仍完整经过 safe 转义链。
+  const after = String(info.after ?? "");
+  let hardBreakPreserved = out;
+  if (/[ \t]{2}$/.test(protectedValue) && /^[\r\n]/.test(after) && /&(?:#x20|#x9);$/.test(out)) {
+    // 还原被编码的最后一个空白为原始空白字符（空格还原空格、制表符还原制表符）
+    hardBreakPreserved = out.replace(/&(?:#x20|#x9);$/, protectedValue.slice(-1));
+  }
+  return hardBreakPreserved.split(UNDERSCORE_SENTINEL).join("_");
 };
 
 /** Typora 式序列化 handlers 增量（覆盖内置 text 处理器） */
