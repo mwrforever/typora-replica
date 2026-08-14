@@ -1,9 +1,9 @@
-// E8 表格：Typora 式建表 / Tab 移格与末单元格加行 / 增删行列 / 对齐落盘 / 结构健壮性
+// E8 表格：Typora 式建表 / Tab 移格与末单元格加行（单列表格保导航）/ 增删行列 / 对齐落盘（GFM 对齐标记）/ 结构健壮性
 import { fireEvent } from "@testing-library/dom";
 import { commandsCtx } from "@milkdown/kit/core";
 import { deleteSelectedCellsCommand, setAlignCommand } from "@milkdown/kit/preset/gfm";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
-import { CellSelection, TableMap, findTable } from "@milkdown/kit/prose/tables";
+import { CellSelection, TableMap, findTable, selectedRect } from "@milkdown/kit/prose/tables";
 import { describe, expect, it, vi } from "vitest";
 import { makeTestEditor } from "../../test/editor-test-utils";
 import { makeTableTabAddRowCommand } from "./keymaps";
@@ -119,7 +119,7 @@ describe("E8 表格", () => {
     expect(findTable(te.view.state.selection.$from)).not.toBeNull();
   });
 
-  it("AC-E8-3 任意行最后一个单元格按 Tab 在表格末尾新增一行", async () => {
+  it("AC-E8-3 多列表格任意行最后一个单元格按 Tab 在表格末尾新增一行", async () => {
     const te = await makeTestEditor("| a | b |\n| --- | --- |\n| c | d |");
     cursorIntoLastCell(te);
     te.press("Tab");
@@ -134,6 +134,23 @@ describe("E8 表格", () => {
     const ok = command(te.view.state);
     expect(ok).toBe(true);
     expect(tableRows(te)).toBe(3); // dry-run 不派发事务，文档不变
+  });
+
+  it("AC-E8-3b 单列表格数据行按 Tab 不加行、回落内置 NextCell 下移（用户裁决：保导航）", async () => {
+    const te = await makeTestEditor("| a |\n| --- |\n| b |\n| c |");
+    const table = tableOf(te);
+    const map = TableMap.get(table.node);
+    // 光标置于第一个数据行唯一格 "b" 的段落内容（TableMap 偏移相对表格内容起点，绝对坐标 = table.pos + 偏移 + 3）
+    const bCell = table.pos + map.map[map.width] + 3;
+    te.setSelection(bCell, bCell);
+    const beforeTop = selectedRect(te.view.state).top; // 记下 Tab 前所在行号（数据行 1）
+    te.press("Tab");
+    // 行数不变：单列表格行末格即唯一格，Tab 不触发末格加行（2026-08-14 用户裁决：保导航）
+    expect(tableRows(te)).toBe(4);
+    // 选区下移一行：本命令返回 false，内置 NextCell（priority 100）接管移入下一数据行
+    const after = selectedRect(te.view.state);
+    expect(after).not.toBeUndefined();
+    expect(after!.top).toBe(beforeTop + 1);
   });
 
   it("AC-E8-4 表格增删行列操作后行列数正确变化", async () => {
@@ -170,8 +187,11 @@ describe("E8 表格", () => {
     expect(tableWidth(te)).toBe(2);
   });
 
-  it('AC-E8-5 表格列设置对齐后落盘为 <td style="text-align: ...">', async () => {
-    // 对齐以 HTML 块形式落盘（Typora 行为：对齐写入 <td> style）
+  it("AC-E8-5 表格列对齐落盘口径：GFM 对齐标记（<td style> 形态归 09 导出模块）", async () => {
+    // 对齐口径（2026-08-14 用户裁决）：markdown 源文件落盘为 GFM 对齐标记（:-:/--:，
+    // 由 AC-E8-5b 经 setAlignCommand 覆盖）；<td style="text-align: ..."> 形态归 09
+    // 导出模块 HTML 输出。本用例保留 brief 原始断言不变：原始 HTML 输入直通
+    //（text-align 字样留存，Typora 对原始 HTML 同样原样保留）。
     const te = await makeTestEditor();
     te.insertText('<table><tr><td style="text-align: center">x</td></tr></table>');
     expect(te.getMarkdown()).toContain("text-align");
@@ -193,7 +213,9 @@ describe("E8 表格", () => {
 
   it("AC-E8-6 拖拽行/列到边界外的操作被拒绝、表格结构不损坏", async () => {
     const te = await makeTestEditor("| a | b |\n| --- | --- |\n| c | d |");
-    // 边界外拖拽在 jsdom 中模拟为对表格外目标触发 drop 事件
+    // 单测口径（2026-08-14 用户裁决）：本用例为「表格结构不变断言」——jsdom 无法真实
+    // 驱动指针拖拽（依赖布局与 drag 事件链），未派发任何拖拽事件；
+    // 真实拖拽越界拒绝留待本地 E2E 验证。断言保留结构不变：
     const table = te.view.dom.querySelector("table");
     expect(table).not.toBeNull();
     // 结构不变：仍是 2 列 1 数据行

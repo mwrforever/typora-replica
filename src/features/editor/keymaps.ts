@@ -215,13 +215,15 @@ export function insertCodeFenceCommand(ctx: Ctx): Command {
 addEditorKeymap({ key: "Mod-Shift-k", onRun: insertCodeFenceCommand });
 
 /**
- * 表格 Tab 末格加行命令工厂（E8-3：任意行最后一个单元格按 Tab 在表格末尾新增一行）
+ * 表格 Tab 末格加行命令工厂（E8-3：多列表格任意行最后一个单元格按 Tab 在表格末尾新增一行）
  *
  * 内置表格 Tab 键位为 NextCell（priority 100，中间格移格）；本键位 priority 200 先行判定：
  * 光标所在格为本行最后一格时，把选区定位到表格末行末格并调用 addRowWithAlignment
  * 在末行之后（rect.bottom）插入与表头同列数、对齐同表头的新行（任意行末格均加在表格末尾）。
- * 中间格返回 false 放行，由内置 NextCell 接管移格；非表格上下文返回 false
- * 回落内置缩进行为（indent 插件）。dry-run（dispatch 缺省）仅判定命中不改文档。
+ * 中间格返回 false 放行，由内置 NextCell 接管移格；单列表格（map.width === 1）直接返回
+ * false 回落内置 NextCell 移入下一行（2026-08-14 用户裁决：保导航，不加行）；
+ * 非表格上下文返回 false 回落内置缩进行为（indent 插件）。
+ * dry-run（dispatch 缺省）仅判定命中不改文档。
  *
  * 导出供单测直调：dry-run 路径在真实 keymap 链中不可达（键位处理恒传 dispatch），
  * 需在单测中以 dispatch=undefined 显式触发覆盖。
@@ -234,6 +236,9 @@ export function makeTableTabAddRowCommand() {
       if (!table) return false;
       const rect = selectedRect(state);
       const map = TableMap.get(table.node);
+      // 单列表格：行末格即唯一格，Tab 不加行——直接回落内置 NextCell（priority 100）
+      // 移入下一行（2026-08-14 用户裁决：保导航，仅多列表格行末格 Tab 才加行）
+      if (map.width === 1) return false;
       // 当前格是否为本行最后一格（rect.left 为选区左列索引，0 起）
       const isLastCellOfRow = rect.left === map.width - 1;
       if (!isLastCellOfRow) return false;
@@ -255,5 +260,6 @@ export function makeTableTabAddRowCommand() {
   };
 }
 
-// Tab 末格加行：priority 默认 200，先于内置 NextCell（100）与 indent 插件判定
+// Tab 末格加行：priority 默认 200，先于内置 NextCell（100）与 indent 插件判定；
+// 单列表格回落内置下移（用户裁决：保导航），多列表格行末格加行
 addEditorKeymap({ key: "Tab", onRun: makeTableTabAddRowCommand() });
