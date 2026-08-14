@@ -1,10 +1,11 @@
 // 编辑器行为测试助手：直连 Crepe 实例，模拟输入与按键（@testing-library 官方测试模式的封装）
 import { Crepe, CrepeFeature } from "@milkdown/crepe";
-import { editorViewCtx, type Editor } from "@milkdown/kit/core";
+import { editorViewCtx, remarkStringifyOptionsCtx, type Editor } from "@milkdown/kit/core";
 import { TextSelection } from "@milkdown/kit/prose/state";
 import type { EditorView } from "@milkdown/kit/prose/view";
 import { fireEvent } from "@testing-library/dom";
 import { registerEditorInputRules } from "../features/editor/input-rules";
+import { applyEditorKeymaps } from "../features/editor/keymaps";
 
 /** 按键修饰键组合 */
 export interface KeyMods {
@@ -67,9 +68,13 @@ export async function makeTestEditor(
       ? { [CrepeFeature.ImageBlock]: { onUpload: options.onUpload } }
       : undefined,
   });
-  // 与产品工厂（create-editor.ts）同源注入自定义语法规则，保证测试环境覆盖自定义行为
+  // 与产品工厂（create-editor.ts）同源注入自定义语法规则、Typora 式键位与序列化形态，
+  // 保证测试环境覆盖自定义行为
   crepe.editor.config((ctx) => {
     registerEditorInputRules(ctx);
+    applyEditorKeymaps(ctx);
+    // Typora 落盘形态：无序列表序列化为 `- `（Crepe 默认 `*`，与 Typora 文档不兼容）
+    ctx.update(remarkStringifyOptionsCtx, (prev) => ({ ...prev, bullet: "-" as const }));
   });
   await crepe.create();
   liveEditors.push(crepe);

@@ -1,8 +1,10 @@
 // Crepe 工厂：统一组装 featureConfigs 与 keymap 注册注入点（10 模块扩展入口）
 import { Crepe, type CrepeConfig } from "@milkdown/crepe";
+import { remarkStringifyOptionsCtx } from "@milkdown/kit/core";
 // mhchem 副作用导入：KaTeX 化学式扩展（E7），全应用只需一次
 import "katex/contrib/mhchem";
 import { registerEditorInputRules } from "./input-rules";
+import { applyEditorKeymaps } from "./keymaps";
 
 /** 编辑器工厂可选配置 */
 export interface MarkwellEditorOptions {
@@ -37,6 +39,10 @@ export function createMarkwellEditor(
   // 自定义语法规则注入：config 回调在 create() 时执行，与内置规则统一编排
   crepe.editor.config((ctx) => {
     registerEditorInputRules(ctx);
+    // Typora 式 keymap 注入（Ctrl+[ 缩进 / Ctrl+] 反向配对，10 设置快捷键模块扩展入口）
+    applyEditorKeymaps(ctx);
+    // Typora 落盘形态：无序列表序列化为 `- `（Crepe 默认 `*`，与 Typora 文档不兼容）
+    ctx.update(remarkStringifyOptionsCtx, (prev) => ({ ...prev, bullet: "-" as const }));
   });
   return crepe;
 }
