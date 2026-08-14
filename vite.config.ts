@@ -13,11 +13,38 @@ export default defineConfig(async () => ({
   test: {
     environment: "jsdom",
     include: ["src/**/*.spec.ts"],
+    setupFiles: ["src/test/setup.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],
       include: ["src/**/*.{ts,vue}"],
-      exclude: ["src/main.ts", "src/vite-env.d.ts"],
+      exclude: ["src/main.ts", "src/vite-env.d.ts", "src/test/**"],
+      thresholds: {
+        // 全局 ≥80%（非核心功能下限）
+        lines: 80,
+        statements: 80,
+        functions: 80,
+        branches: 80,
+        // 核心功能 100%：语法转换（keymap/输入规则）、E20 安全路径、事件桥、实例管理
+        "src/features/editor/**/*.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        "src/services/editor-manager.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        "src/services/editor-events.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+      },
     },
   },
 
