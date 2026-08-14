@@ -9,7 +9,7 @@
 //   1. 应用进程启动并保持存活
 //   2. WebView2 正常初始化（子进程存活 + user data 目录建立）
 //   3. 前端页面真实加载（WebView2 进程与 vite dev server 建立持久连接）
-// 完整 CDP E2E（DOM 断言 + greet 命令链路）保留在本地执行（npm run test:e2e）。
+// 完整 CDP E2E（编辑器挂载冒烟）保留在本地执行（npm run test:e2e）。
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";

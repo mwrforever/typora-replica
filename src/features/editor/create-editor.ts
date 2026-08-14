@@ -26,7 +26,7 @@ export function createMarkwellEditor(
   const crepe = new Crepe({
     root,
     defaultValue,
-    // 默认 features 除 TopBar/Diff 外全开（与 Typora 无菜单栏编辑器形态一致）
+    // 默认 features 除 TopBar/AI 外全开（与 Typora 无菜单栏编辑器形态一致）
     ...options.crepeConfig,
     featureConfigs: {
       ...(options.crepeConfig?.featureConfigs ?? {}),

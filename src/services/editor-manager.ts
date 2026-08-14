@@ -52,6 +52,20 @@ class EditorManager {
     setupEditorEvents(this.crepe);
   }
 
+  /**
+   * 接管由 Vue 集成层创建的编辑器实例（EditorPage 装配路径）
+   *
+   * 与 create 的区别：create 自行创建根元素并解析文档；本方法仅登记 @milkdown/vue
+   * 集成层（useEditor）已创建的实例——文档已由工厂解析，不再应用 transformers.parse。
+   * 挂载根元素由 Vue 组件持有，本服务不接管移除职责（destroy 中 root 为空即安全跳过）。
+   * @param crepe 集成层已 create 完成的 Crepe 实例
+   */
+  adopt(crepe: Crepe): void {
+    this.crepe = crepe;
+    this.editor = crepe.editor;
+    setupEditorEvents(crepe);
+  }
+
   /** 销毁当前实例并解除事件绑定 */
   destroy(): void {
     if (this.crepe) {

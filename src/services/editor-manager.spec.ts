@@ -1,5 +1,6 @@
 // 编辑器实例管理服务：单例生命周期 + 文档存取 + 只读切换（跨模块接口，100% 覆盖）
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTestEditor } from "../test/editor-test-utils";
 import { editorManager } from "./editor-manager";
 
 describe("编辑器实例管理", () => {
@@ -82,5 +83,23 @@ describe("编辑器实例管理", () => {
     expect(editorManager.getView()).toBeUndefined();
     await editorManager.create("视图");
     expect(editorManager.getView()).toBeDefined();
+  });
+
+  it("adopt 接管外部编辑器后 getCrepe/getMarkdown 可用", async () => {
+    // Vue 集成层自行 create 的编辑器：文档已解析，adopt 仅登记引用
+    const test = await makeTestEditor("# 采用");
+    editorManager.adopt(test.crepe);
+    expect(editorManager.getCrepe()).toBe(test.crepe);
+    expect(editorManager.getEditor()).toBe(test.crepe.editor);
+    expect(editorManager.getMarkdown()).toBe("# 采用");
+  });
+
+  it("adopt 后 destroy 清空实例引用（挂载根元素由 Vue 集成层持有）", async () => {
+    const test = await makeTestEditor("内容");
+    editorManager.adopt(test.crepe);
+    editorManager.destroy();
+    expect(editorManager.getCrepe()).toBeUndefined();
+    expect(editorManager.getEditor()).toBeUndefined();
+    expect(editorManager.getMarkdown()).toBe("");
   });
 });
