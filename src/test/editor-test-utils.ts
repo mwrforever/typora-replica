@@ -5,6 +5,7 @@ import { insert } from "@milkdown/kit/utils";
 import { TextSelection } from "@milkdown/kit/prose/state";
 import type { EditorView } from "@milkdown/kit/prose/view";
 import { fireEvent } from "@testing-library/dom";
+import { registerEditorInputRules } from "../features/editor/input-rules";
 
 /** 按键修饰键组合 */
 export interface KeyMods {
@@ -66,6 +67,10 @@ export async function makeTestEditor(
     featureConfigs: options.onUpload
       ? { [CrepeFeature.ImageBlock]: { onUpload: options.onUpload } }
       : undefined,
+  });
+  // 与产品工厂（create-editor.ts）同源注入自定义语法规则，保证测试环境覆盖自定义行为
+  crepe.editor.config((ctx) => {
+    registerEditorInputRules(ctx);
   });
   await crepe.create();
   liveEditors.push(crepe);

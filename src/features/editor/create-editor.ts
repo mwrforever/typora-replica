@@ -2,6 +2,7 @@
 import { Crepe, type CrepeConfig } from "@milkdown/crepe";
 // mhchem 副作用导入：KaTeX 化学式扩展（E7），全应用只需一次
 import "katex/contrib/mhchem";
+import { registerEditorInputRules } from "./input-rules";
 
 /** 编辑器工厂可选配置 */
 export interface MarkwellEditorOptions {
@@ -32,6 +33,10 @@ export function createMarkwellEditor(
       ...(options.crepeConfig?.featureConfigs ?? {}),
       ...(options.onUpload ? { [Crepe.Feature.ImageBlock]: { onUpload: options.onUpload } } : {}),
     },
+  });
+  // 自定义语法规则注入：config 回调在 create() 时执行，与内置规则统一编排
+  crepe.editor.config((ctx) => {
+    registerEditorInputRules(ctx);
   });
   return crepe;
 }
