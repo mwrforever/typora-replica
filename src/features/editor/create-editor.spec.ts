@@ -1,7 +1,11 @@
 // Crepe 工厂自验证：覆盖 onUpload 注入分支（07 图片模块的配置入口）+ GFM 下划线序列化处理器分支
-import { describe, expect, it } from "vitest";
+import { Crepe } from "@milkdown/crepe";
+import { codeBlockConfig } from "@milkdown/kit/component/code-block";
+import { editorViewCtx } from "@milkdown/kit/core";
+import { describe, expect, it, vi } from "vitest";
 import { makeTestEditor } from "../../test/editor-test-utils";
 import { createMarkwellEditor, markwellRemarkHandlers } from "./create-editor";
+import { closeMermaidMenu } from "./mermaid/mermaid-menu";
 
 describe("createMarkwellEditor 工厂", () => {
   it("onUpload 回调注入 ImageBlock 特性配置（构造不抛错）", async () => {
@@ -11,6 +15,61 @@ describe("createMarkwellEditor 工厂", () => {
     const crepe = createMarkwellEditor(root, "# 工厂", { onUpload });
     expect(crepe).toBeDefined();
     // 未 create 的实例直接 destroy 收尾，不遗留异步状态
+    await crepe.destroy();
+  });
+});
+
+describe("createMarkwellEditor 工厂（E21 mermaid 接线）", () => {
+  it("CodeMirror renderPreview 注入 mermaid 钩子：非图表语言回落缺省 prev，图表右键弹出菜单", async () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const crepe = createMarkwellEditor(root, "", {
+      // 调用方提供 CodeMirror 特性配置但不提供 renderPreview → 回落代码块默认空实现
+      crepeConfig: { featureConfigs: { [Crepe.Feature.CodeMirror]: {} } },
+    });
+    // 创建编辑器：触发特性 config 回调与 $prose 插件工厂（renderPreview 链在此组装）
+    await crepe.create();
+    // 读取生效的 codeBlockConfig：renderPreview 链 = latex → mermaid → 缺省空实现
+    const config = crepe.editor.action((ctx) => ctx.get(codeBlockConfig.key));
+    // 非图表语言经 mermaid 钩子回落到缺省 prev（返回 null，不渲染预览）
+    expect(config.renderPreview("js", "const a = 1", vi.fn())).toBeNull();
+    // contextmenu 插件：编辑器 DOM 内图表容器右键弹出自定义菜单（handleDOMEvents 接线）
+    const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx));
+    const chart = document.createElement("div");
+    chart.className = "markwell-mermaid-svg";
+    chart.innerHTML = "<svg></svg>";
+    view.dom.appendChild(chart);
+    const event = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 5,
+      clientY: 6,
+    });
+    chart.dispatchEvent(event);
+    expect(document.querySelector(".markwell-mermaid-menu")?.textContent).toContain("另存为 SVG");
+    closeMermaidMenu();
+    // 移除测试注入的裸节点并等一帧：让 ProseMirror 的 DOM 变更观察器先完成 flush
+    //（jsdom 下外部 DOM 变更的 flush 若与销毁时序竞争，会在 ctx 拆除后查询占位符
+    // 配置而抛 contextNotFound；等待一帧后 flush 在 ctx 存活期完成，销毁干净）
+    chart.remove();
+    await new Promise((r) => setTimeout(r, 0));
+    await crepe.destroy();
+  });
+
+  it("调用方提供的 CodeMirror renderPreview 被 mermaid 钩子链式包裹（非图表语言透传）", async () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const customPrev = vi.fn(() => "<div>custom</div>");
+    const crepe = createMarkwellEditor(root, "", {
+      crepeConfig: {
+        featureConfigs: { [Crepe.Feature.CodeMirror]: { renderPreview: customPrev } },
+      },
+    });
+    await crepe.create();
+    const config = crepe.editor.action((ctx) => ctx.get(codeBlockConfig.key));
+    // 非图表语言：mermaid 钩子透传给调用方自定义 prev，证明链式包裹生效
+    expect(config.renderPreview("js", "const a = 1", vi.fn())).toBe("<div>custom</div>");
+    expect(customPrev).toHaveBeenCalledWith("js", "const a = 1", expect.any(Function));
     await crepe.destroy();
   });
 });

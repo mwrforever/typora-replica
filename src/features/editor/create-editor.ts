@@ -2,7 +2,10 @@
 import { Crepe, type CrepeConfig } from "@milkdown/crepe";
 import type { Ctx } from "@milkdown/kit/ctx";
 import { remarkStringifyOptionsCtx } from "@milkdown/kit/core";
+import { defaultConfig as defaultCodeBlockConfig } from "@milkdown/kit/component/code-block";
 import { codeBlockSchema } from "@milkdown/kit/preset/commonmark";
+import { Plugin } from "@milkdown/kit/prose/state";
+import { $prose } from "@milkdown/kit/utils";
 import type { Handlers } from "mdast-util-to-markdown";
 import type { Options } from "remark-stringify";
 // mhchem 副作用导入：KaTeX 化学式扩展（E7），全应用只需一次
@@ -14,6 +17,8 @@ import { getUploadHandler } from "./image-upload";
 import { registerEditorInputRules } from "./input-rules";
 import { applyEditorKeymaps } from "./keymaps";
 import { openLinkPlugin } from "./link/open-link";
+import { handleMermaidContextMenu } from "./mermaid/mermaid-menu";
+import { createMermaidRenderPreview } from "./mermaid/mermaid-preview";
 import {
   configureToc,
   setupTocNodeView,
@@ -176,6 +181,13 @@ export function createMarkwellEditor(
   // 图片上传回调：options.onUpload 显式传入优先，其次 07 模块注册表注入
   // （image-upload.ts），缺省 undefined → Crepe 内置 blob URL 占位回落
   const resolvedOnUpload = options.onUpload ?? getUploadHandler();
+  // CodeMirror 特性配置（E21 注入点）：读取调用方配置并做 mermaid 渲染钩子链式包裹
+  const codeMirrorConfig = options.crepeConfig?.featureConfigs?.[Crepe.Feature.CodeMirror] ?? {};
+  // 组装时读取前序 renderPreview 做链式包裹（latex feature 同款 prev 链模式）：
+  // 调用方显式提供的 renderPreview 优先，缺省回落代码块组件内置空实现
+  const renderPreview = createMermaidRenderPreview(
+    codeMirrorConfig.renderPreview ?? defaultCodeBlockConfig.renderPreview,
+  );
   const crepe = new Crepe({
     root,
     defaultValue,
@@ -183,6 +195,8 @@ export function createMarkwellEditor(
     ...options.crepeConfig,
     featureConfigs: {
       ...(options.crepeConfig?.featureConfigs ?? {}),
+      // mermaid/sequence/flow 语言经懒加载渲染，其余语言沿 prev 链回落（保留调用方其余配置）
+      [Crepe.Feature.CodeMirror]: { ...codeMirrorConfig, renderPreview },
       ...(resolvedOnUpload ? { [Crepe.Feature.ImageBlock]: { onUpload: resolvedOnUpload } } : {}),
     },
   });
@@ -195,6 +209,21 @@ export function createMarkwellEditor(
   crepe.editor.use(tocInputRule);
   // E14 链接：Ctrl+点击在系统浏览器打开（普通点击仍走内置 LinkTooltip）
   crepe.editor.use(openLinkPlugin);
+  // E21 图表右键菜单：contextmenu 落在 mermaid 预览容器时弹出另存/复制菜单
+  //（非图表区域返回 false 放行浏览器默认菜单；handleDOMEvents 由 ProseMirror
+  // 在编辑器 DOM 上统一监听，预览面板位于编辑器内容 DOM 内故可命中）
+  crepe.editor.use(
+    $prose(
+      () =>
+        new Plugin({
+          props: {
+            handleDOMEvents: {
+              contextmenu: (_view, event) => handleMermaidContextMenu(event as MouseEvent),
+            },
+          },
+        }),
+    ),
+  );
   // 自定义语法规则注入：config 回调在 create() 时执行，与内置规则统一编排
   crepe.editor.config((ctx) => {
     registerEditorInputRules(ctx);
