@@ -88,6 +88,13 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 02 核心服务 100%：最近文件（置顶去重/上限 10/固定项保留/失败移除，F13）
+        "src/services/recent-files.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },
