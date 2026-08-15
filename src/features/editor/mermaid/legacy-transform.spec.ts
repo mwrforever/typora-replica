@@ -21,8 +21,24 @@ describe("legacy 图表语法转换", () => {
     expect(out).toContain("flowchart");
     expect(out).toContain("开始");
     expect(out).toContain("处理");
-    // 连接线非节点声明，原样保留
-    expect(out).toContain("st->op->e");
+  });
+
+  it("legacy flow 连接线单横线 -> 映射为双横线 -->（真实 mermaid 解析要求，AC-E21-4）", () => {
+    const out = transformLegacyDiagram(
+      "flow",
+      "st=>start: 开始\nop=>operation: 处理\ne=>end: 结束\nst->op->e",
+    );
+    // 单横线箭头在真实 mermaid 11.16.1 中报 Parse error，必须补成双横线
+    expect(out).toContain("st-->op");
+    expect(out).toContain("op-->e");
+    // 连式转换后不得出现三横线（--->），即映射未把已有 --> 拆开叠加
+    expect(out).not.toContain("--->");
+  });
+
+  it("legacy flow 中已存在的双横线 --> 原样保留", () => {
+    const out = transformLegacyDiagram("flow", "a=>operation: A\nb=>operation: B\na-->b");
+    expect(out).toContain("a-->b");
+    expect(out).not.toContain("--->");
   });
 
   it("legacy flow 的 condition 节点映射为菱形、inputoutput 映射为圆角矩形", () => {

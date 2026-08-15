@@ -61,6 +61,39 @@
   transition: opacity 200ms ease;
 }
 
+/* 图表右键菜单（E21）：菜单挂在 document.body（mermaid-menu.ts），不在 .milkdown 内，
+   --crepe-* 令牌取不到时回退亮色设计令牌值（tokens.css / 上文亮色块）。
+   position: fixed 使 left/top（clientX/clientY）在点击处生效；静态定位下坐标被忽略、
+   菜单沉到文档流末尾（审查发现，AC-E21-5） */
+.markwell-mermaid-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 128px;
+  padding: 4px;
+  background: var(--crepe-color-background, #ffffff);
+  border: 1px solid var(--crepe-color-outline, #cbd5e1);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.15);
+}
+
+.markwell-mermaid-menu button {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  text-align: left;
+  color: var(--crepe-color-on-background, #1f2937);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* 按钮 hover 主色调（与设计令牌体系一致） */
+.markwell-mermaid-menu button:hover {
+  background: var(--crepe-color-primary, #0f766e);
+  color: #ffffff;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .milkdown * {
     transition: none !important;

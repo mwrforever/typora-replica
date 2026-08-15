@@ -34,8 +34,10 @@ function transformLegacyFlow(content: string): string {
     const trimmed = line.trim();
     const m = /^([\w-]+)=>(start|end|operation|condition|inputoutput):\s*(.+)$/.exec(trimmed);
     if (!m) {
-      // 非节点声明行（连接线等）原样保留
-      out.push(trimmed);
+      // 非节点声明行（连接线等）：legacy flow 单横线箭头 -> 必须补成 mermaid 双横线 -->，
+      // 否则真实 mermaid 11.16.1 报 Parse error（AC-E21-4 核心场景失效）。
+      // 交替匹配整体替换：已存在的 -->（其内部含 ->）优先整体命中，原样保留不被拆开
+      out.push(trimmed.replace(/-->|->/g, "-->"));
       continue;
     }
     const [, id, kind, label] = m;
