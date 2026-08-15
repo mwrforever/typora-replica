@@ -39,6 +39,8 @@ const isUnicodeWhitespace = (ch: string | undefined): boolean =>
 
 /** 单词内下划线的临时占位（私有区字符，safe() 的转义表不会命中） */
 const UNDERSCORE_SENTINEL = "\uE000";
+/** 字面 U+E000 的临时占位（与下划线哨兵区分：若原样混入，还原阶段会被统一替换为 `_`） */
+const LITERAL_E000_SENTINEL = "\uE001";
 
 /**
  * Typora 式 text 序列化处理器：GFM 单词内下划线不转义 + 硬换行尾随空白保护
@@ -62,7 +64,9 @@ const gfmUnderscoreTextHandler: Handlers["text"] = (node, _, state, info) => {
   const chars = Array.from<string>(value);
   for (let i = 0; i < chars.length; i++) {
     if (chars[i] !== "_") {
-      protectedValue += chars[i];
+      // 字面 U+E000 先映射为第二私有区占位：该字符与下划线哨兵同值，
+      // 若不经区分原样通过，还原阶段会被 split(哨兵).join("_") 一并替换为 `_`（数据损坏）
+      protectedValue += chars[i] === UNDERSCORE_SENTINEL ? LITERAL_E000_SENTINEL : chars[i];
       continue;
     }
     // 节点边缘借用序列化上下文（containerPhrasing 传入）还原相邻字符；
@@ -97,7 +101,13 @@ const gfmUnderscoreTextHandler: Handlers["text"] = (node, _, state, info) => {
     // 还原被编码的最后一个空白为原始空白字符（空格还原空格、制表符还原制表符）
     hardBreakPreserved = out.replace(/&(?:#x20|#x9);$/, protectedValue.slice(-1));
   }
-  return hardBreakPreserved.split(UNDERSCORE_SENTINEL).join("_");
+  // 逆序还原：先字面占位 → 下划线哨兵 → `_`，再把字面 U+E000 占位还原为原字符。
+  // 顺序不可颠倒——若先还原字面占位，产物中的 U+E000 会再次被哨兵替换误伤
+  return hardBreakPreserved
+    .split(UNDERSCORE_SENTINEL)
+    .join("_")
+    .split(LITERAL_E000_SENTINEL)
+    .join(UNDERSCORE_SENTINEL);
 };
 
 /** Typora 式序列化 handlers 增量（覆盖内置 text 处理器） */

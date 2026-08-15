@@ -116,6 +116,16 @@ describe("markwellRemarkHandlers.text（GFM 单词内下划线不转义）", () 
     expect(out).toBe("wow_great_stuff");
   });
 
+  it("字面 U+E000 与哨兵碰撞防护：私有区字面字符不被改写为下划线", () => {
+    // 字面 U+E000 若与下划线哨兵同值混入，还原阶段会被统一替换为 `_`（静默数据损坏）；
+    // 处理器须先映射为第二占位、还原时逆序恢复为原字符
+    expect(runTextHandler("a\uE000b", " ", " ").out).toBe("a\uE000b");
+    // 与单词内下划线混合：哨兵还原为 `_` 的同时字面 U+E000 原样保留
+    expect(runTextHandler("wow_great\uE000stuff", " ", " ").out).toBe("wow_great\uE000stuff");
+    // 行内多处字面 U+E000 均按原字符还原（不产生多余下划线）
+    expect(runTextHandler("\uE000x\uE000", " ", " ").out).toBe("\uE000x\uE000");
+  });
+
   it("行首 `_` 前为空白或标点时保留默认转义（可开启强调）", () => {
     // 前为空白：左 flanking 成立，`_` 必须转义
     expect(runTextHandler("_x", " ", " ").captured).not.toContain(SENTINEL);
@@ -160,6 +170,21 @@ describe("markwellRemarkHandlers.text（GFM 单词内下划线不转义）", () 
     // 落盘需保持反引号转义：重新解析后不产生代码跨度，且再次落盘为定点（内容一致）
     const reparsed = await makeTestEditor(md);
     expect(reparsed.view.dom.querySelector("code")).toBeNull();
+    expect(reparsed.getMarkdown()).toBe(md);
+  });
+
+  it("字面 U+E000 落盘往返一致（getMarkdown 后原字符保留、无多余下划线）", async () => {
+    const te = await makeTestEditor();
+    // 构造含字面 U+E000 与单词内下划线的文本：U+E000 与下划线哨兵同值，
+    // 若被哨兵还原链误伤会被静默替换为 `_`（一次性不可逆数据损坏）
+    te.view.dispatch(
+      te.view.state.tr.insertText("wow_great\uE000stuff", te.view.state.selection.from),
+    );
+    const md = te.getMarkdown();
+    // 字面 U+E000 原样保留、单词内下划线不转义，均无多余字符
+    expect(md).toBe("wow_great\uE000stuff");
+    // 重新解析再落盘为定点（无字符引用/多余下划线累积）
+    const reparsed = await makeTestEditor(md);
     expect(reparsed.getMarkdown()).toBe(md);
   });
 

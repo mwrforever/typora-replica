@@ -37,6 +37,28 @@ describe("mermaid 预览钩子", () => {
     expect(html).toContain("sequenceDiagram");
   });
 
+  it("多图表文档：两次渲染的 id 必须不同（固定 id 会被 mermaid render 按 id 互删 SVG）", async () => {
+    // mermaid 11.16.1 的 render 内部会 removeExistingElements(document, id)，把文档中
+    // 同名旧 SVG 移除——固定 id 时第二个图表渲染会删掉第一个图表的预览；自增唯一 id 隔离。
+    // 两次渲染串行触发（vitest 模块运行器对 factory mock 的并发动态 import 会解析到真实
+    // 模块——测试环境编排问题，与本次修复无关，真实应用内渲染本就逐次发生）
+    const hook = createMermaidRenderPreview(prev);
+    const applyFirst = vi.fn();
+    hook("mermaid", "graph TD; A-->B", applyFirst);
+    await vi.waitFor(() => expect(applyFirst).toHaveBeenCalled());
+    const applySecond = vi.fn();
+    hook("mermaid", "graph TD; C-->D", applySecond);
+    await vi.waitFor(() => expect(applySecond).toHaveBeenCalled());
+    const render = vi.mocked((await import("mermaid")).default.render);
+    expect(render).toHaveBeenCalledTimes(2);
+    const id1 = render.mock.calls[0][0];
+    const id2 = render.mock.calls[1][0];
+    // 两次渲染 id 不同，且按 markwell-mermaid-N 自增形态生成
+    expect(id1).toMatch(/^markwell-mermaid-\d+$/);
+    expect(id2).toMatch(/^markwell-mermaid-\d+$/);
+    expect(id1).not.toBe(id2);
+  });
+
   it("legacy flow 转换后交给 mermaid 渲染（flowchart 头部注入）", async () => {
     const hook = createMermaidRenderPreview(prev);
     const applyPreview = vi.fn();

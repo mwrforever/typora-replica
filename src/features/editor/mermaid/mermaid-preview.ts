@@ -23,6 +23,16 @@ export type RenderPreviewHandler = (
 const LOADING_HTML = '<div class="markwell-mermaid-loading">图表渲染中…</div>';
 
 /**
+ * 渲染 id 自增计数器（多图表文档隔离）
+ *
+ * mermaid 11.16.1 的 render() 内部会 removeExistingElements(document, id)——
+ * 按传入 id 把文档中同名旧元素移除，且返回的 SVG 自带该 id 并被嵌入预览面板。
+ * 若固定 id 渲染，第二个图表渲染时会把第一个图表的 SVG 从 DOM 移除，
+ * 多图表文档任一时刻只保留最后渲染的一个。每次渲染分配自增唯一 id 规避。
+ */
+let renderSeq = 0;
+
+/**
  * 创建 mermaid 预览钩子（链式包裹前序 renderPreview）
  * @param prev 前序 renderPreview（内置 latex 等）
  */
@@ -56,6 +66,6 @@ async function renderMermaidAsync(content: string, lang: string): Promise<string
   const { default: mermaid } = await import("mermaid");
   mermaid.initialize({ startOnLoad: false, securityLevel: "strict" });
   const source = transformLegacyDiagram(lang, content);
-  const { svg } = await mermaid.render("markwell-mermaid", source);
+  const { svg } = await mermaid.render(`markwell-mermaid-${++renderSeq}`, source);
   return `<div class="markwell-mermaid-svg">${svg}</div>`;
 }

@@ -41,6 +41,21 @@ describe("legacy 图表语法转换", () => {
     expect(out).not.toContain("--->");
   });
 
+  it("dashed 虚线保护：a-.->b 保持原样且 st->op->e 仍转双横线", () => {
+    const out = transformLegacyDiagram(
+      "flow",
+      "st=>start: S\nop=>operation: O\ne=>end: E\nst->op->e\nst-.->e\nst==>op",
+    );
+    // 虚线 -.->（flowchart.js 支持，mermaid 合法语法）不得被补成非法语法 -.-->
+    expect(out).toContain("st-.->e");
+    expect(out).not.toContain("-.-->");
+    // 粗线 ==> 同样保持原样
+    expect(out).toContain("st==>op");
+    // 单横线 -> 仍按 AC-E21-4 补成双横线 -->（与占位保护互不干扰）
+    expect(out).toContain("st-->op-->e");
+    expect(out).not.toContain("--->");
+  });
+
   it("legacy flow 的 condition 节点映射为菱形、inputoutput 映射为圆角矩形", () => {
     const out = transformLegacyDiagram("flow", "cond=>condition: 判断\nio=>inputoutput: 输入输出");
     expect(out).toContain("cond{判断}");
