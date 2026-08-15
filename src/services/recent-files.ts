@@ -38,7 +38,7 @@ export class RecentFiles {
   }
 
   /**
-   * 记录打开（文件或文件夹）：去重置顶 + 超限截断（挤掉最旧非固定项）
+   * 记录打开（文件或文件夹）：去重置顶 + 超限截断（保留最近 MAX_RECENT 条）
    * @param path 打开的文件/文件夹路径
    */
   async record(path: string): Promise<void> {
@@ -46,7 +46,7 @@ export class RecentFiles {
     const existing = items.find((f) => f.path === path);
     const pinned = existing?.pinned ?? false;
     const next = [{ path, pinned, openedAt: Date.now() }, ...items.filter((f) => f.path !== path)];
-    // 超限截断：从尾部移除（固定项优先保留，先裁非固定）
+    // 超限截断：简单保留前 MAX_RECENT 条（固定项优先截断策略留待 03 侧栏落地时用户拍板）
     const trimmed = next.slice(0, MAX_RECENT);
     await this.persist(trimmed);
   }
