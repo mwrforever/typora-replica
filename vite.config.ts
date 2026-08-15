@@ -67,6 +67,13 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 02 核心服务 100%：行尾转换器（落盘统一口径——FM 盲区收口/硬换行往返）
+        "src/services/line-ending.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },
