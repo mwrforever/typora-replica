@@ -106,11 +106,11 @@ pub fn list_drafts(dir: &Path) -> Result<Vec<crate::io::commands::DraftEntry>, S
         if !name.ends_with(".md") {
             continue;
         }
-        let date = if name.len() >= 10 {
-            name[..10].to_string()
-        } else {
-            String::new()
-        };
+        // 日期前缀按 get(..10) 字符边界安全切片：自产草稿前 10 字节恒为 ASCII 日期，
+        // 但用户手动放入的非 ASCII 起始文件名（如 `笔记一二.md`，15 字节）第 10 字节
+        // 可能落在多字节字符中间，旧 `name[..10]` 字节切片会 panic（违反库禁 panic 规则）；
+        // 非字符边界或不足 10 字节时返回 None，date 置空串
+        let date = name.get(..10).map(|s| s.to_string()).unwrap_or_default();
         drafts.push(crate::io::commands::DraftEntry {
             path: entry.path().to_string_lossy().into_owned(),
             name,
@@ -249,6 +249,20 @@ mod tests {
         assert_eq!(drafts.len(), 2);
         assert_eq!(drafts[0].name, "2026-08-15-new.md");
         assert_eq!(drafts[0].date, "2026-08-15");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn list_drafts_non_ascii_name_no_panic() {
+        let dir = temp_dir();
+        // 非 ASCII 起始文件名：UTF-8 共 15 字节且第 10 字节落在多字节字符（二）中间，
+        // 旧实现 name[..10] 字节切片必 panic；get(..10) 应安全返回且 date 置空串
+        let weird = dir.join("笔记一二.md");
+        fs::write(&weird, "x").unwrap();
+        let drafts = list_drafts(&dir).unwrap();
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].name, "笔记一二.md");
+        assert_eq!(drafts[0].date, "");
         let _ = fs::remove_dir_all(&dir);
     }
 
