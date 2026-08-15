@@ -102,6 +102,13 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 02 核心服务 100%：自动保存（停笔防抖 1s∪定时 5min 双条件/开关联动/dirty 协作，F30）
+        "src/services/auto-save.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },
