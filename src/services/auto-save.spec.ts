@@ -52,21 +52,19 @@ describe("自动保存（F30，双条件防抖+定时）", () => {
     c.stop();
   });
 
-  it("持续编辑不停笔：1s 防抖被重置，5 分钟定时兜底（AC-F30-2）", async () => {
+  it("持续编辑不停笔：防抖持续重置，5 分钟定时兜底触发（AC-F30-2）", async () => {
     const c = new AutoSaveController({
       session: makeSession(),
       getSettings: mockGetSettings,
       subscribeMarkdown: mockSubscribe,
     });
     c.start();
-    emitted()?.("a");
-    await vi.advanceTimersByTimeAsync(900);
-    emitted()?.("ab");
-    await vi.advanceTimersByTimeAsync(900);
-    emitted()?.("abc");
-    expect(mockSave).not.toHaveBeenCalled(); // 防抖持续被重置
-    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
-    expect(mockSave).toHaveBeenCalledTimes(1); // 定时兜底触发
+    // 持续编辑：每 900ms 一次（<1s 防抖窗口，防抖永不触发），5min 定时器到期时兜底保存
+    for (let elapsed = 0; elapsed < 5 * 60 * 1000; elapsed += 900) {
+      emitted()?.("持续编辑");
+      await vi.advanceTimersByTimeAsync(900);
+    }
+    expect(mockSave).toHaveBeenCalledTimes(1); // 唯一保存来源 = 5min 定时兜底
     c.stop();
   });
 
