@@ -109,6 +109,13 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 02 核心服务 100%：草稿备份与恢复（5s 心跳防抖/退出备份/首标题命名/空内容防护，F31）
+        "src/services/draft-recovery.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },
