@@ -18,8 +18,10 @@ describe("应用冒烟测试", () => {
   });
 
   it("初始文档渲染为标题", async () => {
+    // 02 起 E2E 恒以 --reopen-file 预置 fixture 启动（wdio.conf 预置），
+    // 初始文档即 fixture 内容（旧「欢迎使用 MarkWell」随 01 默认空文档方案移除）
     const heading = await $(".milkdown h1");
-    await expect(heading).toHaveText("欢迎使用 MarkWell");
+    await expect(heading).toHaveText("启动测试");
   });
 
   it("语法输入规则冒烟：输入 # 空格生成标题", async () => {
