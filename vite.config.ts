@@ -14,6 +14,17 @@ export default defineConfig(async () => ({
     environment: "jsdom",
     include: ["src/**/*.spec.ts"],
     setupFiles: ["src/test/setup.ts"],
+    // 内存安全：jsdom 测试每个 worker 需加载 Crepe/CodeMirror/KaTeX 等重依赖
+    // （单 worker 常驻数百 MB），默认按 CPU 核数并发拉起大量 worker 会在
+    // pre-push 钩子等叠加场景下把 node 内存推到 10GB+ 并触发 OOM 杀 worker。
+    // 显式限制为 4 个 fork：峰值内存钉在约 2GB 以内，代价是跑批略慢。
+    pool: "forks",
+    poolOptions: {
+      forks: {
+        maxForks: 4,
+        minForks: 1,
+      },
+    },
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],
