@@ -84,7 +84,9 @@ describe("E7 数学块", () => {
     expect(rendered).not.toBeNull();
     // mhchem 渲染的化学式：KaTeX 输出 msub 结构（MathML 部分），且无解析错误
     expect(rendered?.querySelector("msub")).not.toBeNull();
-    expect(rendered?.textContent).not.toContain("ParseError");
+    // 无解析错误：KaTeX throwOnError:false 出错时渲染 .katex-error 节点（与 AC-E7-5 同款判定）。
+    // 原 not.toContain("ParseError") 恒真（错误节点文本不含该串），已替换为该真实断言
+    expect(rendered?.querySelector(".katex-error")).toBeNull();
   });
 
   it("AC-E7-4 使用 \\def\\R 后输入 \\R 正确渲染自定义命令", async () => {

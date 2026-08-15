@@ -5,7 +5,8 @@ import { makeTestEditor } from "../../test/editor-test-utils";
 describe("E1 段落与换行", () => {
   it("AC-E1-1 段中按 Enter 拆分为两个段落", async () => {
     const te = await makeTestEditor("第一段第二段");
-    te.setSelection(3, 3); // 光标置于「第一段」后
+    // 光标置于段中：全文 6 字符的第 3 字符后（「第一段」与「第二段」交界处），对应 AC 的「段中按 Enter」
+    te.setSelection(3, 3);
     te.press("Enter");
 
     expect(te.view.state.doc.childCount).toBe(2);
@@ -46,8 +47,8 @@ describe("E1 段落与换行", () => {
       }
     });
     expect(hasHardBreak).toBe(true);
-    // 原始序列化（不经 getMarkdown 的尾部换行裁剪）：行尾两空格 + 换行即兼容语法本体，
-    // 段尾换行在此处是语义而非噪音，故取 crepe 原始输出断言
+    // 原始序列化：直接调 crepe.getMarkdown() 取原始输出（不经测试助手 getMarkdown 的尾部换行裁剪），
+    // 行尾两空格 + 换行即兼容语法本体，段尾换行在此处是语义而非噪音
     const md = te.crepe.getMarkdown();
     // CommonMark 兼容序列化：行尾两空格或 <br/>，二者取一
     expect(md.includes("  \n") || md.includes("<br/>")).toBe(true);
