@@ -8,6 +8,7 @@
 import { FileIoError, readFile, writeFile } from "./file-io";
 import { toDiskContent } from "./line-ending";
 import { loadSettings, updateSettings } from "./settings";
+import { RecentFiles } from "./recent-files";
 import { editorManager } from "./editor-manager";
 
 /** 会话内文档描述（广播给 UI 层重新装配编辑器） */
@@ -78,6 +79,8 @@ export class DocumentSession {
       void updateSettings({ launch: { lastFile: path, lastFolder: this.currentDir } }).catch(
         () => undefined,
       );
+      // 最近文件记录（AC-F13-1：打开文件进入列表首位）
+      recordRecent(path);
     } catch (e) {
       const message = e instanceof FileIoError ? e.message : "打开文件失败";
       this.notify({ level: "error", message });
@@ -91,6 +94,8 @@ export class DocumentSession {
   async openFolder(path: string): Promise<void> {
     this.currentDir = path;
     void updateSettings({ launch: { lastFolder: path } }).catch(() => undefined);
+    // 最近文件记录（F13 语义：文件夹同样入列表）
+    recordRecent(path);
   }
 
   /** 新建未命名文档（复位路径/脏状态并广播） */
@@ -151,7 +156,10 @@ export class DocumentSession {
     void updateSettings({
       launch: { lastFile: path, lastFolder: this.currentDir },
     }).catch(() => undefined);
-    return this.save();
+    const out = await this.save();
+    // 另存成功才记录最近文件（写盘失败不污染最近列表，AC-F13-1 链路）
+    if (out.saved) recordRecent(path);
+    return out;
   }
 }
 
@@ -165,4 +173,13 @@ function dirnameOf(path: string): string | undefined {
 function basenameOf(path: string): string {
   const idx = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   return idx === -1 ? path : path.slice(idx + 1);
+}
+
+/**
+ * 记录最近打开（fire-and-forget：失败静默，与 updateSettings 持久化同构——
+ * 最近列表写入失败不得阻断打开/保存链路）
+ * @param path 打开/保存成功的文件或文件夹完整路径
+ */
+function recordRecent(path: string): void {
+  void new RecentFiles().record(path).catch(() => undefined);
 }

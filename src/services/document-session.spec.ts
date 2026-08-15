@@ -5,6 +5,7 @@ const mockWriteFile = vi.fn();
 const mockLoadSettings = vi.fn();
 const mockUpdateSettings = vi.fn();
 const mockGetMarkdown = vi.fn();
+const mockRecord = vi.fn();
 
 vi.mock("./file-io", () => ({
   // FileIoError 必须同构导出（document-session 的 catch 用 instanceof 判定）
@@ -19,6 +20,12 @@ vi.mock("./settings", () => ({
 vi.mock("./editor-manager", () => ({
   editorManager: { getMarkdown: (...a: unknown[]) => mockGetMarkdown(...a) },
 }));
+vi.mock("./recent-files", () => ({
+  // 同构导出 RecentFiles 类：record 委托 mock（document-session 用 new + .catch 消费）
+  RecentFiles: class {
+    record = (...a: unknown[]) => mockRecord(...a);
+  },
+}));
 
 import { FileIoError } from "./file-io";
 import { DocumentSession } from "./document-session";
@@ -28,8 +35,9 @@ describe("文档会话（打开/保存/dirty）", () => {
     mockReadFile.mockReset();
     mockWriteFile.mockReset();
     mockLoadSettings.mockReset().mockResolvedValue({ defaultLineEnding: "lf" });
-    mockUpdateSettings.mockReset();
+    mockUpdateSettings.mockReset().mockResolvedValue({});
     mockGetMarkdown.mockReset().mockReturnValue("正文");
+    mockRecord.mockReset().mockResolvedValue(undefined);
   });
 
   it("openFile 读取并广播文档变更（父目录=当前目录）", async () => {
@@ -43,6 +51,8 @@ describe("文档会话（打开/保存/dirty）", () => {
     expect(session.dirty).toBe(false);
     expect(docs).toHaveLength(1);
     expect((docs[0] as { name: string }).name).toBe("a.md");
+    // AC-F13-1：打开文件即记录最近文件（带完整路径）
+    expect(mockRecord).toHaveBeenCalledWith("C:/docs/sub/a.md");
   });
 
   it("openFile 失败广播错误提示且不改当前文档", async () => {
@@ -55,6 +65,8 @@ describe("文档会话（打开/保存/dirty）", () => {
     expect((notices[0] as { level: string }).level).toBe("error");
     expect((notices[0] as { message: string }).message).toContain("拒绝访问");
     expect(session.currentPath).toBeUndefined();
+    // 打开失败不记录最近文件（避免把打不开的路径塞进列表）
+    expect(mockRecord).not.toHaveBeenCalled();
   });
 
   it("save 成功：getMarkdown→补尾换行→写盘→dirty 清除", async () => {
@@ -103,6 +115,8 @@ describe("文档会话（打开/保存/dirty）", () => {
     expect(mockUpdateSettings).toHaveBeenCalledWith({
       launch: { lastFile: "C:/docs/b.md", lastFolder: "C:/docs" },
     });
+    // 另存成功记录最近文件（F13 链路：新路径进入最近列表）
+    expect(mockRecord).toHaveBeenCalledWith("C:/docs/b.md");
   });
 
   it("newDocument 复位路径与脏状态并广播空文档", async () => {
@@ -132,6 +146,8 @@ describe("文档会话（打开/保存/dirty）", () => {
     await session.openFolder("C:/docs");
     expect(session.currentDir).toBe("C:/docs");
     expect(mockUpdateSettings).toHaveBeenCalledWith({ launch: { lastFolder: "C:/docs" } });
+    // F13 语义：文件夹同样记录最近（侧栏/最近列表可重入）
+    expect(mockRecord).toHaveBeenCalledWith("C:/docs");
   });
 
   // —— 以下为 100% 覆盖补足的业务语义用例（边界与容错，非凑数）——
@@ -224,5 +240,27 @@ describe("文档会话（打开/保存/dirty）", () => {
     const out = await session.saveAs("C:/docs/b.md");
     expect(out).toEqual({ saved: true, path: "C:/docs/b.md" });
     expect(session.currentPath).toBe("C:/docs/b.md");
+  });
+
+  it("最近文件记录失败静默不阻断打开（与 updateSettings 同构）", async () => {
+    const session = new DocumentSession();
+    const docs: unknown[] = [];
+    session.on({ onDocumentChange: (d) => docs.push(d) });
+    mockReadFile.mockResolvedValue({ content: "你好", encoding: "utf8", lineEnding: "lf" });
+    mockRecord.mockRejectedValue(new Error("store 写入失败"));
+    await session.openFile("C:/docs/a.md");
+    // 记录失败被吞掉，文档打开链路不受影响
+    expect(docs).toHaveLength(1);
+    expect(session.currentPath).toBe("C:/docs/a.md");
+    expect(mockRecord).toHaveBeenCalledWith("C:/docs/a.md");
+  });
+
+  it("saveAs 写盘失败不记录最近文件（列表不含未写盘路径）", async () => {
+    const session = new DocumentSession();
+    session.dirty = true;
+    mockWriteFile.mockRejectedValue(new FileIoError("写入失败: 磁盘只读"));
+    const out = await session.saveAs("C:/docs/b.md");
+    expect(out).toEqual({ saved: false, reason: "io-error", message: expect.any(String) });
+    expect(mockRecord).not.toHaveBeenCalled();
   });
 });
