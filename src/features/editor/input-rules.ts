@@ -14,7 +14,7 @@
 import type { Ctx } from "@milkdown/kit/ctx";
 import { inputRulesCtx, keymapCtx } from "@milkdown/kit/core";
 import { InputRule } from "@milkdown/kit/prose/inputrules";
-import type { Node, Schema } from "@milkdown/kit/prose/model";
+import type { Node, ResolvedPos, Schema } from "@milkdown/kit/prose/model";
 import { TextSelection, type EditorState, type Transaction } from "@milkdown/kit/prose/state";
 import { findWrapping } from "@milkdown/kit/prose/transform";
 
@@ -35,6 +35,29 @@ export function addEditorInputRule(rule: InputRule): void {
 /** 查询已注册的模块级规则（测试用） */
 export function listEditorInputRules(): readonly InputRule[] {
   return moduleInputRules;
+}
+
+/**
+ * 输入规则 code 标记守卫：光标是否位于行内代码跨度内
+ *
+ * milkdown customInputRules 的 run() 缺少 prosemirror-inputrules 原版 inCodeMark 检查，
+ * 内置反引号规则在键入 `` ` `` 时即时把内容转为 inlineCode mark（反引号被消费），
+ * 其后的规则链对代码跨度文本同样可见——建表/宽松 ATX/嵌套引用规则会误吞代码跨度
+ * 内文本（FIX-3/4/8）。本守卫检查光标前后紧邻文本节点的 marks 是否含 code 类标记
+ * （preset-commonmark 的 inlineCode mark 声明 spec.code: true）。
+ *
+ * 不用 $from.marks()：inlineCode mark 声明 inclusive: false，光标位于跨度文本末尾
+ * 时 marks() 会将该 mark 从集合移除（返回空），守卫会静默失效（FIX-3/4/8 实测）。
+ * @param $from 光标解析位置
+ * @returns 光标处于代码跨度内（或其边缘）返回 true
+ */
+function isInInlineCode($from: ResolvedPos): boolean {
+  // 光标在跨度文本内/末尾：nodeBefore 即该文本节点；光标在跨度文本开头：nodeAfter 即该文本节点
+  const before = $from.nodeBefore;
+  if (before?.isText && before.marks.some((m) => m.type.spec.code)) return true;
+  const after = $from.nodeAfter;
+  if (after?.isText && after.marks.some((m) => m.type.spec.code)) return true;
+  return false;
 }
 
 /**
@@ -62,6 +85,9 @@ export function trailingSpacesHardBreakCommand(state: EditorState, dispatch?: Di
   // 行尾检测：光标前紧邻的两个字符均为空格才转换（CommonMark 硬换行语法）
   const textBefore = $from.parent.textBetween(0, $from.parentOffset);
   if (!textBefore.endsWith("  ")) return false;
+  // 行尾判定：仅光标位于文本块内容末尾（行尾）时转换；段中"两空格"后按 Enter
+  // 应回落内置拆段行为（Typora 段中两空格不构成硬换行，缺此判定会误插 hardBreak）
+  if ($from.parentOffset !== $from.parent.content.size) return false;
   if (!dispatch) return true;
   // 在行尾两空格之后插入 hardBreak 节点；光标随插入映射到换行之后
   dispatch(state.tr.insert($from.pos, state.schema.nodes.hardbreak.create()).scrollIntoView());
@@ -103,6 +129,8 @@ export const SETEXT_H2_INPUT_PATTERN = /^---$/;
  */
 export function createNestedBlockquoteInputRule(): InputRule {
   return new InputRule(NESTED_BLOCKQUOTE_INPUT_PATTERN, (state, _match, start, end) => {
+    // 代码跨度内文本不触发（`` `>>` `` + 空格不被吞为嵌套引用，回落内置行为）
+    if (isInInlineCode(state.selection.$from)) return null;
     // 先删除触发文本 `>> `，包裹目标为删除后 start 位置所在的块
     const tr = state.tr.delete(start, end);
     const $start = tr.doc.resolve(start);
@@ -202,6 +230,8 @@ export function createLenientAtxHeadingInputRule(): InputRule {
     // 仅转换普通段落行：父块非段落（如标题内继续输入、行中光标）回落内置 Enter 行为
     const { $from } = state.selection;
     if ($from.parent.type.name !== "paragraph") return null;
+    // 代码跨度内文本不触发（`` `###Header` `` + Enter 不转标题，回落内置拆段）
+    if (isInInlineCode($from)) return null;
     // # 号串长度即标题级别（正则 {1,6} 已钳制上限，match[1] 恒为命中的 # 串）
     const level = match[1].length;
     // 内容起点：$from.start() = 父块（段落）内容起点（= 段落节点起点 + 1，开标签恒宽 1）；
@@ -276,6 +306,8 @@ export const TYPORA_TABLE_INPUT_PATTERN = /^\|(?:\s*[^|\n]+\s*\|)+\s*\n$/;
  * （Typora 建表后可直接输入数据）。
  */
 const typoraTableRule = new InputRule(TYPORA_TABLE_INPUT_PATTERN, (state, match, start, end) => {
+  // 代码跨度内文本不触发（`` `| a | b |` `` + Enter 不建表，回落内置拆段）
+  if (isInInlineCode(state.selection.$from)) return null;
   // 触发文本必须从父块内容起点开始（parentOffset 0 = 独占整行起点）
   const $start = state.doc.resolve(start);
   if ($start.parentOffset !== 0) return null;

@@ -106,6 +106,32 @@ describe("E8 表格", () => {
     expect(te.getMarkdown()).toMatch(/\| 表头一\s+\| 表头二\s+\|/);
   });
 
+  it("FIX-3 代码跨度内建表语法不被吞：`` `| a | b |` `` + Enter 回落内置拆段", async () => {
+    const te = await makeTestEditor();
+    // 反引号键入时内置规则把内容转为 inlineCode mark（反引号被消费），
+    // 无 code mark 守卫时 Enter 的拟输入链会把整段替换为表格（代码跨度被摧毁）
+    te.insertText("`| a | b |`");
+    te.press("Enter");
+    // 判别点：不产生表格节点（代码跨度文本保持原样、Enter 回落内置拆段）
+    expect(te.view.dom.querySelector("table")).toBeNull();
+    expect(te.view.state.doc.childCount).toBe(2);
+    expect(te.view.state.doc.child(0).textContent).toBe("| a | b |");
+  });
+
+  it("FIX-3b 光标位于代码跨度紧前时建表语法不被吞（守卫检查光标后节点）", async () => {
+    const te = await makeTestEditor("`| a | b |`");
+    // 光标移至段落内容起点（代码跨度文本紧前）：守卫须检查光标后节点
+    // （nodeAfter 带 code mark）而非仅光标前节点
+    te.setSelection(1, 1);
+    te.insertText("| x |"); // 在代码跨度前输入表格语法行
+    te.press("Enter");
+    // 判别点：不产生表格节点（整段替换会摧毁后随的代码跨度，回落内置拆段）
+    expect(te.view.dom.querySelector("table")).toBeNull();
+    expect(te.view.state.doc.childCount).toBe(2);
+    expect(te.view.state.doc.child(0).textContent).toBe("| x |");
+    expect(te.view.state.doc.child(1).textContent).toBe("| a | b |");
+  });
+
   it("AC-E8-2 表格中间单元格按 Tab 跳到下一格（不加行）", async () => {
     const te = await makeTestEditor("| a | b |\n| --- | --- |\n| c | d |");
     // 光标置于第一行第一格文本内（位置 4 = 表头格 "a" 文本起点）

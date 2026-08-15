@@ -68,6 +68,17 @@ describe("trailingSpacesHardBreakCommand 行尾两空格硬换行", () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
+  it("FIX-1 未命中：段中两空格后（光标非行尾）返回 false 且不派发", async () => {
+    const te = await makeTestEditor();
+    te.insertText("ab  cd");
+    // 光标置于第二个空格之后：parentOffset=4 < 内容大小 6（段中，非行尾）
+    te.setSelection(5, 5);
+    const dispatch = vi.fn();
+    const ok = trailingSpacesHardBreakCommand(te.view.state, dispatch);
+    expect(ok).toBe(false);
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
   it("未命中：非空文本选区返回 false", async () => {
     const te = await makeTestEditor();
     typeTrailingSpaces(te);

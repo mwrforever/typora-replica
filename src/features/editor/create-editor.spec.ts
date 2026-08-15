@@ -193,16 +193,26 @@ describe("markwellRemarkHandlers.text（GFM 单词内下划线不转义）", () 
    * 复刻 mdast-util-to-markdown 的 unsafe 规则 {character: ' ', after: '[\r\n]'}：
    * 输入以字面空格结尾时把最后一个空格编码为 &#x20;，其余输入原样返回
    * （上下文判断省略——换行上下文由各用例入参保证，避免测试替身引入未覆盖分支）。
-   * 供硬换行保护分支（AC-E1-3）的单测观察还原行为。
+   * 供硬换行保护分支（AC-E1-3 / FIX-5）的单测观察还原行为。
    * @param value 文本节点内容
    * @param before 序列化上下文前导字符（缺省即行首）
    * @param after 序列化上下文后继字符（缺省即行尾）
+   * @param siblingTypes 文本节点之后紧邻的兄弟节点类型（如 ["break"] 表示硬换行上下文；
+   * 缺省即段尾——无后续节点）
    */
   const runTextHandlerWithEncodedTrailingSpace = (
     value: string,
     before?: string,
     after?: string,
+    siblingTypes: string[] = [],
   ) => {
+    // 文本节点与父节点必须共享同一引用：handler 以 parent.children.indexOf(node)
+    // 判定后继兄弟（FIX-5 还原上下文），新对象字面量会使 indexOf 恒为 -1
+    const node = { type: "text", value };
+    const parent =
+      siblingTypes.length > 0
+        ? { type: "paragraph", children: [node, ...siblingTypes.map((type) => ({ type }))] }
+        : undefined;
     let captured = "";
     const fakeState = {
       safe: (input: string) => {
@@ -212,18 +222,16 @@ describe("markwellRemarkHandlers.text（GFM 单词内下划线不转义）", () 
       },
     };
     const handler = markwellRemarkHandlers.text!;
-    const out = handler(
-      { type: "text", value },
-      undefined,
-      fakeState as never,
-      { before, after } as never,
-    );
+    // parent 为测试替身（结构不满足 mdast Parents 联合类型的字面量 type 约束），
+    // 与 fakeState 同策略经 never 断言收窄（handler 仅读取 children/indexOf）
+    const out = handler(node, parent as never, fakeState as never, { before, after } as never);
     return { out, captured };
   };
 
-  it("硬换行保护：尾随空格后随换行上下文时还原被编码的空白（不产出 &#x20;）", () => {
-    const { out } = runTextHandlerWithEncodedTrailingSpace("foo  ", " ", "\n");
-    // safe() 会把最后一个空格编码为 &#x20;，处理器须还原为原始空格（AC-E1-3 语法载体）
+  it("硬换行保护：文本后随硬换行节点（mdast break 兄弟）时还原被编码的空白", () => {
+    // FIX-5 限定还原上下文：仅文本后紧邻 break 节点（其序列化 "\\\n" 构成硬换行语法载体）
+    // 才还原 safe() 编码的尾随空白（AC-E1-3 语法载体）
+    const { out } = runTextHandlerWithEncodedTrailingSpace("foo  ", " ", "\n", ["break"]);
     expect(out).toBe("foo  ");
     expect(out).not.toContain("&#x20;");
   });
@@ -246,6 +254,28 @@ describe("markwellRemarkHandlers.text（GFM 单词内下划线不转义）", () 
     // 行尾单空格不是硬换行语法，CommonMark 解析会将其剥离；
     // 必须保留字符引用编码才能往返保住该空格（对应落盘往返一致用例）
     expect(out).toBe("foo&#x20;");
+  });
+
+  it("FIX-5 段尾多空格（无后续 break 节点）不还原尾随空白（保留 &#x20; 编码）", () => {
+    const { out } = runTextHandlerWithEncodedTrailingSpace("foo  ", " ", "\n");
+    // 段尾两空格不是硬换行语法载体：旧还原条件会把它变回字面空格落盘，
+    // 重解析时被 CommonMark 行尾剥离规则吃掉（静默数据丢失）；
+    // 保留「字面空格 + &#x20; 编码」组合才能往返保住两个空白字符
+    expect(out).toBe("foo &#x20;");
+  });
+
+  it("FIX-5 段尾多空格落盘往返不丢字符（字面空格 + &#x20; 编码组合保住两空格）", async () => {
+    const te = await makeTestEditor();
+    // 事务直插绕过输入规则，构造段尾两空格的字面文本节点（未按 Enter）
+    te.view.dispatch(te.view.state.tr.insertText("abc  ", te.view.state.selection.from));
+    const md = te.getMarkdown();
+    // 段尾多空格非硬换行载体：safe() 编码最后一个空格为 &#x20;、前一个保持字面
+    //（修复前还原为字面空格落盘，重解析被 CommonMark 行尾剥离规则吃掉）
+    expect(md).toBe("abc &#x20;");
+    // 往返：字面空格 + 字符引用组合在重解析时两空格完整保留，再次落盘为定点
+    const reparsed = await makeTestEditor(md);
+    expect(reparsed.view.state.doc.textContent).toBe("abc  ");
+    expect(reparsed.getMarkdown()).toBe("abc &#x20;");
   });
 });
 

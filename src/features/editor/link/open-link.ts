@@ -24,7 +24,9 @@ export const openLinkPlugin = $prose(() => {
         const href = linkMark.attrs.href as string;
         if (!href) return false; // 空 href（如 [文本]()）无打开目标
         event.preventDefault(); // 阻止默认点击行为（如选区漂移）
-        void openExternalUrl(href); // 转交系统浏览器（失败不影响编辑状态）
+        // 转交系统浏览器；打开失败（Tauri command 异常等）不影响编辑状态（E14 契约）。
+        // catch 防 unhandled rejection：替换实现可能抛错，此处显式吞掉
+        void openExternalUrl(href).catch(() => {});
         return true; // 消费该点击，不再下传其他 handleClick
       },
     },

@@ -3,9 +3,10 @@ import { fireEvent } from "@testing-library/dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTestEditor } from "../../test/editor-test-utils";
 
-// 模拟系统浏览器打开（隔离 Tauri 环境；项目无 @/ 别名，按相对路径 mock）
+// 模拟系统浏览器打开（隔离 Tauri 环境；项目无 @/ 别名，按相对路径 mock）。
+// mock 返回 Promise：open-link 调用处对结果链式 .catch（FIX-6 防 unhandled rejection）
 vi.mock("../../services/external-open", () => ({
-  openExternalUrl: vi.fn(),
+  openExternalUrl: vi.fn(() => Promise.resolve()),
 }));
 import { openExternalUrl } from "../../services/external-open";
 
@@ -141,5 +142,22 @@ describe("E14 链接", () => {
     fireClickSequence(a, { ctrlKey: true });
     restore();
     expect(vi.mocked(openExternalUrl)).not.toHaveBeenCalled();
+  });
+
+  it("FIX-6 Ctrl+点击打开失败不影响编辑状态（catch 吞错防 unhandled rejection）", async () => {
+    // open-link 调用处对 openExternalUrl 链式 .catch：服务层打开失败（Tauri command
+    // 异常等）不得产生 unhandled rejection，也不影响编辑器状态（E14 契约）
+    vi.mocked(openExternalUrl).mockRejectedValueOnce(new Error("opener 不可用"));
+    const te = await makeTestEditor("[文本](https://example.com)");
+    const a = te.view.dom.querySelector("a")!;
+    const restore = stubHitTarget(a);
+    expect(() => {
+      fireClickSequence(a, { ctrlKey: true });
+    }).not.toThrow();
+    restore();
+    expect(vi.mocked(openExternalUrl)).toHaveBeenCalledWith("https://example.com");
+    // 等待 catch 链执行完毕：无 unhandled rejection（vitest 捕获即失败）
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(te.getMarkdown()).toBe("[文本](https://example.com)");
   });
 });

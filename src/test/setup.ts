@@ -129,7 +129,8 @@ afterEach(
     // external-open）无法作用于已求值模块；延迟到用例结束再导入时模块已被测试
     // 文件按 mock 求值并缓存，销毁语义不变。
     const { destroyTestEditors } = await import("./editor-test-utils");
-    destroyTestEditors();
+    // await 销毁：Editor.destroy 为异步流程，需等 DOM 清理完成再断言（destroyTestEditors 已改 async）
+    await destroyTestEditors();
     cleanup();
   },
   // 纯函数类 spec（如 html-sanitize）不静态导入编辑器链，本钩子承担其首次冷加载；

@@ -7,8 +7,15 @@
 // 纯函数模块：无状态、无外部依赖，线程安全（每次调用独立计算）。
 /** 文首 front matter 定界符 */
 const FM_DELIMITER = "---";
-/** 首块正则：文档开头即 --- 且后续存在闭合 --- */
-const FRONT_MATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
+/**
+ * 首块正则：文档开头即 --- 且后续存在闭合 ---。
+ * 两个分支：①「内文 + 换行」+ 闭合定界符（常规形态，捕获组 1 为内文）；
+ * ②「空内文」+ 闭合定界符（空 front matter `---\n---\n`，FIX-11，捕获组 2 为空串）。
+ * 闭合定界符必须独立成行（前随换行或紧跟开定界符换行），`---\ntitle: a---\n`
+ * 这类闭合不独立成行的形态不匹配（分支①要求内文以换行收尾，分支②要求内文为空）。
+ * 内文 `[\s\S]*?` 原样保留（CRLF 不归一，回写时按 FIX-9 逻辑统一定界符风格）。
+ */
+const FRONT_MATTER_RE = /^---\r?\n(?:([\s\S]*?)\r?\n|())---(?:\r?\n|$)/;
 
 /**
  * 解析文档：剥离文首 front matter
@@ -20,7 +27,8 @@ const FRONT_MATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 export function parseFrontMatter(md: string): { frontMatter: string | null; body: string } {
   const match = FRONT_MATTER_RE.exec(md);
   if (!match) return { frontMatter: null, body: md };
-  const inner = match[1];
+  // 分支①内文在捕获组 1；分支②（空 front matter）捕获组 1 为 undefined，统一取空串
+  const inner = match[1] ?? "";
   if (!isValidFrontMatter(inner)) {
     // 非法 YAML：不剥离、按原文保留并告警（AC-E11-4）
     console.warn("[MarkWell] 文首 front matter YAML 非法，按原文保留：", inner.slice(0, 80));
@@ -33,12 +41,16 @@ export function parseFrontMatter(md: string): { frontMatter: string | null; body
  * 回写 front matter（原样保留，不做 YAML 重序列化）
  *
  * 用于保存/导出时把内存暂存的 FM 内文拼回正文之前（AC-E11-2）。
+ * 定界符换行风格随内文归一（FIX-9）：内文为 CRLF 的文档定界符用 CRLF，
+ * 避免「定界符 LF + 内文 CRLF」的混行结尾偏离 AC-E11-2「原样回写」。
  * @param frontMatter 剥离时的 FM 内文（不含定界符）
  * @param body 编辑器正文
  * @returns 完整落盘文档
  */
 export function reinsertFrontMatter(frontMatter: string, body: string): string {
-  return `${FM_DELIMITER}\n${frontMatter}\n${FM_DELIMITER}\n${body}`;
+  // 内文任意位置出现 CRLF 即整体采用 CRLF 定界符（内文保持剥离时的原样）
+  const eol = frontMatter.includes("\r\n") ? "\r\n" : "\n";
+  return `${FM_DELIMITER}${eol}${frontMatter}${eol}${FM_DELIMITER}${eol}${body}`;
 }
 
 /**

@@ -22,6 +22,19 @@ describe("E2 标题", () => {
     );
   });
 
+  it("FIX-4 代码跨度内 `###Header` 不被宽松 ATX 规则吞：Enter 回落内置拆段", async () => {
+    const te = await makeTestEditor();
+    // 反引号键入时内置规则把内容转为 inlineCode mark（反引号被消费），
+    // 无 code mark 守卫时 Enter 的拟输入链会把整段转为标题（`###` 被拉出当标题前缀）
+    te.insertText("`###Header`");
+    te.press("Enter");
+    // 判别点：不产生标题（代码跨度文本保持原样、Enter 回落内置拆段）
+    expect(te.view.dom.querySelector("h1,h2,h3,h4,h5,h6")).toBeNull();
+    expect(te.view.state.doc.childCount).toBe(2);
+    expect(te.view.state.doc.child(0).type.name).toBe("paragraph");
+    expect(te.view.state.doc.child(0).textContent).toBe("###Header");
+  });
+
   it("AC-E2-3 选中文本按 Ctrl+2 成为 H2 标题", async () => {
     const te = await makeTestEditor("成为标题");
     te.setSelection(0, 4);

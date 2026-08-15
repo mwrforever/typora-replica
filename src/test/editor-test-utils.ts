@@ -54,15 +54,24 @@ export interface MakeTestEditorOptions {
 
 /** 本次测试创建的实例清单，afterEach 统一销毁 */
 const liveEditors: Crepe[] = [];
+/** 与 liveEditors 同步登记的挂载根元素（destroy 时随实例移除，@milkdown/core 的 view-clear 不负责 root） */
+const liveRoots: HTMLElement[] = [];
 
-/** 销毁全部存活的测试编辑器（setup.ts 的 afterEach 调用） */
-export function destroyTestEditors(): void {
+/**
+ * 销毁全部存活的测试编辑器（setup.ts 的 afterEach 调用）
+ * @returns 全部实例销毁完成（Editor.destroy 为异步流程，await 后 DOM 清理完毕）
+ */
+export async function destroyTestEditors(): Promise<void> {
   for (const crepe of liveEditors.splice(0)) {
     try {
-      crepe.destroy();
+      await crepe.destroy();
     } catch {
       // 销毁失败不阻塞用例收尾
     }
+  }
+  // 挂载根 div 由 makeTestEditor 自行创建，须随销毁移除，避免跨用例向 body 永久累积
+  for (const root of liveRoots.splice(0)) {
+    root.remove();
   }
 }
 
@@ -116,6 +125,7 @@ export async function makeTestEditor(
   setupTocRebuildListener(crepe);
   await crepe.create();
   liveEditors.push(crepe);
+  liveRoots.push(root);
 
   const editor = crepe.editor;
   const view = editor.action((ctx) => ctx.get(editorViewCtx));

@@ -10,6 +10,7 @@ import { editorViewCtx } from "@milkdown/kit/core";
 import type { Crepe } from "@milkdown/crepe";
 import { createMarkwellEditor } from "../features/editor/create-editor";
 import { parseFrontMatter, reinsertFrontMatter } from "../features/editor/frontmatter/frontmatter";
+import { closeMermaidMenu } from "../features/editor/mermaid/mermaid-menu";
 import { destroyEditorEvents, setupEditorEvents } from "./editor-events";
 
 /** 文档级转换器挂载点（E11 Front Matter 使用） */
@@ -77,6 +78,9 @@ class EditorManager {
 
   /** 销毁当前实例并解除事件绑定 */
   destroy(): void {
+    // 图表右键菜单挂载于 document.body，关闭路径仅菜单项点击与一次性 click 监听——
+    // 销毁路径不主动关闭会残留菜单 div 直至下一次任意点击（FIX-10）。幂等：无菜单时 no-op
+    closeMermaidMenu();
     if (this.crepe) {
       destroyEditorEvents();
       // Editor.destroy 为异步流程（含插件清理）：登记 promise 供下次 create 串行等待，

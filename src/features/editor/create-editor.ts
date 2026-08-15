@@ -57,7 +57,7 @@ const LITERAL_E000_SENTINEL = "\uE001";
  * （行尾两空格 + 换行，AC-E1-3 依赖）。仅当原文以两个及以上空白字符结尾的
  * 窄场景把编码还原为原始空白字符，其余输出与 safe() 完全一致。
  */
-const gfmUnderscoreTextHandler: Handlers["text"] = (node, _, state, info) => {
+const gfmUnderscoreTextHandler: Handlers["text"] = (node, parent, state, info) => {
   const value = node.value;
   // 逐字符扫描：仅对可能形成强调的 `_` 保留默认转义，惰性下划线以哨兵暂代
   let protectedValue = "";
@@ -96,8 +96,20 @@ const gfmUnderscoreTextHandler: Handlers["text"] = (node, _, state, info) => {
   // 单个尾随空格不在还原范围（CommonMark 解析会剥离行尾单空格，保留 &#x20; 编码
   // 才能往返不丢字符）；其余字符（反引号/`&`/方括号等）仍完整经过 safe 转义链。
   const after = String(info.after ?? "");
+  // 还原限定的硬换行上下文：文本节点后必须紧邻 mdast break 节点（其序列化 "\\\n"
+  // 输出以换行收尾，构成硬换行语法载体）。段落末尾文本的 info.after 同为换行，
+  // 但那是段落结束符——按旧条件还原会把段尾 2+ 空格变成字面空格落盘，重解析时被
+  // CommonMark 行尾剥离规则吃掉（FIX-5 段尾尾随空格静默丢失），故段尾不还原
+  const siblings = parent?.children ?? [];
+  const nodeIndex = siblings.indexOf(node);
+  const followedByBreak = nodeIndex >= 0 && siblings[nodeIndex + 1]?.type === "break";
   let hardBreakPreserved = out;
-  if (/[ \t]{2}$/.test(protectedValue) && /^[\r\n]/.test(after) && /&(?:#x20|#x9);$/.test(out)) {
+  if (
+    followedByBreak &&
+    /[ \t]{2}$/.test(protectedValue) &&
+    /^[\r\n]/.test(after) &&
+    /&(?:#x20|#x9);$/.test(out)
+  ) {
     // 还原被编码的最后一个空白为原始空白字符（空格还原空格、制表符还原制表符）
     hardBreakPreserved = out.replace(/&(?:#x20|#x9);$/, protectedValue.slice(-1));
   }

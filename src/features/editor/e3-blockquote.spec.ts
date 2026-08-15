@@ -32,6 +32,20 @@ describe("E3 引用块", () => {
     expect(te.getMarkdown()).toContain("> > 内层");
   });
 
+  it("FIX-8 代码跨度内 `>>` 不被嵌套引用规则吞：空格落字保持文本", async () => {
+    const te = await makeTestEditor();
+    // 反引号键入时内置规则把内容转为 inlineCode mark（反引号被消费），
+    // 无 code mark 守卫时随后的空格会触发嵌套引用规则（`` `>>` `` 整体被删除并包裹引用）
+    te.insertText("`>>`");
+    te.insertText(" ");
+    // 判别点：不产生引用块（代码跨度文本保持原样，含尾随空格）
+    expect(te.view.dom.querySelector("blockquote")).toBeNull();
+    expect(te.view.state.doc.child(0).textContent).toBe(">> ");
+    // 落盘定点：代码跨度内尾随空格被 safe() 编码为 &#x20;（换行前字面空格会被剥离），
+    // 反引号闭合符在编码前——字符不丢且重解析仍为代码跨度
+    expect(te.getMarkdown()).toBe("`>>`&#x20;");
+  });
+
   it("AC-E3-3 空行后输入普通文字退出引用块且无残留 `>`", async () => {
     const te = await makeTestEditor();
     te.insertText("> 引用内容");

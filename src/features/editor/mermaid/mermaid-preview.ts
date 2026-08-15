@@ -31,6 +31,14 @@ const LOADING_HTML = '<div class="markwell-mermaid-loading">图表渲染中…</
  * 多图表文档任一时刻只保留最后渲染的一个。每次渲染分配自增唯一 id 规避。
  */
 let renderSeq = 0;
+/**
+ * 预览代次自增计数器（异步渲染竞态守卫）
+ *
+ * 编辑图表内容会立即重触发 renderPreview（先回 LOADING_HTML 再异步渲染），
+ * 旧代次（慢、大图）的 promise 可能晚于新代次 resolve——无守卫时旧 SVG 会
+ * 永久覆盖新预览（FIX-7）。applyPreview 前校验代次仍为最新，过期结果丢弃。
+ */
+let previewGen = 0;
 
 /**
  * 创建 mermaid 预览钩子（链式包裹前序 renderPreview）
@@ -41,10 +49,16 @@ export function createMermaidRenderPreview(prev: RenderPreviewHandler): RenderPr
     const lang = language.toLowerCase();
     if (lang === "mermaid" || lang === "sequence" || lang === "flow") {
       if (content.length === 0) return "";
+      // 登记本次渲染代次：异步完成时仅最新代次允许写入预览面板
+      const gen = ++previewGen;
       // 异步渲染：先回占位，渲染完成后 applyPreview 替换（失败降级为错误提示）
       void renderMermaidAsync(content, lang).then(
-        (html) => applyPreview(html),
-        () => applyPreview(errorHtml()),
+        (html) => {
+          if (gen === previewGen) applyPreview(html);
+        },
+        () => {
+          if (gen === previewGen) applyPreview(errorHtml());
+        },
       );
       return LOADING_HTML;
     }

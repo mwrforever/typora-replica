@@ -1,15 +1,28 @@
 // mermaid 预览钩子：语言分发 / 懒加载调用 / 错误降级 / 非 mermaid 透传（100% 覆盖）
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// 隔离懒加载 chunk：mock mermaid 模块（工厂级 mock，动态 import 同样被拦截）
-vi.mock("mermaid", () => ({
-  default: {
-    initialize: vi.fn(),
-    render: vi.fn(async (_id: string, code: string) => ({
+// 隔离懒加载 chunk：mock mermaid 模块。
+// 关键约束（实测确认）：vitest 4 模块运行器下，对 mock 函数调用
+// mockImplementation/mockRejectedValueOnce 等「替换实现」方法后，被测模块内后续
+// 动态 import("mermaid") 会解析到真实模块（既有注释已声明的编排问题扩大化）。
+// 因此 mock 实现固定为「经 hoisted 闭包分发」，用例经 setRenderBehavior 切换行为，
+// 不触碰 mock 函数的实现替换 API；用例内也一律不执行 import("mermaid")。
+const { mermaidMock, setRenderBehavior } = vi.hoisted(() => {
+  let behavior: (code: string) => Promise<{ svg: string }> = (code) =>
+    Promise.resolve({
       svg: `<svg data-source="${code.replace(/"/g, "&quot;")}"></svg>`,
-    })),
-  },
-}));
+    });
+  return {
+    mermaidMock: {
+      initialize: vi.fn(),
+      render: vi.fn((_id: string, code: string) => behavior(code)),
+    },
+    setRenderBehavior: (fn: (code: string) => Promise<{ svg: string }>): void => {
+      behavior = fn;
+    },
+  };
+});
+vi.mock("mermaid", () => ({ default: mermaidMock }));
 
 import { createMermaidRenderPreview } from "./mermaid-preview";
 import { transformLegacyDiagram } from "./legacy-transform";
@@ -17,7 +30,15 @@ import { transformLegacyDiagram } from "./legacy-transform";
 describe("mermaid 预览钩子", () => {
   const prev = vi.fn(() => "");
 
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // 还原默认渲染行为（svg 回显输入源码），避免用例间串扰
+    setRenderBehavior((code) =>
+      Promise.resolve({
+        svg: `<svg data-source="${code.replace(/"/g, "&quot;")}"></svg>`,
+      }),
+    );
+  });
 
   it("AC-E21-1 language=mermaid 时返回占位并异步 applyPreview 渲染结果", async () => {
     const hook = createMermaidRenderPreview(prev);
@@ -40,8 +61,6 @@ describe("mermaid 预览钩子", () => {
   it("多图表文档：两次渲染的 id 必须不同（固定 id 会被 mermaid render 按 id 互删 SVG）", async () => {
     // mermaid 11.16.1 的 render 内部会 removeExistingElements(document, id)，把文档中
     // 同名旧 SVG 移除——固定 id 时第二个图表渲染会删掉第一个图表的预览；自增唯一 id 隔离。
-    // 两次渲染串行触发（vitest 模块运行器对 factory mock 的并发动态 import 会解析到真实
-    // 模块——测试环境编排问题，与本次修复无关，真实应用内渲染本就逐次发生）
     const hook = createMermaidRenderPreview(prev);
     const applyFirst = vi.fn();
     hook("mermaid", "graph TD; A-->B", applyFirst);
@@ -49,7 +68,7 @@ describe("mermaid 预览钩子", () => {
     const applySecond = vi.fn();
     hook("mermaid", "graph TD; C-->D", applySecond);
     await vi.waitFor(() => expect(applySecond).toHaveBeenCalled());
-    const render = vi.mocked((await import("mermaid")).default.render);
+    const render = mermaidMock.render;
     expect(render).toHaveBeenCalledTimes(2);
     const id1 = render.mock.calls[0][0];
     const id2 = render.mock.calls[1][0];
@@ -69,13 +88,65 @@ describe("mermaid 预览钩子", () => {
   });
 
   it("AC-E21-3 mermaid 渲染失败时 applyPreview 错误提示而非崩溃", async () => {
-    const mermaidMod = await import("mermaid");
-    vi.mocked(mermaidMod.default.render).mockRejectedValueOnce(new Error("parse error"));
+    setRenderBehavior(() => Promise.reject(new Error("parse error")));
     const hook = createMermaidRenderPreview(prev);
     const applyPreview = vi.fn();
     expect(() => hook("mermaid", "invalid syntax", applyPreview)).not.toThrow();
     await vi.waitFor(() => expect(applyPreview).toHaveBeenCalled());
     expect(applyPreview).toHaveBeenCalledWith(expect.stringContaining("解析错误"));
+  });
+
+  it("FIX-7 重叠渲染：旧代次（慢）结果不覆盖新代次预览", async () => {
+    // 编辑图表内容会立即重触发 renderPreview：第一次渲染挂起（慢），
+    // 第二次先完成——无代次守卫时旧 SVG 会永久覆盖新预览。
+    // 注意：两次 hook 调用之间须让出事件循环——vitest 4 模块运行器对同一 tick
+    // 内连续两个动态 import("mermaid") 存在解析到真实模块的编排问题（既有注释
+    // 已声明），renderMermaidAsync 内部的动态 import 需要逐个闭合
+    const pendingResolvers: Array<(v: { svg: string }) => void> = [];
+    setRenderBehavior((code) => {
+      if (code.includes("A-->B")) {
+        return new Promise<{ svg: string }>((resolve) => pendingResolvers.push(resolve));
+      }
+      return Promise.resolve({ svg: "<svg>new</svg>" });
+    });
+    const hook = createMermaidRenderPreview(prev);
+    const applyPreview = vi.fn();
+    hook("mermaid", "graph TD; A-->B", applyPreview); // 第一次：挂起（慢）
+    await new Promise((r) => setTimeout(r, 10)); // 让动态 import 链闭合后再触发第二次
+    hook("mermaid", "graph TD; C-->D", applyPreview); // 第二次：立即完成
+    await vi.waitFor(() =>
+      expect(applyPreview).toHaveBeenCalledWith(expect.stringContaining("new")),
+    );
+    // 旧代次完成：结果被代次守卫丢弃，不覆盖新预览
+    pendingResolvers[0]?.({ svg: "<svg>old</svg>" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(applyPreview).not.toHaveBeenCalledWith(expect.stringContaining("old"));
+    expect(applyPreview).toHaveBeenCalledTimes(1);
+  });
+
+  it("FIX-7 重叠渲染：旧代次失败同样不覆盖新代次（错误提示受代次守卫）", async () => {
+    // 旧代次（old）渲染挂起、新代次先完成——旧代次随后失败时，错误提示
+    // 同样须被代次守卫丢弃（不得用「解析错误」占位覆盖新预览）
+    const pendingRejects: Array<(e: Error) => void> = [];
+    setRenderBehavior((code) => {
+      if (code.includes("old")) {
+        return new Promise<{ svg: string }>((_resolve, reject) => pendingRejects.push(reject));
+      }
+      return Promise.resolve({ svg: "<svg>new</svg>" });
+    });
+    const hook = createMermaidRenderPreview(prev);
+    const applyPreview = vi.fn();
+    hook("mermaid", "old syntax", applyPreview); // 第一次：挂起（待手动失败）
+    await new Promise((r) => setTimeout(r, 10)); // 让动态 import 链闭合后再触发第二次
+    hook("mermaid", "graph TD; C-->D", applyPreview); // 第二次：立即成功
+    await vi.waitFor(() =>
+      expect(applyPreview).toHaveBeenCalledWith(expect.stringContaining("new")),
+    );
+    // 旧代次失败：错误提示被代次守卫丢弃（未覆盖新预览）
+    pendingRejects[0]?.(new Error("旧代次解析失败"));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(applyPreview).not.toHaveBeenCalledWith(expect.stringContaining("解析错误"));
+    expect(applyPreview).toHaveBeenCalledTimes(1);
   });
 
   it("非 mermaid 语言透传给前序 renderPreview", () => {

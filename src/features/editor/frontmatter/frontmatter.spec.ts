@@ -24,6 +24,33 @@ describe("Front Matter 纯函数", () => {
     expect(reinsertFrontMatter(frontMatter!, body)).toBe(md);
   });
 
+  it("FIX-9 CRLF front matter 往返：定界符随内文归一为 CRLF（不混行结尾）", () => {
+    const md = "---\r\ntitle: a\r\ndesc: b\r\n---\r\n正文行\r\n下一行";
+    const { frontMatter, body } = parseFrontMatter(md);
+    expect(frontMatter).toBe("title: a\r\ndesc: b");
+    expect(body).toBe("正文行\r\n下一行");
+    // 定界符与内文统一 CRLF（修复前定界符 LF + 内文 CRLF 混行，偏离 AC-E11-2 原样回写）
+    expect(reinsertFrontMatter(frontMatter!, body)).toBe(md);
+  });
+
+  it("FIX-11 空 front matter（---\\n---\\n）被识别且回写定点", () => {
+    const md = "---\n---\n# 正文";
+    const { frontMatter, body } = parseFrontMatter(md);
+    expect(frontMatter).toBe("");
+    expect(body).toBe("# 正文");
+    // 回写产物为规范形态（定界符 + 空行分隔），再次解析仍为空 FM——定点稳定
+    const roundTrip = reinsertFrontMatter(frontMatter!, body);
+    expect(parseFrontMatter(roundTrip).frontMatter).toBe("");
+  });
+
+  it("FIX-11b 闭合定界符不独立成行（title: a---）不识别为 front matter", () => {
+    // 正则若放开「闭合 --- 独立成行」要求会误吞该形态（内文 title: a 恰为合法键值行）
+    const md = "---\ntitle: a---\n正文";
+    const { frontMatter, body } = parseFrontMatter(md);
+    expect(frontMatter).toBeNull();
+    expect(body).toBe(md);
+  });
+
   it("AC-E11-3 文档中部 --- 块不识别为 front matter", () => {
     const md = "# 标题\n\n---\n中部横线\n---";
     const { frontMatter, body } = parseFrontMatter(md);

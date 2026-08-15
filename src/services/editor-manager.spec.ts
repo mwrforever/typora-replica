@@ -1,6 +1,7 @@
 // 编辑器实例管理服务：单例生命周期 + 文档存取 + 只读切换（跨模块接口，100% 覆盖）
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTestEditor } from "../test/editor-test-utils";
+import { showMermaidMenu } from "../features/editor/mermaid/mermaid-menu";
 import { editorManager } from "./editor-manager";
 
 describe("编辑器实例管理", () => {
@@ -37,6 +38,16 @@ describe("编辑器实例管理", () => {
     // 挂载根 div 必须由 destroy 自行移除，不得残留 document.body
     expect(root.isConnected).toBe(false);
     expect(document.body.contains(root)).toBe(false);
+  });
+
+  it("FIX-10 destroy 关闭已打开的图表右键菜单（不残留 body 挂载）", async () => {
+    await editorManager.create("# 标题");
+    // 模拟菜单打开状态：菜单 div 挂载于 body（真实链路为 contextmenu 处理器弹出）
+    showMermaidMenu("<svg></svg>", 0, 0);
+    expect(document.querySelector(".markwell-mermaid-menu")).not.toBeNull();
+    editorManager.destroy();
+    // 销毁路径主动关闭菜单，不残留至下一次任意点击（菜单关闭路径不含销毁钩子）
+    expect(document.querySelector(".markwell-mermaid-menu")).toBeNull();
   });
 
   it("连续 create 两次无重叠（先完成旧实例销毁再创建新实例）", async () => {
