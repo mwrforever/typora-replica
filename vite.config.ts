@@ -81,6 +81,13 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 02 核心服务 100%：打开/另存对话框命令层（12 菜单装配消费，F1）
+        "src/services/open-commands.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },
