@@ -14,22 +14,34 @@
 
 ## Global Rules
 
-### Color Palette
+### Color Palette — 「纸墨 Ink & Paper」（v2，2026-08-15 重制）
 
-| Role        | Hex       | CSS Variable          |
-| ----------- | --------- | --------------------- |
-| Primary     | `#0D9488` | `--color-primary`     |
-| On Primary  | `#FFFFFF` | `--color-on-primary`  |
-| Secondary   | `#14B8A6` | `--color-secondary`   |
-| Accent/CTA  | `#EA580C` | `--color-accent`      |
-| Background  | `#F0FDFA` | `--color-background`  |
-| Foreground  | `#134E4A` | `--color-foreground`  |
-| Muted       | `#E8F1F4` | `--color-muted`       |
-| Border      | `#99F6E4` | `--color-border`      |
-| Destructive | `#DC2626` | `--color-destructive` |
-| Ring        | `#0D9488` | `--color-ring`        |
+> v2 取代 v1（teal + orange 撞色被用户否决）。核心决策：
+> **单一强调色**（墨蓝，链接心智零成本）+ error 红例外；**去纯白/纯灰**，
+> 亮色为暖纸 + 暖墨，暗色为暖炭 + 暖白，两态同气质；正文级文字对比度
+> 全部 ≥ 4.5:1、控件边框 ≥ 3:1（22 项脚本验证，明细见 `pages/color-scheme.html`）。
 
-**Color Notes:** Teal focus + action orange [Accent adjusted from #F97316 for WCAG 3:1]
+| Role（语义）  | Light     | Dark      | CSS Variable            | 说明（用途/对比度）                     |
+| ------------- | --------- | --------- | ----------------------- | --------------------------------------- |
+| Background    | `#FAF9F6` | `#211E1A` | `--color-bg`            | 纸面画布：暖纸白 / 暖炭夜读             |
+| Foreground    | `#2A2720` | `#E8E4DA` | `--color-ink`           | 正文墨：暖黑 / 暖白（≥13:1）            |
+| Surface       | `#F2F0EA` | `#26231F` | `--color-surface`       | 外壳/浮层底（与纸面分层）               |
+| Surface Low   | `#EAE7DF` | `#2D2925` | `--color-surface-low`   | 悬停/次级浮层底                         |
+| Muted         | `#6E6A5E` | `#A39E92` | `--color-ink-2`         | 次要文字（≥5.1:1）                      |
+| Faint         | `#807A6D` | `#878173` | `--color-ink-3`         | 弱化/禁用/图标（≥3:1，不可作正文）      |
+| Border        | `#E2DED3` | `#3B372F` | `--color-border`        | 装饰性分隔线（非交互控件）              |
+| Border Strong | `#8F897A` | `#70695A` | `--color-border-strong` | 输入框/控件边界（≥3:1）                 |
+| Primary       | `#1E4F8A` | `#8FB3DC` | `--color-primary`       | 墨蓝/雾蓝：链接、焦点环、选中（≥7.6:1） |
+| Primary Soft  | `#E3EAF3` | `#2E3A4E` | `--color-primary-soft`  | 主色浅底（选中项背景）                  |
+| On Primary    | `#FFFFFF` | `#1B3A5E` | `--color-on-primary`    | 主色底上的文字（≥5.3:1）                |
+| Inline Code   | `#9E2B25` | `#E29A86` | `--color-code-text`     | 行内代码：枣红 / 暖珊瑚（≥7:1）         |
+| Code Block    | `#F1EFE9` | `#26231F` | `--color-code-bg`       | 代码围栏底                              |
+| Destructive   | `#C62828` | `#E06C5F` | `--color-error`         | 错误/危险（≥5.1:1）                     |
+| Selection     | `#D3DFEE` | `#3A4A63` | `--color-selection`     | 文本选中底                              |
+| Quote         | `#F5F3EE` | `#26231F` | `--color-quote-bg`      | 引用块底                                |
+
+**Color Notes:** 上一版 teal+orange 撞色系整体废弃；强调色仅保留墨蓝一色（暗态映射雾蓝），
+不再设独立 accent。暗色非中性灰：暖炭底带暖褐倾向，与亮色暖纸同属「纸墨」气质。
 
 ### Typography
 
@@ -74,8 +86,8 @@
 ```css
 /* Primary Button */
 .btn-primary {
-  background: #ea580c;
-  color: white;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
   padding: 12px 24px;
   border-radius: 8px;
   font-weight: 600;
@@ -91,8 +103,8 @@
 /* Secondary Button */
 .btn-secondary {
   background: transparent;
-  color: #0d9488;
-  border: 2px solid #0d9488;
+  color: var(--color-primary);
+  border: 2px solid var(--color-primary);
   padding: 12px 24px;
   border-radius: 8px;
   font-weight: 600;
@@ -105,7 +117,7 @@
 
 ```css
 .card {
-  background: #f0fdfa;
+  background: var(--color-bg);
   border-radius: 12px;
   padding: 24px;
   box-shadow: var(--shadow-md);
@@ -124,16 +136,16 @@
 ```css
 .input {
   padding: 12px 16px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
   font-size: 16px;
   transition: border-color 200ms ease;
 }
 
 .input:focus {
-  border-color: #0d9488;
+  border-color: var(--color-primary);
   outline: none;
-  box-shadow: 0 0 0 3px #0d948820;
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
 }
 ```
 
@@ -146,7 +158,7 @@
 }
 
 .modal {
-  background: white;
+  background: var(--color-bg);
   border-radius: 16px;
   padding: 32px;
   box-shadow: var(--shadow-xl);

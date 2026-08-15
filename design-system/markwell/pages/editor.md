@@ -8,6 +8,7 @@
 - 产品类型：Notes & Writing App（桌面写作工具，非营销页面——MASTER 的 Newsletter 模式不适用）
 - 核心体验：内容优先的沉浸式写作区（居中纸面 + 无干扰），UI 装饰最小化
 - 使用场景：长时间连续写作（万行文档），配色必须低疲劳、对比度达标
+- 配色体系：**「纸墨 Ink & Paper」v2**（2026-08-15 重制，见 MASTER.md）——单一墨蓝强调、暖纸/暖炭双态，v1 的 teal+orange 撞色系作废
 
 ## 字体（桌面离线应用，禁止 Google Fonts 网络加载）
 
@@ -23,50 +24,65 @@
 
 > 01 模块在 Crepe 官方主题 CSS 之上追加变量覆盖层（spec T6 base.user.css 落此层）。
 > 变量名逐一核对自 @milkdown/crepe 7.22.1 `theme/crepe/style.css`。
+> 对比度均为「该色对所在底色」实测值（WCAG 相对亮度脚本，见 `color-scheme.html` 明细）。
 
-### 亮色（默认）
+### 亮色（默认，「暖纸」）
 
-| Crepe 变量                         | 值        | 说明                                  |
-| ---------------------------------- | --------- | ------------------------------------- |
-| `--crepe-color-background`         | `#ffffff` | 纯白纸面（写作区低疲劳）              |
-| `--crepe-color-on-background`      | `#1f2937` | 正文墨色，对比 ≈13:1                  |
-| `--crepe-color-surface`            | `#f8fafc` | 工具浮层底                            |
-| `--crepe-color-surface-low`        | `#f1f5f9` | 次级浮层底                            |
-| `--crepe-color-on-surface`         | `#1f2937` | 浮层正文                              |
-| `--crepe-color-on-surface-variant` | `#475569` | 次要文字，对比 ≈7.5:1                 |
-| `--crepe-color-outline`            | `#cbd5e1` | 边框/分隔                             |
-| `--crepe-color-primary`            | `#0f766e` | 品牌主色（teal-700，白底对比 ≈5.4:1） |
-| `--crepe-color-secondary`          | `#ccfbf1` | 主色浅底                              |
-| `--crepe-color-on-secondary`       | `#134e4a` | 浅底上的文字                          |
-| `--crepe-color-inverse`            | `#134e4a` | 反色底                                |
-| `--crepe-color-on-inverse`         | `#f0fdfa` | 反色底文字                            |
-| `--crepe-color-inline-code`        | `#c2410c` | 行内代码文字色                        |
-| `--crepe-color-error`              | `#dc2626` | 错误/危险                             |
-| `--crepe-color-hover`              | `#f0fdfa` | 悬停底                                |
-| `--crepe-color-selected`           | `#ccfbf1` | 选中底                                |
-| `--crepe-color-inline-area`        | `#e2e8f0` | 行内编辑区                            |
+| Crepe 变量                         | 值        | 对比度 | 说明                               |
+| ---------------------------------- | --------- | ------ | ---------------------------------- |
+| `--crepe-color-background`         | `#faf9f6` | —      | 暖纸白画布（非纯白，低疲劳）       |
+| `--crepe-color-on-background`      | `#2a2720` | 14.2:1 | 暖墨正文                           |
+| `--crepe-color-surface`            | `#f2f0ea` | —      | 工具浮层底（暖灰，与纸面分层）     |
+| `--crepe-color-surface-low`        | `#eae7df` | —      | 次级浮层底                         |
+| `--crepe-color-on-surface`         | `#2a2720` | 12.1:1 | 浮层正文                           |
+| `--crepe-color-on-surface-variant` | `#6e6a5e` | 4.7:1  | 次要文字                           |
+| `--crepe-color-outline`            | `#e2ded3` | —      | 装饰性边框/分隔（非交互控件）      |
+| `--crepe-color-primary`            | `#1e4f8a` | 7.9:1  | 墨蓝：链接/焦点/选中               |
+| `--crepe-color-secondary`          | `#e3eaf3` | —      | 主色浅底（选中项背景）             |
+| `--crepe-color-on-secondary`       | `#1e4f8a` | 6.8:1  | 浅底上的主色文字                   |
+| `--crepe-color-inverse`            | `#1e4f8a` | —      | 反色底（搜索高亮等反色场景）       |
+| `--crepe-color-on-inverse`         | `#ffffff` | 8.3:1  | 反色底文字                         |
+| `--crepe-color-inline-code`        | `#9e2b25` | 7.1:1  | 行内代码：枣红（「批注墨水」气质） |
+| `--crepe-color-error`              | `#c62828` | 5.3:1  | 错误/危险                          |
+| `--crepe-color-hover`              | `#eae7df` | —      | 悬停底                             |
+| `--crepe-color-selected`           | `#d3dfee` | —      | 文本选中底（墨蓝 15% 调）          |
+| `--crepe-color-inline-area`        | `#f1efe9` | —      | 行内编辑区（与代码块底同族）       |
 
-### 暗色（Night，`.markwell-dark` 激活，08 主题模块接入）
+### 暗色（Night，「夜读」，`.markwell-dark` 激活，08 主题模块接入）
 
-| Crepe 变量                         | 值        | 说明                                    |
-| ---------------------------------- | --------- | --------------------------------------- |
-| `--crepe-color-background`         | `#1e1e1e` | 中性夜灰（Typora Night 风格，原创取值） |
-| `--crepe-color-on-background`      | `#e5e7eb` | 对比 ≈13:1                              |
-| `--crepe-color-surface`            | `#252525` | 浮层底                                  |
-| `--crepe-color-surface-low`        | `#2b2b2b` | 次级浮层底                              |
-| `--crepe-color-on-surface`         | `#e5e7eb` | 浮层正文                                |
-| `--crepe-color-on-surface-variant` | `#a1a1aa` | 对比 ≈7:1                               |
-| `--crepe-color-outline`            | `#3f3f46` | 边框                                    |
-| `--crepe-color-primary`            | `#2dd4bf` | teal-400，暗底对比 ≈8:1                 |
-| `--crepe-color-secondary`          | `#134e4a` | 主色深底                                |
-| `--crepe-color-on-secondary`       | `#ccfbf1` | 深底文字                                |
-| `--crepe-color-inverse`            | `#ccfbf1` | 反色底                                  |
-| `--crepe-color-on-inverse`         | `#134e4a` | 反色底文字                              |
-| `--crepe-color-inline-code`        | `#fb923c` | 行内代码文字                            |
-| `--crepe-color-error`              | `#f87171` | 错误                                    |
-| `--crepe-color-hover`              | `#262626` | 悬停底                                  |
-| `--crepe-color-selected`           | `#134e4a` | 选中底                                  |
-| `--crepe-color-inline-area`        | `#333333` | 行内编辑区                              |
+| Crepe 变量                         | 值        | 对比度 | 说明                                 |
+| ---------------------------------- | --------- | ------ | ------------------------------------ |
+| `--crepe-color-background`         | `#211e1a` | —      | 暖炭画布（非中性灰，带暖褐倾向）     |
+| `--crepe-color-on-background`      | `#e8e4da` | 13.1:1 | 暖白正文                             |
+| `--crepe-color-surface`            | `#26231f` | —      | 浮层底（比画布微亮，浮层感）         |
+| `--crepe-color-surface-low`        | `#2d2925` | —      | 次级浮层底                           |
+| `--crepe-color-on-surface`         | `#e8e4da` | 11.4:1 | 浮层正文                             |
+| `--crepe-color-on-surface-variant` | `#a39e92` | 5.9:1  | 次要文字                             |
+| `--crepe-color-outline`            | `#3b372f` | —      | 装饰性边框/分隔                      |
+| `--crepe-color-primary`            | `#8fb3dc` | 7.6:1  | 雾蓝：链接/焦点/选中（暗底提亮映射） |
+| `--crepe-color-secondary`          | `#2e3a4e` | —      | 主色深底（选中项背景）               |
+| `--crepe-color-on-secondary`       | `#8fb3dc` | 5.3:1  | 深底上的主色文字                     |
+| `--crepe-color-inverse`            | `#8fb3dc` | —      | 反色底                               |
+| `--crepe-color-on-inverse`         | `#1b3a5e` | 5.3:1  | 反色底文字（雾蓝底上深蓝墨）         |
+| `--crepe-color-inline-code`        | `#e29a86` | 7.3:1  | 行内代码：暖珊瑚                     |
+| `--crepe-color-error`              | `#e06c5f` | 5.1:1  | 错误                                 |
+| `--crepe-color-hover`              | `#2d2925` | —      | 悬停底                               |
+| `--crepe-color-selected`           | `#3a4a63` | —      | 文本选中底（雾蓝 20% 调）            |
+| `--crepe-color-inline-area`        | `#26231f` | —      | 行内编辑区                           |
+
+## 代码语法色（预留 07 渲染 / 08 主题模块）
+
+> 围栏代码高亮的推荐取色（基于 code-bg 验证 ≥4.5:1），与「纸墨」气质同族：亮色收敛为
+> 枣红/松绿/琥珀/墨蓝，暗色提亮为暖珊瑚/雾绿/蜜金/雾蓝，注释一律复用 ink-2。
+
+| 语法角色 | Light     | Dark      |
+| -------- | --------- | --------- |
+| keyword  | `#9e2b25` | `#e29a86` |
+| string   | `#1e6b4f` | `#8fc9a8` |
+| number   | `#8a5a00` | `#e0b05c` |
+| function | `#1e4f8a` | `#8fb3dc` |
+| comment  | `#6e6a5e` | `#a39e92` |
+| type     | `#6b3fa0` | `#c5a3e0` |
 
 ## 版式
 
