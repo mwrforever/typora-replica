@@ -7,32 +7,35 @@
 //
 // 注意：DOMPurify 的 ADD_ATTR 只放行「输入中已存在」的属性，不会为缺失该属性的
 // 元素注入（3.4.13 实测：仅 ADD_ATTR 时输出 iframe 不带 sandbox）。因此 sandbox
-// 强制注入在清洗后经 DOM 解析补做，保证 AC-E20-4 的 sandbox 属性恒存在。
+// 强制归一化在清洗后经 DOM 解析补做：无论输入是否自带 token，一律写为无权限的
+// 空 sandbox（allow-scripts + allow-same-origin 组合可构成沙箱逃逸，见
+// html-sanitize.spec 归一化用例），保证 AC-E20-4 的 sandbox 恒为受限值。
 import DOMPurify from "dompurify";
 
 /**
  * 清洗 HTML 片段（进入编辑视图前调用）
  *
  * 核心安全路径（AC-E20-1/3/4）：DOMPurify 白名单移除 script 与 on* 事件属性、
- * 拦截 javascript: 协议；iframe 放行后强制补注 sandbox 属性（隔离脚本与本地
- * 文件访问）。class/id/data-* 不做处理（渲染剥离由 stripHtmlAttrsAtRender 负责，
- * 导出保留原文）。
+ * 拦截 javascript: 协议；iframe 放行后强制归一化为空 sandbox（隔离脚本与本地
+ * 文件访问，输入自带的 allow-* token 一律丢弃，防沙箱逃逸）。class/id/data-*
+ * 不做处理（渲染剥离由 stripHtmlAttrsAtRender 负责，导出保留原文）。
  * @param html 原始 HTML 字符串（来自文档解析/粘贴/导入，不可信输入）
  * @returns 清洗后的安全 HTML 字符串
  */
 export function sanitizeHtml(html: string): string {
   // 白名单清洗：iframe 不在 DOMPurify 默认允许标签中，需 ADD_TAGS 显式放行；
-  // ADD_ATTR 放行 sandbox 属性（输入自带时保留，缺失时由下方 DOM 解析补注）
+  // ADD_ATTR 放行 sandbox 属性（输入自带时先保留，由下方归一化统一覆盖）
   const cleaned = DOMPurify.sanitize(html, {
     ADD_TAGS: ["iframe"],
     ADD_ATTR: ["sandbox"],
   });
-  // 强制 iframe sandbox：逐 iframe 检查并补注空 sandbox（无任何权限的隔离沙箱）。
-  // 清洗结果已是白名单输出，此处仅做属性补注，不引入新的解析面
+  // sandbox 恒归一化：逐 iframe 强制写为空值（无任何权限的隔离沙箱）。
+  // 不校验输入 token——allow-scripts/allow-same-origin 等组合可逃逸沙箱，
+  // 归一化保证输出只可能是受限沙箱。清洗结果已是白名单输出，此处仅做属性
+  // 覆盖，不引入新的解析面
   const doc = new DOMParser().parseFromString(cleaned, "text/html");
   for (const el of doc.body.querySelectorAll("iframe")) {
-    // 已带 sandbox 的 iframe 保留原 token（仍受 sandbox 隔离约束），不重复注入
-    if (!el.hasAttribute("sandbox")) el.setAttribute("sandbox", "");
+    el.setAttribute("sandbox", "");
   }
   return doc.body.innerHTML;
 }

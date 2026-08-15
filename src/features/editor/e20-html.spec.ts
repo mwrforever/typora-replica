@@ -12,10 +12,13 @@ describe("E20 HTML/媒体", () => {
 
   it("AC-E20-2 编辑视图剥离 class/data-*，导出时保留", async () => {
     const te = await makeTestEditor('<span class="x" data-y="1">文字</span>');
-    // 编辑视图：class/data-* 被剥离
-    const span = te.view.dom.querySelector("span");
-    expect(span?.hasAttribute("class")).toBe(false);
-    expect(span?.hasAttribute("data-y")).toBe(false);
+    // 编辑视图：断言内容 span（NodeView 外层容器的内层，`span > span` 定位），
+    // class/data-* 被剥离；外层容器自带的 data-type="html" 是编辑器注入的节点
+    // 标记（非用户内容），不在剥离范围
+    const content = te.view.dom.querySelector("span > span");
+    expect(content?.hasAttribute("class")).toBe(false);
+    expect(content?.hasAttribute("data-y")).toBe(false);
+    expect(content?.textContent).toBe("文字");
     // 导出：原文保留
     expect(te.getMarkdown()).toContain('class="x"');
     expect(te.getMarkdown()).toContain('data-y="1"');

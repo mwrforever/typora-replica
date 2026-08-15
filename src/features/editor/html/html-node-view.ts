@@ -35,7 +35,9 @@ class HtmlNodeView {
 
   constructor(node: ProseMirrorNode) {
     this.dom = document.createElement("span");
-    // 标记节点类型：与内置 toDOM 的 data-type 契约一致，便于调试与样式定位
+    // 标记节点类型：与内置 toDOM 的 data-type 契约一致，便于调试与样式定位。
+    // 该属性为编辑器注入的节点标记（非用户内容），AC-E20-2 的 data-* 剥离
+    // 只针对容器内层内容，不含本标记
     this.dom.setAttribute("data-type", htmlNodeName);
     this.render(node.attrs.value as string);
   }
