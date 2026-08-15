@@ -19,6 +19,7 @@ import {
   listDrafts,
   recoverDraft,
   getCliArgs,
+  probePathExists,
   FileIoError,
 } from "./file-io";
 
@@ -107,5 +108,32 @@ describe("file-io 桥（Rust command 封装）", () => {
     mockInvoke.mockRejectedValue({ code: 1 });
     await expect(listDrafts()).rejects.toThrow(FileIoError);
     await expect(listDrafts()).rejects.toThrow("未知文件 IO 错误");
+  });
+
+  it("probePathExists 目录存在（listDir 成功）返回 true", async () => {
+    mockInvoke.mockResolvedValue([]);
+    await expect(probePathExists("C:/docs")).resolves.toBe(true);
+    // 探测以 listDir 为首选：目录与文件均视为存在（read_file 对目录必失败）
+    expect(mockInvoke).toHaveBeenCalledWith("list_dir", {
+      path: "C:/docs",
+      extFilter: null,
+    });
+  });
+
+  it("probePathExists 文件存在（listDir 失败后 readFile 兜底成功）返回 true", async () => {
+    mockInvoke.mockRejectedValueOnce("目录不存在或不可访问: 系统找不到指定的路径");
+    mockInvoke.mockResolvedValueOnce({ content: "x", encoding: "utf8", lineEnding: "lf" });
+    await expect(probePathExists("C:/docs/a.md")).resolves.toBe(true);
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, "list_dir", {
+      path: "C:/docs/a.md",
+      extFilter: null,
+    });
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "read_file", { path: "C:/docs/a.md" });
+  });
+
+  it("probePathExists 路径不存在（listDir 与 readFile 均失败）返回 false", async () => {
+    mockInvoke.mockRejectedValueOnce("目录不存在或不可访问: 系统找不到指定的路径");
+    mockInvoke.mockRejectedValueOnce("读取文件失败: 系统找不到指定的文件");
+    await expect(probePathExists("C:/gone")).resolves.toBe(false);
   });
 });

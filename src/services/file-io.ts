@@ -111,3 +111,28 @@ export function recoverDraft(fileName: string): Promise<ReadFileResult> {
 export function getCliArgs(): Promise<CliArgs> {
   return invokeOrThrow<CliArgs>("get_cli_args");
 }
+
+/**
+ * 路径存在性探测：目录或文件均视为存在
+ *
+ * 先试 listDir（对目录返回条目、对文件返回空数组均不报错，仅不存在路径报错），
+ * 失败再试 readFile（兜底文件读取，覆盖权限等边缘场景）。
+ * 用于启动恢复（F14）的路径检查：readFile 对目录必失败（std::fs::read 目录报错），
+ * 单独使用会令文件夹存在性恒 false——本函数为 I-1 修复的统一探测入口。
+ * @param path 待探测的完整路径（文件或目录均可）
+ * @returns true=路径可达（目录或文件）；false=两者均不可达
+ */
+export async function probePathExists(path: string): Promise<boolean> {
+  try {
+    await listDir(path);
+    return true;
+  } catch {
+    // listDir 不可达时兜底按文件读取探测（目录探测失败 + 文件存在 = 文件路径）
+    try {
+      await readFile(path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}

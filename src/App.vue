@@ -11,7 +11,7 @@ import { AutoSaveController } from "./services/auto-save";
 import { DraftRecovery } from "./services/draft-recovery";
 import { DocumentSession } from "./services/document-session";
 import { editorManager } from "./services/editor-manager";
-import { getCliArgs, readFile } from "./services/file-io";
+import { getCliArgs, probePathExists } from "./services/file-io";
 import { resolveLaunch } from "./services/launch-behavior";
 import { loadSettings } from "./services/settings";
 import { registerAppShortcuts } from "./services/app-shortcuts";
@@ -73,15 +73,9 @@ const cleanupShortcuts = registerAppShortcuts({
 onMounted(async () => {
   // 启动链路：cli 参数 + 偏好 → 决策 → 加载文档（失败回退新建，提示不崩溃）
   const [cli, settings] = await Promise.all([getCliArgs(), loadSettings()]);
-  const exists = async (p: string) => {
-    try {
-      await readFile(p);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-  const decision = await resolveLaunch(cli, settings, exists);
+  // 路径存在性探测（I-1 修复）：listDir 优先——readFile 对目录必失败，
+  // 旧内联 readFile 探测令文件夹存在性恒 false（AC-F14-1/2 失效根因）
+  const decision = await resolveLaunch(cli, settings, probePathExists);
   if (decision.notice) session.notify({ level: "info", message: decision.notice });
   switch (decision.action) {
     case "new":
