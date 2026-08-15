@@ -20,11 +20,14 @@ pub fn run() {
             watcher: Mutex::new(None),
         })
         // 命令随实现任务注册：Task 5 read_file/write_file/list_dir；
-        // Task 6 save_draft/list_drafts/recover_draft；Task 7 watch_dir；Task 13 get_cli_args
+        // Task 6 save_draft/list_drafts/recover_draft（drafts.rs）；Task 7 watch_dir；Task 13 get_cli_args
         .invoke_handler(tauri::generate_handler![
             io::commands::read_file,
             io::commands::write_file,
-            io::commands::list_dir
+            io::commands::list_dir,
+            io::drafts::save_draft_cmd,
+            io::drafts::list_drafts_cmd,
+            io::drafts::recover_draft_cmd
         ])
         .run(tauri::generate_context!())
     {
