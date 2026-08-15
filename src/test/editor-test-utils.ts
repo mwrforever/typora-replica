@@ -14,6 +14,7 @@ import {
 } from "../features/editor/footnote-tooltip";
 import { registerEditorInputRules } from "../features/editor/input-rules";
 import { applyEditorKeymaps } from "../features/editor/keymaps";
+import { openLinkPlugin } from "../features/editor/link/open-link";
 import {
   configureToc,
   setupTocNodeView,
@@ -92,6 +93,8 @@ export async function makeTestEditor(
   // TOC 目录（E12）：toc 节点 schema + `[toc]` 输入规则，与产品工厂同源插件
   crepe.editor.use(tocSchema);
   crepe.editor.use(tocInputRule);
+  // E14 链接：Ctrl+点击在系统浏览器打开，与产品工厂同源插件
+  crepe.editor.use(openLinkPlugin);
   crepe.editor.config((ctx) => {
     registerEditorInputRules(ctx);
     applyEditorKeymaps(ctx);

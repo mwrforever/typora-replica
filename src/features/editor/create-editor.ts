@@ -10,6 +10,7 @@ import "katex/contrib/mhchem";
 import { configureFootnoteTooltip, footnoteTooltipPlugin } from "./footnote-tooltip";
 import { registerEditorInputRules } from "./input-rules";
 import { applyEditorKeymaps } from "./keymaps";
+import { openLinkPlugin } from "./link/open-link";
 import {
   configureToc,
   setupTocNodeView,
@@ -186,6 +187,8 @@ export function createMarkwellEditor(
   // TOC 目录（E12）：toc 节点 schema + `[toc]` 输入规则
   crepe.editor.use(tocSchema);
   crepe.editor.use(tocInputRule);
+  // E14 链接：Ctrl+点击在系统浏览器打开（普通点击仍走内置 LinkTooltip）
+  crepe.editor.use(openLinkPlugin);
   // 自定义语法规则注入：config 回调在 create() 时执行，与内置规则统一编排
   crepe.editor.config((ctx) => {
     registerEditorInputRules(ctx);

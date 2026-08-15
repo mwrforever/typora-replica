@@ -2,7 +2,6 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/vue";
 import { afterEach } from "vitest";
-import { destroyTestEditors } from "./editor-test-utils";
 
 // IntersectionObserver：Crepe 代码块懒初始化依赖，测试环境恒视为可见。
 // observe() 时立即以 isIntersecting=true 回调：真实浏览器在元素进入视口后异步回调，
@@ -87,8 +86,13 @@ if (!document.elementFromPoint) {
   } as unknown as typeof document.elementFromPoint;
 }
 
-afterEach(() => {
-  // 销毁本用例创建的编辑器实例并卸载 Vue 组件
+afterEach(async () => {
+  // 销毁本用例创建的编辑器实例并卸载 Vue 组件。
+  // 延迟导入 editor-test-utils：setup 阶段若静态导入会提前求值编辑器模块链
+  //（editor-test-utils → 各插件 → services），使测试文件内 vi.mock（如 E14 对
+  // external-open）无法作用于已求值模块；延迟到用例结束再导入时模块已被测试
+  // 文件按 mock 求值并缓存，销毁语义不变。
+  const { destroyTestEditors } = await import("./editor-test-utils");
   destroyTestEditors();
   cleanup();
 });
