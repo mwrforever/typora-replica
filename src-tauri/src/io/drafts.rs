@@ -139,7 +139,10 @@ pub fn recover_draft(dir: &Path, file_name: &str) -> Result<String, String> {
 }
 
 /// 命令：保存草稿（app 数据目录下 drafts/）
-#[tauri::command]
+///
+/// 注册（wire）名 = spec §5 契约名 save_draft；函数名保留 _cmd 后缀
+/// 以免与核心函数 save_draft 同名，rename 属性仅改 invoke 侧名字
+#[tauri::command(rename = "save_draft")]
 pub fn save_draft_cmd(
     app: tauri::AppHandle,
     file_name: String,
@@ -154,7 +157,9 @@ pub fn save_draft_cmd(
 }
 
 /// 命令：列出草稿（日期倒序）
-#[tauri::command]
+///
+/// 注册（wire）名 = spec §5 契约名 list_drafts
+#[tauri::command(rename = "list_drafts")]
 pub fn list_drafts_cmd(
     app: tauri::AppHandle,
 ) -> Result<Vec<crate::io::commands::DraftEntry>, String> {
@@ -166,7 +171,9 @@ pub fn list_drafts_cmd(
 }
 
 /// 命令：恢复草稿（读后删除，内容转 UTF-8 探测返回）
-#[tauri::command]
+///
+/// 注册（wire）名 = spec §5 契约名 recover_draft
+#[tauri::command(rename = "recover_draft")]
 pub fn recover_draft_cmd(
     app: tauri::AppHandle,
     file_name: String,

@@ -2,9 +2,9 @@
 //
 // 全部文件读写走 Rust command（方案 C，绕开 fs 插件静态 scope）：
 // 前端仅透传参数与规范化错误。invoke 失败统一包装为 FileIoError（中文消息）。
-// 命令名以 src-tauri 注册名为准：草稿三命令在 Rust 侧 #[tauri::command] 函数名带
-// _cmd 后缀（save_draft_cmd/list_drafts_cmd/recover_draft_cmd），invoke 名即函数名；
-// get_cli_args 由 Task 13 注册，本封装先行就位。
+// 命令名以 spec §5 锁定契约为准：草稿三命令在 Rust 侧经 #[tauri::command(rename = ...)]
+// 注册为 save_draft/list_drafts/recover_draft（函数名带 _cmd 后缀仅为 Rust 内部命名，
+// 不参与 wire 名）；get_cli_args 由 Task 13 注册，本封装先行就位。
 import { invoke } from "@tauri-apps/api/core";
 
 /** 源文本编码（readFile 探测结果；保存一律 UTF-8 无 BOM） */
@@ -94,17 +94,17 @@ export function listDir(path: string, extFilter?: string): Promise<DirEntry[]> {
 
 /** 保存草稿（返回实际保存路径） */
 export function saveDraft(fileName: string, content: string): Promise<string> {
-  return invokeOrThrow<string>("save_draft_cmd", { fileName, content });
+  return invokeOrThrow<string>("save_draft", { fileName, content });
 }
 
 /** 列出草稿（日期倒序） */
 export function listDrafts(): Promise<DraftEntry[]> {
-  return invokeOrThrow<DraftEntry[]>("list_drafts_cmd");
+  return invokeOrThrow<DraftEntry[]>("list_drafts");
 }
 
 /** 恢复草稿（读后删除，返回解码结果） */
 export function recoverDraft(fileName: string): Promise<ReadFileResult> {
-  return invokeOrThrow<ReadFileResult>("recover_draft_cmd", { fileName });
+  return invokeOrThrow<ReadFileResult>("recover_draft", { fileName });
 }
 
 /** 读取启动命令行参数 */
