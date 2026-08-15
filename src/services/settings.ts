@@ -71,7 +71,10 @@ export async function loadSettings(): Promise<AppSettings> {
 }
 
 /** 更新偏好（深合并后写回并返回新值；调用方拿返回值继续链路） */
-export async function updateSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
+export async function updateSettings(
+  // launch 允许部分字段（文档会话等调用方只传 lastFile/lastFolder 增量）
+  patch: Partial<Omit<AppSettings, "launch">> & { launch?: Partial<LaunchSettings> },
+): Promise<AppSettings> {
   const current = await loadSettings();
   const next: AppSettings = {
     autoSave: { ...current.autoSave, ...patch.autoSave },

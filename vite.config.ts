@@ -74,6 +74,13 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 02 核心服务 100%：文档会话（打开/保存/另存/dirty 状态机 + 父目录加载 + lastFile 持久化）
+        "src/services/document-session.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },
