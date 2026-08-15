@@ -14,6 +14,13 @@ import {
 } from "../features/editor/footnote-tooltip";
 import { registerEditorInputRules } from "../features/editor/input-rules";
 import { applyEditorKeymaps } from "../features/editor/keymaps";
+import {
+  configureToc,
+  setupTocNodeView,
+  setupTocRebuildListener,
+  tocInputRule,
+  tocSchema,
+} from "../features/editor/toc/toc-plugin";
 
 /** 按键修饰键组合 */
 export interface KeyMods {
@@ -82,6 +89,9 @@ export async function makeTestEditor(
   crepe.editor.use(lowerLanguageCodeBlockSchema);
   // 脚注悬停预览浮层（E9），与产品工厂同源插件
   crepe.editor.use(footnoteTooltipPlugin);
+  // TOC 目录（E12）：toc 节点 schema + `[toc]` 输入规则，与产品工厂同源插件
+  crepe.editor.use(tocSchema);
+  crepe.editor.use(tocInputRule);
   crepe.editor.config((ctx) => {
     registerEditorInputRules(ctx);
     applyEditorKeymaps(ctx);
@@ -89,7 +99,12 @@ export async function makeTestEditor(
     applyMarkwellStringifyOptions(ctx);
     // 脚注悬停预览浮层规格（handleDOMEvents + PluginView）注入
     configureFootnoteTooltip(ctx);
+    // TOC 解析/序列化接线与节点视图注册（E12），与产品工厂同源
+    configureToc(ctx);
+    setupTocNodeView(ctx);
   });
+  // 目录防抖重算接线（E12），与产品工厂同源
+  setupTocRebuildListener(crepe);
   await crepe.create();
   liveEditors.push(crepe);
 

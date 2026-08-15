@@ -10,6 +10,13 @@ import "katex/contrib/mhchem";
 import { configureFootnoteTooltip, footnoteTooltipPlugin } from "./footnote-tooltip";
 import { registerEditorInputRules } from "./input-rules";
 import { applyEditorKeymaps } from "./keymaps";
+import {
+  configureToc,
+  setupTocNodeView,
+  setupTocRebuildListener,
+  tocInputRule,
+  tocSchema,
+} from "./toc/toc-plugin";
 
 /** CommonMark Unicode 标点判断（`_` 本身属 Pc 类别，同样命中） */
 const UNICODE_PUNCT_RE = /^\p{P}$/u;
@@ -176,6 +183,9 @@ export function createMarkwellEditor(
   crepe.editor.use(lowerLanguageCodeBlockSchema);
   // 脚注悬停预览浮层（E9 AC-E9-2）：tooltipFactory 形态插件 + config 阶段注入规格
   crepe.editor.use(footnoteTooltipPlugin);
+  // TOC 目录（E12）：toc 节点 schema + `[toc]` 输入规则
+  crepe.editor.use(tocSchema);
+  crepe.editor.use(tocInputRule);
   // 自定义语法规则注入：config 回调在 create() 时执行，与内置规则统一编排
   crepe.editor.config((ctx) => {
     registerEditorInputRules(ctx);
@@ -183,8 +193,13 @@ export function createMarkwellEditor(
     applyEditorKeymaps(ctx);
     // 脚注悬停预览浮层规格（handleDOMEvents + PluginView）注入
     configureFootnoteTooltip(ctx);
+    // TOC 解析/序列化接线（remark 转换 + stringify handler）与节点视图注册
+    configureToc(ctx);
+    setupTocNodeView(ctx);
     // Typora 式落盘序列化选项（列表 `- ` 前缀、GFM 单词内下划线不转义）
     applyMarkwellStringifyOptions(ctx);
   });
+  // 文档更新 → 防抖 300ms 重算目录（listener.updated 为 Crepe 原生事件，自身 200ms 防抖）
+  setupTocRebuildListener(crepe);
   return crepe;
 }
