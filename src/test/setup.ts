@@ -86,6 +86,41 @@ if (!document.elementFromPoint) {
   } as unknown as typeof document.elementFromPoint;
 }
 
+// DragEvent/ClipboardEvent：jsdom 未实现这两个事件构造器，而 Crepe 上传插件按
+// `event instanceof DragEvent / ClipboardEvent` 判定拖拽/粘贴事件类型（E15 用例依赖）。
+// 桩以 jsdom 已有的 MouseEvent/Event 为基类补全 dataTransfer/clipboardData 载荷
+//（DataTransfer 本体 jsdom 亦未实现，事件载荷由测试侧普通对象提供，见 e15-image.spec）
+if (typeof window.DragEvent !== "function") {
+  class DragEventStub extends MouseEvent {
+    readonly dataTransfer: DataTransfer | null;
+
+    constructor(type: string, init: DragEventInit = {}) {
+      super(type, init);
+      this.dataTransfer = init.dataTransfer ?? null;
+    }
+  }
+  window.DragEvent = DragEventStub as unknown as typeof DragEvent;
+}
+if (typeof window.ClipboardEvent !== "function") {
+  class ClipboardEventStub extends Event {
+    readonly clipboardData: DataTransfer | null;
+
+    constructor(type: string, init: ClipboardEventInit = {}) {
+      super(type, init);
+      this.clipboardData = init.clipboardData ?? null;
+    }
+  }
+  window.ClipboardEvent = ClipboardEventStub as unknown as typeof ClipboardEvent;
+}
+
+// URL.createObjectURL：jsdom 未实现（jsdom issue #3136），而 Crepe 图片上传缺省路径
+//（未注入 onUpload 时）以它生成 blob URL 占位（E15 AC-E15-3 缺省回落依赖）。
+// 桩返回确定性 blob 伪 URL，真实 WebView 原生支持不受影响。
+if (typeof URL.createObjectURL !== "function") {
+  URL.createObjectURL = ((file: Blob) =>
+    `blob:mock/${(file as File).name ?? "file"}`) as typeof URL.createObjectURL;
+}
+
 afterEach(async () => {
   // 销毁本用例创建的编辑器实例并卸载 Vue 组件。
   // 延迟导入 editor-test-utils：setup 阶段若静态导入会提前求值编辑器模块链

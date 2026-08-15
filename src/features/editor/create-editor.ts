@@ -8,6 +8,7 @@ import type { Options } from "remark-stringify";
 // mhchem 副作用导入：KaTeX 化学式扩展（E7），全应用只需一次
 import "katex/contrib/mhchem";
 import { configureFootnoteTooltip, footnoteTooltipPlugin } from "./footnote-tooltip";
+import { getUploadHandler } from "./image-upload";
 import { registerEditorInputRules } from "./input-rules";
 import { applyEditorKeymaps } from "./keymaps";
 import { openLinkPlugin } from "./link/open-link";
@@ -170,6 +171,9 @@ export function createMarkwellEditor(
   defaultValue: string,
   options: MarkwellEditorOptions = {},
 ): Crepe {
+  // 图片上传回调：options.onUpload 显式传入优先，其次 07 模块注册表注入
+  // （image-upload.ts），缺省 undefined → Crepe 内置 blob URL 占位回落
+  const resolvedOnUpload = options.onUpload ?? getUploadHandler();
   const crepe = new Crepe({
     root,
     defaultValue,
@@ -177,7 +181,7 @@ export function createMarkwellEditor(
     ...options.crepeConfig,
     featureConfigs: {
       ...(options.crepeConfig?.featureConfigs ?? {}),
-      ...(options.onUpload ? { [Crepe.Feature.ImageBlock]: { onUpload: options.onUpload } } : {}),
+      ...(resolvedOnUpload ? { [Crepe.Feature.ImageBlock]: { onUpload: resolvedOnUpload } } : {}),
     },
   });
   // 代码围栏语言落盘小写归一化：以 extendSchema 扩展 codeBlockSchema（E6-4 Typora 平价）
