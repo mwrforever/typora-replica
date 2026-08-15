@@ -83,14 +83,17 @@ describe("E12 目录 TOC", () => {
     expect(te2.view.dom.querySelector(".markwell-toc")).not.toBeNull();
   });
 
-  it("行中多余文本不触发 [toc] 转换（独占整行守卫）", async () => {
-    const te = await makeTestEditor("[toc]更多文字");
-    // 光标定位到 [toc] 之后、行尾之前（行中）：光标前文本为 [toc] 但行尾仍有内容
+  it("硬换行分隔的尾随文本不触发 [toc] 转换（独占整行守卫）", async () => {
+    // `[toc]` + 两空格换行（硬换行）+ 尾随文本：段落为 [text, hardBreak, text]，
+    // 解析期转换器不命中（子节点非单一文本）；光标置于 [toc] 后插入 ] 使正则命中
+    // （textBefore 恰为 "[toc]"），但段落内容大于光标前文本（4 < 8）→ 守卫拒绝转换
+    const te = await makeTestEditor("[toc]  \n尾随");
     te.setSelection(5, 5);
     te.insertText("]");
+    // 不产生 toc 节点，文本保持普通段落（尾随内容未被吞掉）
     expect(te.view.dom.querySelector(".markwell-toc")).toBeNull();
-    // 文本保持普通段落（safe 序列化会把 [ 转义，仅断言行尾文字未被吞掉）
-    expect(te.getMarkdown()).toContain("更多文字");
+    expect(te.getMarkdown()).toContain("尾随");
+    expect(te.getMarkdown()).toContain("[toc]");
   });
 
   it("连续更新防抖合并：仅最后一次重算生效（窗口内 clearTimeout）", async () => {
