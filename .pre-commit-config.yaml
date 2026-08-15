@@ -14,7 +14,8 @@ repos:
         args: ["--maxkb=1024"]
 
   # 本地钩子：调用项目自身工具链
-  # 注：未指定 stages 的钩子默认只挂 pre-commit 阶段
+  # 注：未指定 stages 的钩子默认继承 default_stages（含全部 stage，pre-push 也会跑）；
+  # 轻量钩子显式限定 stages: [pre-commit]，避免推送时被 xargs 按核数分块并行拉起大量实例
   - repo: local
     hooks:
       # 前端 ESLint：仅检查 JS/TS/Vue 源码
@@ -23,22 +24,29 @@ repos:
         entry: npx eslint
         language: system
         types_or: [javascript, ts, vue]
+        stages: [pre-commit]
       # 前端 Prettier：格式化一致性检查
       - id: prettier
         name: prettier（前端格式化检查）
         entry: npx prettier --check
         language: system
         types_or: [javascript, ts, vue, json, css, scss, html, markdown]
+        stages: [pre-commit]
       # Rust rustfmt：格式化一致性检查
       - id: rustfmt
         name: rustfmt（Rust 格式化检查）
         entry: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
         language: system
         files: ^src-tauri/.*\.rs$
+        stages: [pre-commit]
 
   # pre-push 阶段的重量级检查：静态分析 + 全量测试（避免拖慢每次提交）
   # 注：entry 用 bash -c 包装，忽略 pre-commit 自动追加的文件参数
   #     （否则 cargo test / vitest 会把文件名当作测试过滤条件导致误失败）
+  # 注：pass_filenames: false 使钩子整段推送只执行一次——pre-commit 默认按 CPU
+  #     核数把文件分块并行跑多个实例（本机 24 核，整段 range 数百文件时会把
+  #     npm test 并行拉起约 10 组、eslint 30 个实例，内存叠加可达 15GB+，
+  #     2026-08-15 推送 OOM 的第二层根因）
   - repo: local
     hooks:
       # Rust clippy：静态分析，warnings 视为错误
@@ -48,6 +56,7 @@ repos:
         language: system
         files: ^src-tauri/.*\.rs$
         stages: [pre-push]
+        pass_filenames: false
       # Rust 全量单元测试
       - id: cargo-test
         name: cargo test（Rust 全量测试）
@@ -55,6 +64,7 @@ repos:
         language: system
         files: ^src-tauri/.*\.rs$
         stages: [pre-push]
+        pass_filenames: false
       # 前端全量单元测试（Vitest）
       - id: vitest
         name: vitest（前端全量测试）
@@ -62,3 +72,4 @@ repos:
         language: system
         types_or: [javascript, ts, vue]
         stages: [pre-push]
+        pass_filenames: false
