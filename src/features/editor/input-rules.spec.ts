@@ -256,6 +256,19 @@ describe("createLenientAtxHeadingInputRule 宽松 ATX 标题转换分支", () =>
     // 说明本规则对非段落父块返回 null 回落，Enter 由内置拆段行为接管
     expect(te.view.state.doc.childCount).toBe(2);
   });
+
+  it("回落：触发文本非父块内容起点（超 500 字窗口）不转标题，Enter 回落拆段", async () => {
+    const te = await makeTestEditor();
+    // customInputRules 只回看光标前 500 字窗口：构造「7 字前缀 + ###Header + 491 字」
+    // 共 507 字段落，使窗口恰以 `###` 开头且整窗匹配宽松 ATX 正则、但该 `###` 前仍有
+    // 7 字（非父块内容起点）——缺行首守卫会误删段落前 3 字符并整段转标题（F2）
+    const longText = "x".repeat(7) + "###Header" + "x".repeat(491);
+    te.insertText(longText);
+    te.press("Enter");
+    // 判别点：未转标题且 Enter 回落内置拆段（长段落拆为两块）
+    expect(te.view.dom.querySelector("h3")).toBeNull();
+    expect(te.view.state.doc.childCount).toBe(2);
+  });
 });
 
 describe("输入规则注册表（模块级追加规则）", () => {

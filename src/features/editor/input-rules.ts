@@ -226,12 +226,19 @@ export const LENIENT_ATX_HEADING_INPUT_PATTERN = /^(#{1,6})\S.*\n$/;
  * @returns 已解析的 ProseMirror InputRule（含 match 正则与 handler，不依赖 ctx）
  */
 export function createLenientAtxHeadingInputRule(): InputRule {
-  return new InputRule(LENIENT_ATX_HEADING_INPUT_PATTERN, (state, match) => {
+  return new InputRule(LENIENT_ATX_HEADING_INPUT_PATTERN, (state, match, start) => {
     // 仅转换普通段落行：父块非段落（如标题内继续输入、行中光标）回落内置 Enter 行为
     const { $from } = state.selection;
     if ($from.parent.type.name !== "paragraph") return null;
     // 代码跨度内文本不触发（`` `###Header` `` + Enter 不转标题，回落内置拆段）
     if (isInInlineCode($from)) return null;
+    // 触发文本必须独占行首：匹配起点须位于父块内容起点（parentOffset 0）。
+    // customInputRules 的 textBefore 是光标前 [parentOffset-500, parentOffset) 窗口，
+    // 正则 ^ 锚定的是窗口起点而非行首——超 500 字段落中窗口恰以 `###` 开头时，
+    // 缺本守卫会误删段落前 3 个字符并整段转标题（与建表规则 typoraTableRule 的
+    // parentOffset 0 守卫同构，见 input-rules.spec 的 500 字窗口用例）
+    const $start = state.doc.resolve(start);
+    if ($start.parentOffset !== 0) return null;
     // # 号串长度即标题级别（正则 {1,6} 已钳制上限，match[1] 恒为命中的 # 串）
     const level = match[1].length;
     // 内容起点：$from.start() = 父块（段落）内容起点（= 段落节点起点 + 1，开标签恒宽 1）；

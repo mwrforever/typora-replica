@@ -64,7 +64,11 @@ jobs:
     name: 安全（gitleaks/npm audit/cargo-deny）
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 全量克隆：gitleaks 对 PR 范围（base.sha^..head）做差异扫描，
+      # 浅克隆缺父提交会报 unknown revision 并退出 1（实测两次运行 17s 即失败）
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: gitleaks 密钥泄露扫描
         uses: gitleaks/gitleaks-action@v2
         env:

@@ -2,11 +2,6 @@
    MarkWell 设计令牌（依据 design-system/markwell/pages/editor.md）
    桌面离线应用：字体一律系统栈，禁止网络字体加载 */
 :root {
-  /* 品牌色板 */
-  --markwell-primary: #0f766e;
-  --markwell-primary-light: #2dd4bf;
-  --markwell-danger: #dc2626;
-
   /* 编辑区字体栈（中文优先回退） */
   --markwell-font-sans: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   --markwell-font-code:
