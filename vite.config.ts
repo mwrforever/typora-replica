@@ -14,17 +14,16 @@ export default defineConfig(async () => ({
     environment: "jsdom",
     include: ["src/**/*.spec.ts"],
     setupFiles: ["src/test/setup.ts"],
-    // 内存安全：jsdom 测试每个 worker 需加载 Crepe/CodeMirror/KaTeX 等重依赖
-    // （单 worker 常驻数百 MB），默认按 CPU 核数并发拉起大量 worker 会在
-    // pre-push 钩子等叠加场景下把 node 内存推到 10GB+ 并触发 OOM 杀 worker。
-    // 显式限制为 4 个 fork：峰值内存钉在约 2GB 以内，代价是跑批略慢。
-    pool: "forks",
-    poolOptions: {
-      forks: {
-        maxForks: 4,
-        minForks: 1,
-      },
-    },
+    // 内存安全（2026-08-15 事故根治）：jsdom 测试每个 worker 需加载
+    // Crepe/CodeMirror/KaTeX 等重依赖（单 worker 峰值约 1GB），若按 CPU 核数
+    // （本机 24 核）全并发拉起 worker，总内存可达 20GB+ 触发系统 OOM。
+    // 注意：vitest 4 已移除 poolOptions.forks.maxForks（旧写法静默失效），
+    // 并发限制必须用顶层 maxWorkers；实测修复后全量测试 vitest 峰值 <1GB
+    // （4 worker 各约 0.2GB 起，随加载重依赖波动，上限约 4GB）
+    maxWorkers: 4,
+    // 单 worker V8 堆上限 2GB：泄漏兜底，防止某个 worker 异常膨胀拖垮整机
+    // （实测单 worker 峰值约 1GB，2GB 有充足余量且不影响正常用例）
+    execArgv: ["--max-old-space-size=2048"],
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],
