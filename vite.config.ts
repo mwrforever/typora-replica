@@ -54,6 +54,19 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 02 核心服务 100%：文件 IO 桥（九命令封装/错误规范化）+ 偏好设置（store 持久化）
+        "src/services/file-io.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        "src/services/settings.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },
