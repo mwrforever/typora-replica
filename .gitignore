@@ -49,3 +49,6 @@ e2e/.driver/webview-data/
 
 # CI 冒烟运行时生成的降权启动批处理
 e2e/run-smoke-app.cmd
+
+# 02 E2E 运行时预置的启动 fixture（wdio.conf 加载时生成）
+e2e/.fixtures/
