@@ -72,6 +72,43 @@ pub struct CliArgs {
     pub reopen_file: Option<String>,
 }
 
+/// 解析启动命令行参数（纯函数，供单测）
+///
+/// 支持两种形态：`--reopen-file <path>` 与 `--reopen-file=<path>`；
+/// 其余参数（tauri 自身参数）一律忽略。--new 与 --reopen-file 可同时存在，
+/// 优先级裁决（--new 优先）由前端 resolveLaunch 负责。
+/// @param args 完整参数列表（含程序名）
+/// @returns 结构化启动参数
+pub fn parse_cli_args(args: &[String]) -> CliArgs {
+    let mut new = false;
+    let mut reopen_file: Option<String> = None;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--new" => new = true,
+            "--reopen-file" => {
+                // 分离形态：取下一参数为路径（缺省则忽略，防越界）
+                if let Some(v) = args.get(i + 1) {
+                    reopen_file = Some(v.clone());
+                    i += 1;
+                }
+            }
+            a if a.starts_with("--reopen-file=") => {
+                reopen_file = Some(a["--reopen-file=".len()..].to_string())
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    CliArgs { new, reopen_file }
+}
+
+/// 启动参数命令（前端 getCliArgs 消费）
+#[tauri::command]
+pub fn get_cli_args() -> CliArgs {
+    parse_cli_args(&std::env::args().collect::<Vec<_>>())
+}
+
 /// 读文件命令：编码探测 + 行尾探测（内容统一 UTF-8）
 ///
 /// @param path 目标文件完整路径（拒绝 .. 逃逸）
@@ -213,5 +250,60 @@ mod tests {
         assert_eq!(out[0].name, "x.md");
         assert!(!out[0].is_dir);
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parse_cli_args_new_flag() {
+        let args = vec!["app.exe".to_string(), "--new".to_string()];
+        let out = parse_cli_args(&args);
+        assert!(out.new);
+        assert!(out.reopen_file.is_none());
+    }
+
+    #[test]
+    fn parse_cli_args_reopen_file_equals_form() {
+        let args = vec![
+            "app.exe".to_string(),
+            "--reopen-file=C:/docs/a.md".to_string(),
+        ];
+        let out = parse_cli_args(&args);
+        assert!(!out.new);
+        assert_eq!(out.reopen_file.as_deref(), Some("C:/docs/a.md"));
+    }
+
+    #[test]
+    fn parse_cli_args_reopen_file_separate_form() {
+        let args = vec![
+            "app.exe".to_string(),
+            "--reopen-file".to_string(),
+            "C:/b.md".to_string(),
+        ];
+        let out = parse_cli_args(&args);
+        assert_eq!(out.reopen_file.as_deref(), Some("C:/b.md"));
+    }
+
+    #[test]
+    fn parse_cli_args_ignores_unknown_args() {
+        let args = vec![
+            "app.exe".to_string(),
+            "--use-localhost".to_string(),
+            "x".to_string(),
+        ];
+        let out = parse_cli_args(&args);
+        assert_eq!(out, CliArgs::default());
+    }
+
+    #[test]
+    fn parse_cli_args_collects_both_flags() {
+        // --new 与 --reopen-file 同时存在：优先级由前端 resolveLaunch 裁决（--new 优先），
+        // 本函数只做结构化收集
+        let args = vec![
+            "app.exe".to_string(),
+            "--new".to_string(),
+            "--reopen-file=C:/a.md".to_string(),
+        ];
+        let out = parse_cli_args(&args);
+        assert!(out.new);
+        assert_eq!(out.reopen_file.as_deref(), Some("C:/a.md"));
     }
 }

@@ -95,6 +95,13 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 02 核心服务 100%：启动行为决策（--new 优先/四模式/回退新建提示，F14）
+        "src/services/launch-behavior.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },
