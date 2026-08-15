@@ -1,0 +1,12 @@
+/* src/styles/tokens.css
+   MarkWell 设计令牌（依据 design-system/markwell/pages/editor.md）
+   桌面离线应用：字体一律系统栈，禁止网络字体加载 */
+:root {
+  /* 编辑区字体栈（中文优先回退） */
+  --markwell-font-sans: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --markwell-font-code:
+    "Cascadia Code", "Fira Code", "JetBrains Mono", Consolas, "Courier New", monospace;
+
+  /* 版式 */
+  --markwell-editor-max-width: 800px;
+}

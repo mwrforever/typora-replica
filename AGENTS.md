@@ -1,0 +1,89 @@
+# MarkWell 项目开发规范（AGENTS.md）
+
+本文件为项目级开发规范，随仓库自动加载，对所有模块、所有参与开发的智能体与人类开发者生效。
+
+## 2. 技术栈锁定
+
+2.1 以下选型**不可单方面变更**（变更须用户拍板并重新评估）：Tauri 2 + Vue 3（Composition API + `<script setup>`）+ TypeScript（strict）+ Vite + Pinia + Milkdown v7 Crepe（WYSIWYG）；KaTeX 数学、Mermaid 图表、GFM；Rust stable-x86_64-pc-windows-msvc（notify/walkdir/regex + tauri-plugin-dialog/fs/store/opener）。
+2.2 依赖版本锁定原则：新增运行时依赖须经评估（体积、维护状态、许可）；升级大版本须跑全量门禁并记录。npm 11 allow-scripts 安全策略维持。
+2.3 禁用逆向工程：绝不解包/反编译 Typora 闭源代码（clean-room 边界）。
+
+## 3. 命名与代码风格
+
+### 3.1 TypeScript
+
+| 对象                            | 命名                  | 说明                                              |
+| ------------------------------- | --------------------- | ------------------------------------------------- |
+| 变量 / 函数 / 方法              | `camelCase`           | 语义化全名，禁止 a/b/c/d 单字母                   |
+| 类 / 接口 / 类型别名 / 枚举     | `PascalCase`          | **接口禁用 I 前缀**（type 与 interface 一视同仁） |
+| 常量（模块级 const 且值不可变） | `UPPER_SNAKE_CASE`    | 仅限字面量常量；函数内 const 用 camelCase         |
+| 文件 / 目录                     | `kebab-case`          | 项目既有代码与 Vite 生态惯例                      |
+| 泛型参数                        | `T` / `TReq` / `TRes` | 单个大写字母或 T 前缀                             |
+| 私有成员                        | 无前缀约定            | 用 TS `#`/类型系统表达私有，不引入 `_` 前缀       |
+
+3.2 **null/undefined 策略**：默认使用 `undefined`；可空字段用可选标记 `field?: T` 而非 `field: T | undefined`；**禁止随意使用 `null`**——仅在必须与第三方 API（DOMPurify、DOM 原生）区分"未设置"与"空值"时使用，且函数返回类型必须显式声明。新增 API 一律返回 `undefined` 表示"无"。
+3.3 **类型纪律**：公共 API 边界必须显式标注类型；局部变量依赖推断不重复标注；禁止 `any`（确需时用 `unknown` + 收窄，并注释理由）；导入仅引入实际使用的符号（eslint 已强制）。
+3.4 **函数**：可选参数置于必选参数之后；默认参数优于 `| undefined` 联合；单一职责，超过 ~40 行考虑拆分（参考值非硬限）。
+3.5 **Vue 3 组件**：
+
+- 组件名多词 `PascalCase`（`EditorPage.vue`），SFC 内引用同名 PascalCase；第三方组件在 DOM 模板用 kebab-case
+- props 详尽定义（`type`/`required`/`default`/`validator`），禁用裸数组简写
+- 自定义事件用 `emits` 显式声明并注解载荷
+- `v-for` 必须带 `key`；禁止 `v-if` 与 `v-for` 同元素
+- 组件样式必须 `scoped`（全局样式只放 tokens.css / crepe-overrides.css，且限 `.markwell-dark` 作用域）
+- 模板中组件自闭合（`<EditorPage />`）
+- 组合式函数 `useXxx`（camelCase）；可复用逻辑优先抽 `src/composables/` 或服务层，禁止组件内堆业务逻辑
+
+3.6 **Rust**：
+
+- 类型/trait `UpperCamelCase`，值/函数 `snake_case`，常量 `SCREAMING_SNAKE_CASE`
+- 访问器**不带 get\_ 前缀**（`fn name()` 而非 `fn get_name()`）；setter 用 `fn set_name()`
+- 错误处理：可失败函数返回 `Result<T, E>`，自定义错误类型用 thiserror 派生；**禁止 `panic!`/`unwrap()`/`expect()` 出现在库代码**（测试与确定不可达处除外，须注释理由）
+- 所有代码须过 `rustfmt` 与 `clippy -D warnings`（pre-push 强制，见 §6）
+
+3.7 **文件内组织**：import 分组（内置模块 → 第三方 → 项目内部，各组空行分隔）；类型导入用 `import type`；函数/组件导出遵循"先定义后导出"。
+
+## 5. 架构与模块边界
+
+5.1 **12 模块划分**（01 编辑核心 → 12 窗口外壳）为长期结构，spec 定稿于 docs/specs/modules/，**改 spec 必须先经用户同意**。
+5.2 **依赖方向单向**：`src/services/`（无 UI 依赖的服务）← `src/features/`（按功能域组织）← `src/components/`（展示与页面级组件）← `src/App.vue`（应用组装）。禁止反向依赖、禁止跨层调用（如组件直接 import 底层模块内部实现）。
+5.3 **跨模块接口锁定**：01 已暴露的接口（editorManager 方法集、三事件桥、revealRange、setUploadHandler/getUploadHandler、openExternalUrl、addEditorKeymap、text 序列化处理器）**签名锁定**，后续模块只消费不修改；确需变更须用户拍板。
+5.4 **模块内聚**：新功能先问"属于哪个模块/哪个服务"，不归属当前模块的代码禁止顺手放（延后项记入 ledger 而非堆代码）。
+5.5 **死代码零容忍**：本次改动产生的废弃代码、失效测试、误导注释在同一次提交清理；历史遗留他人死代码指出不擅删。
+
+## 6. 工程流程与质量门禁
+
+6.1 **spec 驱动流程**：brainstorm → spec → writing-plans → TDD → 执行 → 双阶段 review（superpowers 技能）；每模块独立分支 + PR；SDD ledger 是模块恢复地图，续接必须读。
+6.2 **git 提交**：`type(scope): 中文描述`，type 限 feat/fix/docs/style/refactor/perf/test/build/chore/revert；一条提交只做一件事；提交信息描述"为什么"而非"改了什么"。
+6.3 **PR 流程**：每模块一个 PR 合入 main；PR 描述必须包含 AC 通过清单、覆盖率报告、强制披露清单（已知取舍/延后项）；合入前用户把关。
+6.4 **本地门禁**（pre-commit + pre-push 已安装，违反即拦截）：
+
+- pre-commit：文本检查 + eslint + prettier + rustfmt
+- pre-push：clippy + cargo test + vitest 全量（`pass_filenames: false` 单次执行，禁止还原为分块并行）
+
+6.5 **测试覆盖**：核心功能 100%、非核心 ≥80%（vite.config.ts thresholds 强制）；测试与实现同次提交；失效测试直接删除。
+6.6 **CI Quality Gate**：ESLint/Prettier/vue-tsc/Vitest + rustfmt/clippy/cargo test + gitleaks/npm audit/cargo-deny + 构建 + 进程级冒烟（e2e/smoke-ci.mjs，**不得**改回 CDP 调试端口方案）。
+
+## 7. 内存安全（事故教训，勿再犯）
+
+核心问题：① vitest 4 已移除 `poolOptions.forks.maxForks`，旧限流配置静默失效，本机 24 核会全并发拉起 24 个 worker（每 worker 约 1GB），总内存 20GB+ 打满系统；② pre-commit 按 CPU 核数把文件分块并行跑钩子，推送时会把 npm test 并行拉起约 10 组、eslint 并行 30 个实例，叠加后峰值 15.9GB。
+
+解决方案（已生效配置，禁止还原）：
+
+- vitest 并发上限 `maxWorkers: 4`、单 worker V8 堆上限 2048MB（vite.config.ts）
+- 重量级钩子（clippy/cargo-test/vitest）必须 `pass_filenames: false` 整段只执行一次；轻量钩子必须显式 `stages`；禁止新增按文件分块并行的重量级钩子（.pre-commit-config.yaml）
+- 依赖大版本升级后核对配置项是否仍被识别（vitest 4 移除 poolOptions 的教训），并跑一次带内存采样的全量测试
+- 运行测试/推送前检查残留 vitest 进程（甄别 CommandLine，严禁误杀其他项目的 node 进程）
+
+## 8. 安全底线
+
+8.1 所有 HTML 进入编辑器渲染前必须过 DOMPurify 清洗；iframe 恒归一化 `sandbox=""`（零权限），禁止 allow-scripts + allow-same-origin 组合（E20 定案）。
+8.2 日志/错误信息禁止输出敏感信息（token、完整凭据）；上传/外链地址不落日志明文。
+8.3 依赖安全：gitleaks / npm audit / cargo-deny 在 CI 强制；本地新增依赖前自查许可与已知 CVE。
+8.4 前端与 Rust 侧不引入 eval 类动态执行（Mermaid 渲染走沙箱化预览）。
+
+## 9. 性能预算
+
+9.1 **事件链路延迟预算**（01 定案，02 起消费方须知晓）：selectionUpdated 即时；updated 200ms（本层 200ms + plugin-listener 内置 200ms = 400ms）；markdownUpdated 300ms + 内置 200ms = **500ms 全链路**。自动保存、防抖设计不得低于该预算。
+9.2 重渲染隔离：Mermaid、KaTeX 懒加载/按需渲染；[toc] 全量重建为既定边缘（模块内只读场景接受）。
+9.3 大文档（>1MB）降级策略：不阻塞主线程的解析/序列化路径优先；出现可复现卡顿须记 bug 报告而非静默优化。

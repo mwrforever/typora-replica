@@ -13,11 +13,48 @@ export default defineConfig(async () => ({
   test: {
     environment: "jsdom",
     include: ["src/**/*.spec.ts"],
+    setupFiles: ["src/test/setup.ts"],
+    // 内存安全（2026-08-15 事故根治）：jsdom 测试每个 worker 需加载
+    // Crepe/CodeMirror/KaTeX 等重依赖（单 worker 峰值约 1GB），若按 CPU 核数
+    // （本机 24 核）全并发拉起 worker，总内存可达 20GB+ 触发系统 OOM。
+    // 注意：vitest 4 已移除 poolOptions.forks.maxForks（旧写法静默失效），
+    // 并发限制必须用顶层 maxWorkers；实测修复后全量测试 vitest 峰值 <1GB
+    // （4 worker 各约 0.2GB 起，随加载重依赖波动，上限约 4GB）
+    maxWorkers: 4,
+    // 单 worker V8 堆上限 2GB：泄漏兜底，防止某个 worker 异常膨胀拖垮整机
+    // （实测单 worker 峰值约 1GB，2GB 有充足余量且不影响正常用例）
+    execArgv: ["--max-old-space-size=2048"],
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],
       include: ["src/**/*.{ts,vue}"],
-      exclude: ["src/main.ts", "src/vite-env.d.ts"],
+      exclude: ["src/main.ts", "src/vite-env.d.ts", "src/test/**"],
+      thresholds: {
+        // 全局 ≥80%（非核心功能下限）
+        lines: 80,
+        statements: 80,
+        functions: 80,
+        branches: 80,
+        // 核心功能 100%：语法转换（keymap/输入规则）、E20 安全路径、事件桥、实例管理
+        "src/features/editor/**/*.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        "src/services/editor-manager.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        "src/services/editor-events.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+      },
     },
   },
 

@@ -1,0 +1,1639 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MarkWell 配色设计 v2「纸墨 Ink &amp; Paper」亮暗双态展示</title>
+    <style>
+      /* ============================================================
+     MarkWell 配色设计 v2「纸墨 Ink & Paper」
+     依据：design-system/markwell/MASTER.md（v2 色板段）+ pages/editor.md（Crepe 映射）
+     - 单一墨蓝强调（链接心智），去 v1 teal+orange 撞色
+     - 亮色=暖纸+暖墨；暗色=暖炭+暖白；两态同「纸墨」气质
+     - 正文级文字对比度全部 ≥4.5:1、控件边框 ≥3:1（22 项脚本验证，见文末明细表）
+     - 桌面离线：字体一律系统栈，禁止网络字体
+     ============================================================ */
+      :root {
+        /* —— 语义令牌（亮色「暖纸」） —— */
+        --mw-bg: #faf9f6; /* 纸面画布：暖纸白（非纯白） */
+        --mw-ink: #2a2720; /* 正文墨：暖黑 */
+        --mw-ink-2: #6e6a5e; /* 次要文字 */
+        --mw-ink-3: #807a6d; /* 弱化/禁用/图标（不作正文） */
+        --mw-surface: #f2f0ea; /* 外壳/浮层底：暖灰 */
+        --mw-surface-low: #eae7df; /* 悬停/次级浮层底 */
+        --mw-border: #e2ded3; /* 装饰性分隔线 */
+        --mw-border-strong: #8f897a; /* 输入框/控件边界（≥3:1） */
+        --mw-primary: #1e4f8a; /* 墨蓝：链接/焦点/选中 */
+        --mw-primary-soft: #e3eaf3; /* 主色浅底（选中项背景） */
+        --mw-on-primary: #ffffff; /* 主色底上的文字 */
+        --mw-code-text: #9e2b25; /* 行内代码：枣红 */
+        --mw-code-bg: #f1efe9; /* 代码围栏底 */
+        --mw-danger: #c62828;
+        --mw-selection: #d3dfee; /* 文本选中底 */
+        --mw-quote-bg: #f5f3ee; /* 引用块底 */
+        --mw-shadow-sm: 0 1px 2px rgba(42, 39, 32, 0.06);
+        --mw-shadow-md: 0 4px 6px rgba(42, 39, 32, 0.08);
+        --mw-radius: 8px; /* 容器圆角 */
+        --mw-radius-sm: 6px; /* 控件圆角 */
+
+        /* 字体栈 */
+        --mw-font-sans: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        --mw-font-code:
+          "Cascadia Code", "Fira Code", "JetBrains Mono", Consolas, "Courier New", monospace;
+
+        /* 布局 */
+        --sidebar-w: 260px;
+        --menu-h: 32px;
+        --status-h: 28px;
+      }
+
+      /* —— 暗色「夜读」（.markwell-dark 激活，08 主题模块接入后复用） —— */
+      .markwell-dark {
+        --mw-bg: #211e1a; /* 暖炭画布（非中性灰） */
+        --mw-ink: #e8e4da; /* 暖白正文 */
+        --mw-ink-2: #a39e92;
+        --mw-ink-3: #878173;
+        --mw-surface: #26231f; /* 外壳：比画布微亮，浮层感 */
+        --mw-surface-low: #2d2925;
+        --mw-border: #3b372f;
+        --mw-border-strong: #70695a;
+        --mw-primary: #8fb3dc; /* 雾蓝（暗底提亮映射） */
+        --mw-primary-soft: #2e3a4e;
+        --mw-on-primary: #1b3a5e;
+        --mw-code-text: #e29a86; /* 暖珊瑚 */
+        --mw-code-bg: #26231f;
+        --mw-danger: #e06c5f;
+        --mw-selection: #3a4a63;
+        --mw-quote-bg: #26231f;
+        --mw-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+        --mw-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        font-family: var(--mw-font-sans);
+        font-size: 16px;
+        line-height: 1.5;
+        color: var(--mw-ink);
+        background: var(--mw-surface);
+        transition:
+          background 200ms ease,
+          color 200ms ease;
+      }
+
+      /* 文本选中：纸面内选区底色（与 Crepe --crepe-color-selected 同令牌） */
+      ::selection {
+        background: var(--mw-selection);
+        color: var(--mw-ink);
+      }
+
+      /* ============ 应用外壳预览（复用窗口骨架，视觉层重做） ============ */
+      .app-shell {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+
+      /* 菜单栏 */
+      .menu-bar {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        height: var(--menu-h);
+        padding: 0 8px;
+        background: var(--mw-surface);
+        border-bottom: 1px solid var(--mw-border);
+        font-size: 13px;
+        flex: none;
+      }
+      .menu-item {
+        padding: 4px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 150ms ease;
+        color: var(--mw-ink-2);
+      }
+      .menu-item:hover {
+        background: var(--mw-surface-low);
+        color: var(--mw-ink);
+      }
+      .menu-item.active {
+        background: var(--mw-primary-soft);
+        color: var(--mw-primary);
+      }
+      .menu-spacer {
+        flex: 1;
+      }
+      .menu-window {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        color: var(--mw-ink-3);
+      }
+      .win-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        cursor: pointer;
+        transition: opacity 150ms ease;
+      }
+      .win-dot:hover {
+        opacity: 0.7;
+      }
+      .win-dot.min {
+        background: #e0b05c;
+      }
+      .win-dot.max {
+        background: #8fc9a8;
+      }
+      .win-dot.close {
+        background: #e08c7a;
+      }
+
+      .main-area {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+      }
+
+      /* 侧栏 */
+      .sidebar {
+        width: var(--sidebar-w);
+        flex: none;
+        background: var(--mw-surface);
+        border-right: 1px solid var(--mw-border);
+        display: flex;
+        flex-direction: column;
+        transition: width 200ms ease;
+      }
+      .sidebar.collapsed {
+        width: 0;
+        border-right: none;
+        overflow: hidden;
+      }
+      .sidebar-tabs {
+        display: flex;
+        padding: 6px 8px 0;
+        gap: 2px;
+        border-bottom: 1px solid var(--mw-border);
+      }
+      .side-tab {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        padding: 6px 4px;
+        font-size: 12px;
+        color: var(--mw-ink-2);
+        border: none;
+        background: none;
+        border-radius: 6px 6px 0 0;
+        cursor: pointer;
+        transition: all 150ms ease;
+        font-family: inherit;
+      }
+      .side-tab:hover {
+        background: var(--mw-surface-low);
+      }
+      .side-tab.active {
+        color: var(--mw-primary);
+        background: var(--mw-bg);
+        box-shadow: inset 0 -2px 0 var(--mw-primary);
+      }
+      .side-tab svg {
+        width: 14px;
+        height: 14px;
+      }
+      .side-body {
+        flex: 1;
+        overflow: auto;
+        padding: 8px;
+      }
+      .side-panel {
+        display: none;
+      }
+      .side-panel.active {
+        display: block;
+        animation: panel-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      /* 面板切换：轻微下浮入场，仅 transform/opacity */
+      @keyframes panel-in {
+        from {
+          opacity: 0;
+          transform: translateY(4px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+
+      .tree-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: background 150ms ease;
+        color: var(--mw-ink-2);
+      }
+      .tree-item:hover {
+        background: var(--mw-surface-low);
+        color: var(--mw-ink);
+      }
+      .tree-item.active {
+        background: var(--mw-primary-soft);
+        color: var(--mw-primary);
+      }
+      .tree-item svg {
+        width: 14px;
+        height: 14px;
+        flex: none;
+      }
+      .tree-item .chevron {
+        width: 10px;
+        height: 10px;
+        color: var(--mw-ink-3);
+      }
+      .tree-group {
+        margin-left: 16px;
+        border-left: 1px solid var(--mw-border);
+        padding-left: 4px;
+      }
+      .tree-meta {
+        font-size: 11px;
+        color: var(--mw-ink-3);
+        margin-left: auto;
+      }
+
+      .outline-item {
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-size: 13px;
+        color: var(--mw-ink-2);
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        transition: all 150ms ease;
+        border-left: 2px solid transparent;
+      }
+      .outline-item:hover {
+        background: var(--mw-surface-low);
+        color: var(--mw-ink);
+      }
+      .outline-item.active {
+        color: var(--mw-primary);
+        border-left-color: var(--mw-primary);
+        background: var(--mw-primary-soft);
+      }
+      .outline-item.l1 {
+        font-weight: 600;
+        padding-left: 8px;
+      }
+      .outline-item.l2 {
+        padding-left: 22px;
+      }
+      .outline-item.l3 {
+        padding-left: 36px;
+        font-size: 12px;
+      }
+
+      .search-input {
+        width: 100%;
+        padding: 6px 10px;
+        font-size: 13px;
+        font-family: inherit;
+        border: 1px solid var(--mw-border-strong);
+        border-radius: 6px;
+        background: var(--mw-bg);
+        color: var(--mw-ink);
+        transition:
+          border-color 150ms ease,
+          box-shadow 150ms ease;
+      }
+      .search-input:focus {
+        outline: none;
+        border-color: var(--mw-primary);
+        box-shadow: 0 0 0 2px var(--mw-primary-soft);
+      }
+      .search-hit {
+        padding: 6px 8px;
+        border-radius: 6px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .search-hit:hover {
+        background: var(--mw-surface-low);
+      }
+      .search-hit .hit-line {
+        color: var(--mw-ink-2);
+      }
+      .search-hit mark {
+        background: var(--mw-primary);
+        color: var(--mw-on-primary);
+        border-radius: 2px;
+        padding: 0 1px;
+      }
+
+      /* 中央区 */
+      .center {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .tab-bar {
+        display: flex;
+        align-items: center;
+        height: 36px;
+        padding: 0 8px;
+        gap: 2px;
+        background: var(--mw-surface);
+        border-bottom: 1px solid var(--mw-border);
+        flex: none;
+      }
+      .tab {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 6px 6px 0 0;
+        font-size: 13px;
+        color: var(--mw-ink-2);
+        cursor: pointer;
+        transition: all 150ms ease;
+        max-width: 180px;
+      }
+      .tab:hover {
+        background: var(--mw-surface-low);
+      }
+      .tab.active {
+        color: var(--mw-ink);
+        background: var(--mw-bg);
+        box-shadow: inset 0 -2px 0 var(--mw-primary);
+      }
+      .tab .tab-name {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .tab-close {
+        width: 14px;
+        height: 14px;
+        border: none;
+        background: none;
+        border-radius: 50%;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--mw-ink-3);
+        transition: all 150ms ease;
+      }
+      .tab-close:hover {
+        background: var(--mw-danger);
+        color: #fff;
+      }
+      .tab-close svg {
+        width: 10px;
+        height: 10px;
+      }
+      .tab-new {
+        margin-left: 4px;
+      }
+      .icon-btn {
+        width: 26px;
+        height: 26px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        background: none;
+        border-radius: 6px;
+        color: var(--mw-ink-2);
+        cursor: pointer;
+        transition: all 150ms ease;
+      }
+      .icon-btn:hover {
+        background: var(--mw-surface-low);
+        color: var(--mw-primary);
+      }
+      .icon-btn svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      /* 触觉反馈：按压时轻微收缩（transform 不引起布局位移） */
+      .menu-item:active,
+      .side-tab:active,
+      .tree-item:active,
+      .outline-item:active,
+      .search-hit:active,
+      .icon-btn:active,
+      .status-item:active,
+      .tab-close:active {
+        transform: scale(0.97);
+      }
+      .theme-toggle:active {
+        transform: translateY(0) scale(0.97);
+      }
+      .task-check:active {
+        transform: scale(0.9);
+      }
+
+      /* 编辑器纸面：画布铺底 + 纸面顶部一道极淡的「灯下」暖光，强化纸的厚度 */
+      .editor-area {
+        flex: 1;
+        overflow: auto;
+        background: var(--mw-bg);
+      }
+      .paper {
+        position: relative;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 48px 24px 120px;
+      }
+      .paper::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto;
+        height: 260px;
+        background: linear-gradient(
+          to bottom,
+          color-mix(in srgb, var(--mw-bg) 55%, var(--mw-surface-low)),
+          transparent
+        );
+        pointer-events: none;
+      }
+      .paper .doc-title {
+        font-size: 32px;
+        font-weight: 700;
+        line-height: 1.3;
+        border: none;
+        width: 100%;
+        color: var(--mw-ink);
+        font-family: inherit;
+        margin-bottom: 8px;
+        outline: none;
+        transition: box-shadow 150ms ease;
+        border-radius: 6px;
+      }
+      .paper .doc-title:focus {
+        box-shadow: 0 0 0 2px var(--mw-primary-soft);
+      }
+      .paper .doc-meta {
+        font-size: 13px;
+        color: var(--mw-ink-2);
+        margin-bottom: 32px;
+        display: flex;
+        gap: 16px;
+      }
+
+      /* Markdown 内容渲染（纸面内，全部新令牌） */
+      .md h1,
+      .md h2,
+      .md h3,
+      .md h4 {
+        font-weight: 600;
+        line-height: 1.3;
+        margin: 1.4em 0 0.5em;
+        color: var(--mw-ink);
+      }
+      .md h1 {
+        font-size: 26px;
+        border-bottom: 1px solid var(--mw-border);
+        padding-bottom: 0.3em;
+      }
+      .md h2 {
+        font-size: 21px;
+      }
+      .md h3 {
+        font-size: 18px;
+      }
+      .md p {
+        margin: 0.6em 0;
+      }
+      .md a {
+        color: var(--mw-primary);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      .md strong {
+        font-weight: 600;
+      }
+      .md code {
+        font-family: var(--mw-font-code);
+        font-size: 0.875em;
+        background: var(--mw-code-bg);
+        color: var(--mw-code-text);
+        padding: 0.15em 0.35em;
+        border-radius: 6px;
+      }
+      .md pre {
+        background: var(--mw-code-bg);
+        border: 1px solid var(--mw-border);
+        border-radius: var(--mw-radius);
+        padding: 14px 16px;
+        overflow-x: auto;
+        margin: 0.8em 0;
+      }
+      .md pre code {
+        background: none;
+        color: var(--mw-ink);
+        padding: 0;
+        font-size: 13px;
+        line-height: 1.6;
+      }
+      /* 语法高亮（预留 07/08 模块，色值见 editor.md 语法表） */
+      .tok-kw {
+        color: #9e2b25;
+      }
+      .tok-str {
+        color: #1e6b4f;
+      }
+      .tok-num {
+        color: #8a5a00;
+      }
+      .tok-fn {
+        color: #1e4f8a;
+      }
+      .tok-com {
+        color: #6e6a5e;
+      }
+      .tok-type {
+        color: #6b3fa0;
+      }
+      .markwell-dark .tok-kw {
+        color: #e29a86;
+      }
+      .markwell-dark .tok-str {
+        color: #8fc9a8;
+      }
+      .markwell-dark .tok-num {
+        color: #e0b05c;
+      }
+      .markwell-dark .tok-fn {
+        color: #8fb3dc;
+      }
+      .markwell-dark .tok-com {
+        color: #a39e92;
+      }
+      .markwell-dark .tok-type {
+        color: #c5a3e0;
+      }
+      .md pre .lang-tag {
+        float: right;
+        font-size: 11px;
+        color: var(--mw-ink-3);
+        font-family: var(--mw-font-sans);
+      }
+      .md blockquote {
+        border-left: 3px solid var(--mw-primary);
+        padding: 2px 16px;
+        margin: 0.8em 0;
+        color: var(--mw-ink-2);
+        background: var(--mw-quote-bg);
+        border-radius: 0 var(--mw-radius) var(--mw-radius) 0;
+      }
+      .md blockquote blockquote {
+        border-left-color: var(--mw-border-strong);
+        background: transparent;
+      }
+      .md ul,
+      .md ol {
+        margin: 0.6em 0;
+        padding-left: 1.6em;
+      }
+      .md li {
+        margin: 0.2em 0;
+      }
+      .md li::marker {
+        color: var(--mw-primary);
+      }
+      .md .task-list {
+        list-style: none;
+        padding-left: 0.2em;
+      }
+      .md .task-list li {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+      }
+      .md .task-check {
+        width: 15px;
+        height: 15px;
+        border: 1.5px solid var(--mw-ink-3);
+        border-radius: 6px;
+        flex: none;
+        position: relative;
+        top: 2px;
+        cursor: pointer;
+        transition: all 150ms ease;
+      }
+      .md .task-check.done {
+        background: var(--mw-primary);
+        border-color: var(--mw-primary);
+      }
+      .md .task-check.done::after {
+        content: "";
+        position: absolute;
+        left: 4px;
+        top: 1px;
+        width: 4px;
+        height: 8px;
+        border: solid var(--mw-on-primary);
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+      }
+      .md .task-check.pending {
+        background: var(--mw-bg);
+      }
+      .md .task-done-text {
+        color: var(--mw-ink-3);
+        text-decoration: line-through;
+      }
+
+      .md table {
+        border-collapse: collapse;
+        margin: 0.8em 0;
+        width: 100%;
+        font-size: 14px;
+      }
+      .md th,
+      .md td {
+        border: 1px solid var(--mw-border);
+        padding: 6px 12px;
+        text-align: left;
+      }
+      .md th {
+        background: var(--mw-surface-low);
+        font-weight: 600;
+      }
+      .md tr:hover td {
+        background: var(--mw-surface);
+      }
+
+      .md .math-inline {
+        color: var(--mw-primary);
+        font-family: var(--mw-font-code);
+        font-size: 0.95em;
+      }
+      .md .math-block {
+        text-align: center;
+        margin: 0.8em 0;
+        padding: 10px;
+        background: var(--mw-surface);
+        border-radius: var(--mw-radius);
+        font-family: var(--mw-font-code);
+        color: var(--mw-ink);
+      }
+      .md .diagram {
+        border: 1px solid var(--mw-border);
+        border-radius: var(--mw-radius);
+        padding: 12px;
+        background: var(--mw-surface);
+        margin: 0.8em 0;
+      }
+      .md .diagram .diagram-label {
+        font-size: 11px;
+        color: var(--mw-ink-3);
+        margin-bottom: 6px;
+        font-family: var(--mw-font-sans);
+      }
+      .md .toc {
+        border: 1px dashed var(--mw-border-strong);
+        border-radius: var(--mw-radius);
+        padding: 10px 16px;
+        font-size: 13px;
+        color: var(--mw-ink-2);
+        margin: 0.8em 0;
+      }
+      .md .toc b {
+        color: var(--mw-ink);
+      }
+      .md hr {
+        border: none;
+        border-top: 1px solid var(--mw-border);
+        margin: 1.6em 0;
+      }
+
+      /* 状态栏 */
+      .status-bar {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: var(--status-h);
+        padding: 0 10px;
+        background: var(--mw-surface);
+        border-top: 1px solid var(--mw-border);
+        font-size: 12px;
+        color: var(--mw-ink-2);
+        flex: none;
+      }
+      .status-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 150ms ease;
+        font-size: 12px;
+      }
+      .status-item:hover {
+        background: var(--mw-primary-soft);
+        color: var(--mw-primary);
+      }
+      .status-item svg {
+        width: 13px;
+        height: 13px;
+      }
+      .status-spacer {
+        flex: 1;
+      }
+      .status-hint {
+        color: var(--mw-ink-3);
+        font-size: 11px;
+      }
+
+      /* ============ 设计说明区（本页下半部分） ============ */
+      .spec {
+        border-top: 3px solid var(--mw-primary);
+        background: var(--mw-bg);
+        padding: 32px 24px 64px;
+      }
+      .spec-inner {
+        max-width: 960px;
+        margin: 0 auto;
+      }
+      .spec h2 {
+        font-size: 20px;
+        margin-bottom: 8px;
+      }
+      .spec .sub {
+        color: var(--mw-ink-2);
+        font-size: 14px;
+        margin-bottom: 24px;
+      }
+
+      /* 「纸墨」概念条：两个大字直接用纸/墨两色字面表达主题 */
+      .concept {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        border: 1px solid var(--mw-border);
+        border-radius: var(--mw-radius);
+        padding: 18px 20px;
+        margin-bottom: 28px;
+        background: var(--mw-surface);
+      }
+      .concept-word {
+        display: flex;
+        gap: 8px;
+        flex: none;
+      }
+      .concept-word span {
+        width: 54px;
+        height: 54px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 28px;
+        font-weight: 700;
+        border-radius: var(--mw-radius-sm);
+      }
+      .c-paper {
+        background: var(--mw-bg);
+        color: var(--mw-ink);
+        border: 1px solid var(--mw-border);
+      }
+      .c-ink {
+        background: var(--mw-ink);
+        color: var(--mw-bg);
+      }
+      .concept-copy {
+        font-size: 13.5px;
+        color: var(--mw-ink-2);
+      }
+      .concept-copy b {
+        color: var(--mw-ink);
+      }
+
+      /* 设计理念：v1 否决原因 → v2 决策 */
+      .rationale {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-bottom: 32px;
+      }
+      .rationale .box {
+        border: 1px solid var(--mw-border);
+        border-radius: var(--mw-radius);
+        padding: 16px 18px;
+      }
+      .rationale .box.bad {
+        border-left: 3px solid var(--mw-danger);
+      }
+      .rationale .box.good {
+        border-left: 3px solid var(--mw-primary);
+      }
+      .rationale h3 {
+        font-size: 15px;
+        margin-bottom: 8px;
+      }
+      .rationale ul {
+        padding-left: 1.2em;
+        font-size: 13.5px;
+        color: var(--mw-ink-2);
+      }
+      .rationale li {
+        margin: 4px 0;
+      }
+
+      /* 色板网格 */
+      .palette {
+        margin-bottom: 32px;
+      }
+      .palette h3 {
+        font-size: 15px;
+        margin-bottom: 12px;
+      }
+      .swatch-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 12px;
+      }
+      .swatch {
+        border: 1px solid var(--mw-border);
+        border-radius: var(--mw-radius);
+        overflow: hidden;
+        background: var(--mw-surface);
+      }
+      .swatch .chip {
+        height: 56px;
+        display: flex;
+        align-items: flex-end;
+        justify-content: flex-end;
+        padding: 6px;
+      }
+      .swatch .chip .badge {
+        font-size: 10.5px;
+        font-family: var(--mw-font-code);
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.75);
+        color: #333;
+      }
+      .markwell-dark .swatch .chip .badge {
+        background: rgba(0, 0, 0, 0.55);
+        color: #eee;
+      }
+      .swatch .info {
+        padding: 8px 10px;
+        font-size: 12px;
+      }
+      .swatch .info .role {
+        color: var(--mw-ink);
+      }
+      .swatch .info .hex {
+        font-family: var(--mw-font-code);
+        font-size: 11px;
+        color: var(--mw-ink-2);
+      }
+
+      /* 语法色 */
+      .syntax-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 10px;
+        margin-bottom: 32px;
+      }
+      .syntax-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid var(--mw-border);
+        border-radius: 6px;
+        padding: 8px 12px;
+        font-size: 13px;
+        font-family: var(--mw-font-code);
+        background: var(--mw-surface);
+      }
+      .syntax-item .dot {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        border: 1px solid var(--mw-border);
+        flex: none;
+      }
+
+      /* 对比度明细表 */
+      .contrast-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      .contrast-table th,
+      .contrast-table td {
+        border: 1px solid var(--mw-border);
+        padding: 5px 10px;
+        text-align: left;
+      }
+      .contrast-table th {
+        background: var(--mw-surface-low);
+        font-weight: 600;
+      }
+      .contrast-table .ok {
+        color: #1e6b4f;
+        font-weight: 600;
+      }
+      .markwell-dark .contrast-table .ok {
+        color: #8fc9a8;
+      }
+
+      /* 渐次显现：进入视口后淡入上浮（仅 transform/opacity；prefers-reduced-motion 下瞬时呈现） */
+      .reveal {
+        opacity: 0;
+        transform: translateY(12px);
+        transition:
+          opacity 500ms cubic-bezier(0.16, 1, 0.3, 1),
+          transform 500ms cubic-bezier(0.16, 1, 0.3, 1);
+        transition-delay: calc(var(--i, 0) * 45ms);
+      }
+      .reveal.in {
+        opacity: 1;
+        transform: none;
+      }
+
+      /* 色板卡片：对比度评级徽标（AAA / AA / 装饰） */
+      .swatch .info .aa {
+        font-size: 10px;
+        font-weight: 600;
+        margin-left: 6px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        vertical-align: 1px;
+      }
+      .aa-ok {
+        color: #1e6b4f;
+        background: rgba(30, 107, 79, 0.12);
+      }
+      .markwell-dark .aa-ok {
+        color: #8fc9a8;
+        background: rgba(143, 201, 168, 0.14);
+      }
+      .aa-aaa {
+        color: #1e4f8a;
+        background: rgba(30, 79, 138, 0.12);
+      }
+      .markwell-dark .aa-aaa {
+        color: #8fb3dc;
+        background: rgba(143, 179, 220, 0.14);
+      }
+      .aa-muted {
+        color: var(--mw-ink-3);
+        background: var(--mw-surface-low);
+      }
+
+      /* 主题切换按钮（设计稿演示用，产品侧由 08 主题模块接管） */
+      .theme-toggle {
+        position: fixed;
+        right: 16px;
+        bottom: 44px;
+        z-index: 50;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 14px;
+        border: 1px solid var(--mw-border-strong);
+        border-radius: 999px;
+        background: var(--mw-bg);
+        color: var(--mw-ink-2);
+        font-size: 13px;
+        font-family: inherit;
+        cursor: pointer;
+        box-shadow: var(--mw-shadow-md);
+        transition: all 200ms ease;
+      }
+      .theme-toggle:hover {
+        color: var(--mw-primary);
+        border-color: var(--mw-primary);
+        transform: translateY(-1px);
+      }
+      .theme-toggle svg {
+        width: 15px;
+        height: 15px;
+      }
+
+      ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--mw-border-strong);
+        border-radius: 5px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--mw-ink-3);
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          transition: none !important;
+          animation: none !important;
+        }
+        .reveal {
+          opacity: 1 !important;
+          transform: none !important;
+        }
+      }
+    </style>
+    <noscript>
+      <style>
+        .reveal {
+          opacity: 1 !important;
+          transform: none !important;
+        }
+      </style>
+    </noscript>
+  </head>
+  <body>
+    <div class="app-shell">
+      <!-- 菜单栏（12 窗口外壳） -->
+      <nav class="menu-bar">
+        <span class="menu-item active">文件</span>
+        <span class="menu-item">编辑</span>
+        <span class="menu-item">段落</span>
+        <span class="menu-item">格式</span>
+        <span class="menu-item">视图</span>
+        <span class="menu-item">主题</span>
+        <span class="menu-item">帮助</span>
+        <span class="menu-spacer"></span>
+        <span class="menu-window">
+          <span class="win-dot min" title="最小化"></span>
+          <span class="win-dot max" title="最大化"></span>
+          <span class="win-dot close" title="关闭"></span>
+        </span>
+      </nav>
+
+      <div class="main-area">
+        <!-- 侧栏（03 文件树 / 05 大纲 / 06 搜索） -->
+        <aside class="sidebar" id="sidebar">
+          <div class="sidebar-tabs">
+            <button class="side-tab active" data-panel="tree" title="文件树 (Ctrl+Shift+3)">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M2 4h5l2 2h9v10H2z" /></svg
+              >文件
+            </button>
+            <button class="side-tab" data-panel="outline" title="大纲 (Ctrl+Shift+1)">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M3 5h14M3 10h10M3 15h12" /></svg
+              >大纲
+            </button>
+            <button class="side-tab" data-panel="search" title="搜索 (Ctrl+Shift+2)">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                <circle cx="9" cy="9" r="5" />
+                <path d="M13 13l4 4" /></svg
+              >搜索
+            </button>
+          </div>
+
+          <div class="side-body">
+            <div class="side-panel active" id="panel-tree">
+              <div class="tree-item active">
+                <svg class="chevron" viewBox="0 0 10 10" fill="currentColor">
+                  <path d="M2 1l5 4-5 4z" />
+                </svg>
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <rect x="3" y="3" width="14" height="14" rx="2" />
+                </svg>
+                MarkWell 笔记
+                <span class="tree-meta">12</span>
+              </div>
+              <div class="tree-group">
+                <div class="tree-item">
+                  <svg class="chevron" viewBox="0 0 10 10" fill="currentColor">
+                    <path d="M2 1l5 4-5 4z" />
+                  </svg>
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                    <rect x="3" y="3" width="14" height="14" rx="2" />
+                  </svg>
+                  01 编辑核心
+                  <span class="tree-meta">8</span>
+                </div>
+                <div class="tree-group">
+                  <div class="tree-item">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                      <path d="M5 3h7l3 3v11H5z" />
+                    </svg>
+                    配色设计 v2 定稿.md
+                  </div>
+                  <div class="tree-item">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                      <path d="M5 3h7l3 3v11H5z" />
+                    </svg>
+                    12 项 FIX 修复记录.md
+                  </div>
+                </div>
+                <div class="tree-item">
+                  <svg
+                    class="chevron"
+                    viewBox="0 0 10 10"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  >
+                    <path d="M2 1l5 4-5 4" />
+                  </svg>
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                    <rect x="3" y="3" width="14" height="14" rx="2" />
+                  </svg>
+                  02 文档管理
+                  <span class="tree-meta">3</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="side-panel" id="panel-outline">
+              <div class="outline-item l1 active">MarkWell 配色设计 v2</div>
+              <div class="outline-item l2">设计理念：v1 → v2</div>
+              <div class="outline-item l3">为什么 v1 被否决</div>
+              <div class="outline-item l3">v2 四项决策</div>
+              <div class="outline-item l2">语义令牌（亮/暗）</div>
+              <div class="outline-item l2">代码语法色</div>
+              <div class="outline-item l2">对比度验证明细</div>
+            </div>
+
+            <div class="side-panel" id="panel-search">
+              <input class="search-input" type="search" placeholder="搜索当前文档…" />
+              <div style="height: 10px"></div>
+              <div class="search-hit">
+                <div><mark>纸墨</mark> 设计理念</div>
+                <div class="hit-line">第 12 行 · 「纸墨 Ink &amp; Paper」……</div>
+              </div>
+              <div class="search-hit">
+                <div>对比度<mark>验证</mark></div>
+                <div class="hit-line">第 45 行 · 22 项全数通过……</div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- 中央区：标签栏 + 纸面 -->
+        <div class="center">
+          <div class="tab-bar">
+            <div class="tab active">
+              <svg
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                width="13"
+                height="13"
+              >
+                <path d="M5 3h7l3 3v11H5z" />
+              </svg>
+              <span class="tab-name">配色设计 v2 定稿.md</span>
+              <button class="tab-close" title="关闭">
+                <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4">
+                  <path d="M2 2l6 6M8 2l-6 6" />
+                </svg>
+              </button>
+            </div>
+            <div class="tab">
+              <svg
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                width="13"
+                height="13"
+              >
+                <path d="M5 3h7l3 3v11H5z" />
+              </svg>
+              <span class="tab-name">01 编辑核心.md</span>
+              <button class="tab-close" title="关闭">
+                <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4">
+                  <path d="M2 2l6 6M8 2l-6 6" />
+                </svg>
+              </button>
+            </div>
+            <button class="icon-btn tab-new" title="新建标签">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M10 4v12M4 10h12" />
+              </svg>
+            </button>
+            <div class="menu-spacer"></div>
+            <button class="icon-btn" title="更多">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                <circle cx="5" cy="10" r="1.2" />
+                <circle cx="10" cy="10" r="1.2" />
+                <circle cx="15" cy="10" r="1.2" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="editor-area">
+            <div class="paper">
+              <input
+                class="doc-title"
+                value="MarkWell 配色设计 v2「纸墨 Ink &amp; Paper」"
+                readonly
+              />
+              <div class="doc-meta">
+                <span>2026-08-15</span>
+                <span>亮色 暖纸</span>
+                <span>暗色 夜读</span>
+                <span>22 项对比度全过</span>
+              </div>
+
+              <div class="md">
+                <h1>一、设计理念</h1>
+                <p>
+                  上一版（teal 主色 + orange 强调）被整体否决。v2 转向「<strong>纸墨</strong>」：
+                  写作工具的本质是一张纸、一支笔、一瓶墨，配色应该安静、克制、有书卷气。
+                </p>
+                <p>
+                  正文使用<a href="#">墨蓝链接</a>（7.9:1），行内代码用
+                  <code>枣红墨色</code>，强调色只有一种：墨蓝，不再有第二撞色。
+                </p>
+
+                <h2>1.1 为什么 v1 显得「丑」</h2>
+                <ul>
+                  <li>teal + orange 是模板级撞色组合，缺少辨识度</li>
+                  <li>纯白纸面 + 冷灰边框：平、无层次、像未完成品</li>
+                  <li>暗色用中性灰 #1e1e1e，没有任何色相倾向，死气沉沉</li>
+                </ul>
+
+                <h2>1.2 v2 四项决策</h2>
+                <ol>
+                  <li>去纯白/纯灰：亮色暖纸白，暗色暖炭，两态同气质</li>
+                  <li>单一墨蓝强调（暗态映射雾蓝），错误红仅作例外</li>
+                  <li>纸面与外壳分层：外壳暖灰、纸面近白，暗色外壳微亮于画布</li>
+                  <li>正文对比度全 ≥ 4.5:1，控件边框 ≥ 3:1，脚本验证</li>
+                </ol>
+
+                <blockquote>
+                  <p>写作时眼睛停留最久的是纸面。纸面稳，界面才高级。</p>
+                </blockquote>
+
+                <h2>1.3 代码与语法色</h2>
+                <p>行内代码：<code>npm run dev</code>；围栏代码展示六类语法色：</p>
+                <pre><span class="lang-tag">typescript</span><code><span class="tok-com">// 编辑器单例（01 模块接口锁定）</span>
+<span class="tok-kw">import</span> { editorManager } <span class="tok-kw">from</span> <span class="tok-str">'@/services/editor-manager'</span>
+
+<span class="tok-kw">export async function</span> <span class="tok-fn">setupEditor</span>(el: HTMLElement, <span class="tok-type">options</span>: <span class="tok-type">EditorOptions</span>) {
+  <span class="tok-kw">const</span> editor = <span class="tok-kw">await</span> editorManager.<span class="tok-fn">create</span>(el, { <span class="tok-num">300</span> });
+  editor.<span class="tok-fn">setReadonly</span>(<span class="tok-kw">false</span>);
+}</code></pre>
+
+                <h2>1.4 表格与任务列表</h2>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>令牌</th>
+                      <th>亮色</th>
+                      <th>暗色</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>paper</td>
+                      <td>#faf9f6</td>
+                      <td>#211e1a</td>
+                    </tr>
+                    <tr>
+                      <td>primary</td>
+                      <td>#1e4f8a</td>
+                      <td>#8fb3dc</td>
+                    </tr>
+                    <tr>
+                      <td>code-text</td>
+                      <td>#9e2b25</td>
+                      <td>#e29a86</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <ul class="task-list">
+                  <li>
+                    <span class="task-check done"></span>
+                    <span class="task-done-text">v1 色板作废（teal + orange）</span>
+                  </li>
+                  <li>
+                    <span class="task-check pending"></span>
+                    <span>22 项对比度脚本验证</span>
+                  </li>
+                  <li>
+                    <span class="task-check pending"></span>
+                    <span>用户验收 v2 色板</span>
+                  </li>
+                </ul>
+
+                <h2>1.5 数学与图表（KaTeX / Mermaid 占位）</h2>
+                <p>行内公式 <span class="math-inline">$E = mc^2$</span> 与块级公式：</p>
+                <div class="math-block">∫₀¹ f(x) dx = lim<sub>n→∞</sub> Σᵢ f(i/n) · (1/n)</div>
+                <div class="diagram">
+                  <div class="diagram-label">flowchart TD（Mermaid 沙箱化预览）</div>
+                  <div
+                    style="
+                      font-family: var(--mw-font-code);
+                      font-size: 12px;
+                      color: var(--mw-ink-2);
+                    "
+                  >
+                    纸面（画布） → 墨蓝（链接/焦点） → 枣红（行内代码） → 暖灰（外壳）
+                  </div>
+                </div>
+
+                <hr />
+                <p>完整令牌与对比度明细见下方设计说明区。暗色切换按钮在右下角。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 状态栏 -->
+      <footer class="status-bar">
+        <span class="status-item">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M2 12l5-5 3 3 6-6" />
+            <path d="M14 4h4v4" /></svg
+          >已保存
+        </span>
+        <span class="status-item">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M3 5h14M3 10h10M3 15h12" /></svg
+          >H1
+        </span>
+        <span class="status-spacer"></span>
+        <span class="status-hint">UTF-8 · LF</span>
+        <span class="status-item">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+            <circle cx="10" cy="10" r="6" />
+            <path d="M10 7v3l2 2" /></svg
+          >字数 1,204
+        </span>
+      </footer>
+    </div>
+
+    <!-- ============ 设计说明区 ============ -->
+    <section class="spec">
+      <div class="spec-inner">
+        <h2>配色设计 v2「纸墨 Ink &amp; Paper」</h2>
+        <p class="sub">
+          取代 2026-08-15 被否决的 v1（teal + orange）。亮/暗两态同一气质，正文对比度全部达标。
+        </p>
+
+        <div class="concept">
+          <div class="concept-word">
+            <span class="c-paper">纸</span><span class="c-ink">墨</span>
+          </div>
+          <div class="concept-copy">
+            <b>Ink &amp; Paper</b
+            >：一张纸（暖纸白）、一瓶墨（暖黑）、一支笔（墨蓝）。写作工具的配色应该安静、克制、有书卷气，界面只负责退后。
+          </div>
+        </div>
+
+        <div class="rationale">
+          <div class="box bad">
+            <h3>v1 否决原因（勿再犯）</h3>
+            <ul>
+              <li>teal 主色 + orange 强调：模板级撞色，无辨识度</li>
+              <li>纯白纸面 + slate 冷灰边框：平、无层次</li>
+              <li>暗色中性灰 #1e1e1e：无色相倾向，死气沉沉</li>
+            </ul>
+          </div>
+          <div class="box good">
+            <h3>v2 四项决策</h3>
+            <ul>
+              <li>去纯白/纯灰：亮色暖纸白 + 暖墨，暗色暖炭 + 暖白</li>
+              <li>单一墨蓝强调（暗态映射雾蓝），错误红仅例外</li>
+              <li>纸面与外壳分层：亮色外壳暖灰、纸面近白；暗色外壳微亮</li>
+              <li>对比度脚本验证：正文 ≥4.5:1、控件边框 ≥3:1（22 项全过）</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="palette">
+          <h3>语义令牌（亮色 / 暗色）</h3>
+          <div class="swatch-grid" id="swatches"></div>
+        </div>
+
+        <h3 style="font-size: 15px; margin-bottom: 12px">代码语法色（预留 07/08 模块）</h3>
+        <div class="syntax-grid" id="syntax"></div>
+
+        <h3 style="font-size: 15px; margin: 8px 0 12px">对比度验证明细（WCAG，亮/暗两态）</h3>
+        <table class="contrast-table" id="contrast"></table>
+        <p class="sub" style="margin-top: 12px">
+          弱化文字（ink-3）仅用于禁用态/图标/装饰，可读小字一律使用
+          ink-2；普通边框（border）为装饰性分隔线（不承担控件边界职责），输入框/控件边界使用
+          border-strong（≥3:1）。
+        </p>
+        <p class="sub" style="margin-top: 4px">
+          圆角体系：控件 6px、容器 8px、胶囊 999px、行内高亮 2px。动效规范：150-250ms、仅
+          transform/opacity、尊重 prefers-reduced-motion。
+        </p>
+      </div>
+    </section>
+
+    <!-- 主题切换（演示用；产品侧由 08 主题模块接管） -->
+    <button class="theme-toggle" id="themeToggle" title="切换亮/暗主题">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M15 12a6 6 0 01-7-7 6 6 0 107 7z" /></svg
+      >切换暗色
+    </button>
+
+    <script>
+      // —— 令牌数据（与 :root/.markwell-dark 保持一致；改色先改这里再改 CSS） ——
+      const TOKENS = [
+        { role: "paper 纸面", light: "#faf9f6", dark: "#211e1a", note: "画布底色", aa: "装饰" },
+        {
+          role: "ink 正文墨",
+          light: "#2a2720",
+          dark: "#e8e4da",
+          note: "正文 14.2/13.1:1",
+          aa: "AAA",
+        },
+        { role: "ink-2 次要", light: "#6e6a5e", dark: "#a39e92", note: "≥5.1:1", aa: "AA" },
+        { role: "ink-3 弱化", light: "#807a6d", dark: "#878173", note: "禁用/图标 ≥3:1", aa: "AA" },
+        {
+          role: "surface 外壳",
+          light: "#f2f0ea",
+          dark: "#26231f",
+          note: "浮层/侧栏底",
+          aa: "装饰",
+        },
+        { role: "surface-low", light: "#eae7df", dark: "#2d2925", note: "悬停底", aa: "装饰" },
+        { role: "border", light: "#e2ded3", dark: "#3b372f", note: "装饰分隔", aa: "装饰" },
+        {
+          role: "border-strong",
+          light: "#8f897a",
+          dark: "#70695a",
+          note: "控件边界 ≥3:1",
+          aa: "AA",
+        },
+        {
+          role: "primary 墨蓝",
+          light: "#1e4f8a",
+          dark: "#8fb3dc",
+          note: "链接/焦点 7.9/7.6:1",
+          aa: "AAA",
+        },
+        { role: "primary-soft", light: "#e3eaf3", dark: "#2e3a4e", note: "选中项背景", aa: "装饰" },
+        {
+          role: "on-primary",
+          light: "#ffffff",
+          dark: "#1b3a5e",
+          note: "主色底文字 8.3/5.3:1",
+          aa: "AAA",
+        },
+        {
+          role: "code-text 枣红",
+          light: "#9e2b25",
+          dark: "#e29a86",
+          note: "行内代码 7.1/7.3:1",
+          aa: "AAA",
+        },
+        { role: "code-bg", light: "#f1efe9", dark: "#26231f", note: "代码围栏底", aa: "装饰" },
+        { role: "error 危险", light: "#c62828", dark: "#e06c5f", note: "5.3/5.1:1", aa: "AA" },
+        { role: "selection", light: "#d3dfee", dark: "#3a4a63", note: "文本选中底", aa: "装饰" },
+        { role: "quote-bg", light: "#f5f3ee", dark: "#26231f", note: "引用块底", aa: "装饰" },
+      ];
+      const SYNTAX = [
+        { role: "keyword", light: "#9e2b25", dark: "#e29a86" },
+        { role: "string", light: "#1e6b4f", dark: "#8fc9a8" },
+        { role: "number", light: "#8a5a00", dark: "#e0b05c" },
+        { role: "function", light: "#1e4f8a", dark: "#8fb3dc" },
+        { role: "comment", light: "#6e6a5e", dark: "#a39e92" },
+        { role: "type", light: "#6b3fa0", dark: "#c5a3e0" },
+      ];
+      const CONTRAST = [
+        ["正文 ink/paper", "14.15:1", "13.07:1", "4.5"],
+        ["次要 ink-2/paper", "5.13:1", "6.21:1", "4.5"],
+        ["弱化 ink-3/paper", "4.05:1", "4.28:1", "3.0"],
+        ["链接 primary/paper", "7.85:1", "7.63:1", "4.5"],
+        ["行内码 code-text/paper", "7.06:1", "7.27:1", "4.5"],
+        ["错误 error/paper", "5.34:1", "5.12:1", "4.5"],
+        ["选中字 primary/primary-soft", "6.82:1", "5.27:1", "4.5"],
+        ["引用字 ink-2/quote-bg", "4.87:1", "5.86:1", "4.5"],
+        ["按钮字 on-primary/primary", "8.27:1", "5.32:1", "4.5"],
+        ["控件边框 border-strong/paper", "3.31:1", "3.05:1", "3.0"],
+        ["装饰字 ink-3/surface", "3.74:1", "4.04:1", "3.0"],
+      ];
+
+      const dark = () => document.documentElement.classList.contains("markwell-dark");
+      const current = () => (dark() ? "dark" : "light");
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      const swatchBox = document.getElementById("swatches");
+      const syntaxBox = document.getElementById("syntax");
+      const ct = document.getElementById("contrast");
+
+      // 渐次显现：元素进入视口后淡入上浮；prefers-reduced-motion 下瞬时呈现
+      const revealObserver = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((e) => {
+            if (e.isIntersecting) {
+              e.target.classList.add("in");
+              revealObserver.unobserve(e.target);
+            }
+          });
+        },
+        { threshold: 0.15 },
+      );
+      function setupReveals(instant) {
+        document.querySelectorAll(".reveal:not(.in)").forEach((el) => {
+          if (instant || reduceMotion) el.classList.add("in");
+          else revealObserver.observe(el);
+        });
+      }
+
+      function renderSpec(instant) {
+        swatchBox.innerHTML = TOKENS.map(
+          (t, i) => `
+          <div class="swatch reveal" style="--i:${i}">
+            <div class="chip" style="background:${t[current()]}">
+              <span class="badge">${t[current()]}</span>
+            </div>
+            <div class="info">
+              <span class="role">${t.role}</span>
+              <span class="aa ${t.aa === "AA" ? "aa-ok" : t.aa === "AAA" ? "aa-aaa" : "aa-muted"}">${t.aa}</span>
+              <div class="hex">${t[current()]}</div>
+              ${t.note}
+            </div>
+          </div>`,
+        ).join("");
+        syntaxBox.innerHTML = SYNTAX.map(
+          (s, i) => `
+          <div class="syntax-item reveal" style="--i:${i}">
+            <span class="dot" style="background:${s[current()]}"></span>
+            <span>${s.role}</span>
+            <span style="color:var(--mw-ink-3);font-size:11px">${s[current()]}</span>
+          </div>`,
+        ).join("");
+        ct.innerHTML = `
+          <thead><tr><th>检查项</th><th>亮色</th><th>暗色</th><th>要求</th><th>结论</th></tr></thead>
+          <tbody>${CONTRAST.map(
+            ([name, l, d, req], i) => `
+            <tr class="reveal" style="--i:${i}">
+              <td>${name}</td><td>${l}</td><td>${d}</td><td>≥${req}:1</td>
+              <td class="ok">✓ 通过</td>
+            </tr>`,
+          ).join("")}</tbody>`;
+        setupReveals(instant);
+      }
+
+      // 首屏渲染：滚动渐现
+      renderSpec(false);
+
+      // 主题切换（演示用；产品侧由 08 主题模块接管）
+      const toggle = document.getElementById("themeToggle");
+      toggle.addEventListener("click", () => {
+        const isDark = dark();
+        document.documentElement.classList.toggle("markwell-dark", !isDark);
+        toggle.innerHTML = isDark
+          ? `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 3v2M10 15v2M3 10h2M15 10h2M5.5 5.5l1.4 1.4M13.1 13.1l1.4 1.4M14.5 5.5l-1.4 1.4M6.9 13.1l-1.4 1.4"/><circle cx="10" cy="10" r="3.5"/></svg>切换亮色`
+          : `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M15 12a6 6 0 01-7-7 6 6 0 107 7z"/></svg>切换暗色`;
+        // 重渲染令牌区；切主题时不做渐现，避免内容闪没再淡入
+        renderSpec(true);
+      });
+
+      // 侧栏面板切换（演示用）
+      document.querySelectorAll(".side-tab").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".side-tab").forEach((b) => b.classList.remove("active"));
+          document.querySelectorAll(".side-panel").forEach((p) => p.classList.remove("active"));
+          btn.classList.add("active");
+          document.getElementById("panel-" + btn.dataset.panel).classList.add("active");
+        });
+      });
+
+      // 任务列表勾选（演示用）
+      document.querySelectorAll(".task-check").forEach((c) => {
+        c.addEventListener("click", () => {
+          c.classList.toggle("done");
+          const text = c.parentElement.querySelector("span:last-child");
+          text?.classList.toggle("task-done-text", c.classList.contains("done"));
+        });
+      });
+    </script>
+  </body>
+</html>

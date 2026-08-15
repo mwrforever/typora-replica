@@ -1,0 +1,101 @@
+/* src/styles/crepe-overrides.css
+   Crepe 主题变量覆盖层（spec T6 base.user.css 落此层）
+   变量名逐一核对自 @milkdown/crepe 7.22.1 theme/crepe/style.css */
+.milkdown {
+  /* 亮色（默认）——取值见 design-system/markwell/pages/editor.md */
+  --crepe-color-background: #ffffff;
+  --crepe-color-on-background: #1f2937;
+  --crepe-color-surface: #f8fafc;
+  --crepe-color-surface-low: #f1f5f9;
+  --crepe-color-on-surface: #1f2937;
+  --crepe-color-on-surface-variant: #475569;
+  --crepe-color-outline: #cbd5e1;
+  --crepe-color-primary: #0f766e;
+  --crepe-color-secondary: #ccfbf1;
+  --crepe-color-on-secondary: #134e4a;
+  --crepe-color-inverse: #134e4a;
+  --crepe-color-on-inverse: #f0fdfa;
+  --crepe-color-inline-code: #c2410c;
+  --crepe-color-error: #dc2626;
+  --crepe-color-hover: #f0fdfa;
+  --crepe-color-selected: #ccfbf1;
+  --crepe-color-inline-area: #e2e8f0;
+
+  --crepe-font-title: var(--markwell-font-sans);
+  --crepe-font-default: var(--markwell-font-sans);
+  --crepe-font-code: var(--markwell-font-code);
+}
+
+/* 暗色（Night）——08 主题模块通过 .markwell-dark 激活 */
+.markwell-dark .milkdown {
+  --crepe-color-background: #1e1e1e;
+  --crepe-color-on-background: #e5e7eb;
+  --crepe-color-surface: #252525;
+  --crepe-color-surface-low: #2b2b2b;
+  --crepe-color-on-surface: #e5e7eb;
+  --crepe-color-on-surface-variant: #a1a1aa;
+  --crepe-color-outline: #3f3f46;
+  --crepe-color-primary: #2dd4bf;
+  --crepe-color-secondary: #134e4a;
+  --crepe-color-on-secondary: #ccfbf1;
+  --crepe-color-inverse: #ccfbf1;
+  --crepe-color-on-inverse: #134e4a;
+  --crepe-color-inline-code: #fb923c;
+  --crepe-color-error: #f87171;
+  --crepe-color-hover: #262626;
+  --crepe-color-selected: #134e4a;
+  --crepe-color-inline-area: #333333;
+}
+
+/* 无障碍：键盘焦点可见（禁止移除焦点样式） */
+.milkdown :focus-visible {
+  outline: 2px solid var(--crepe-color-primary);
+  outline-offset: 1px;
+}
+
+/* 交互反馈：可点击元素统一指针与平滑过渡（150-250ms，尊重减少动效偏好） */
+.milkdown [role="button"],
+.milkdown button,
+.milkdown .milkdown-toolbar-item {
+  cursor: pointer;
+  transition: opacity 200ms ease;
+}
+
+/* 图表右键菜单（E21）：菜单挂在 document.body（mermaid-menu.ts），不在 .milkdown 内，
+   --crepe-* 令牌取不到时回退亮色设计令牌值（tokens.css / 上文亮色块）。
+   position: fixed 使 left/top（clientX/clientY）在点击处生效；静态定位下坐标被忽略、
+   菜单沉到文档流末尾（审查发现，AC-E21-5） */
+.markwell-mermaid-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 128px;
+  padding: 4px;
+  background: var(--crepe-color-background, #ffffff);
+  border: 1px solid var(--crepe-color-outline, #cbd5e1);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.15);
+}
+
+.markwell-mermaid-menu button {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  text-align: left;
+  color: var(--crepe-color-on-background, #1f2937);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* 按钮 hover 主色调（与设计令牌体系一致） */
+.markwell-mermaid-menu button:hover {
+  background: var(--crepe-color-primary, #0f766e);
+  color: #ffffff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .milkdown * {
+    transition: none !important;
+  }
+}

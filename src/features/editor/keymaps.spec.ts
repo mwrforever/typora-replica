@@ -1,0 +1,53 @@
+// keymap 注册表：注册/查询行为 + 内置键位清单（100% 覆盖核心语法转换）
+import { describe, expect, it } from "vitest";
+import { addEditorKeymap, hasEditorKeymap, listEditorKeymaps } from "./keymaps";
+
+describe("keymap 注册表", () => {
+  it("addEditorKeymap 后可在注册表中查询到该键位", () => {
+    addEditorKeymap({ key: "Mod-Test", onRun: () => () => false, priority: 300 });
+    expect(hasEditorKeymap("Mod-Test")).toBe(true);
+    expect(listEditorKeymaps()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: "Mod-Test" })]),
+    );
+  });
+
+  it("内置 Typora 反向 Indent/Outdent 键位已注册", () => {
+    // Ctrl+[ = Indent（缩进增加）、Ctrl+] = Outdent（缩进减少）
+    expect(hasEditorKeymap("Mod-[")).toBe(true);
+    expect(hasEditorKeymap("Mod-]")).toBe(true);
+  });
+
+  it("内置 Typora 行内代码键位 Ctrl+Shift+` 已注册（commonmark 预设仅绑 Mod-e）", () => {
+    expect(hasEditorKeymap("Mod-Shift-`")).toBe(true);
+    expect(listEditorKeymaps().find((e) => e.key === "Mod-Shift-`")?.priority).toBe(200);
+  });
+
+  it("内置 Typora 插入代码围栏键位 Ctrl+Shift+K 已注册（commonmark 预设仅绑 Mod-Alt-c）", () => {
+    expect(hasEditorKeymap("Mod-Shift-k")).toBe(true);
+    // 默认优先级 200，压制表格内置（100）与 baseKeymap（50）
+    expect(listEditorKeymaps().find((e) => e.key === "Mod-Shift-k")?.priority).toBe(200);
+  });
+
+  it("内置 Typora 表格 Tab 末格加行键位已注册（priority 200 压制内置 NextCell 100）", () => {
+    expect(hasEditorKeymap("Tab")).toBe(true);
+    expect(listEditorKeymaps().find((e) => e.key === "Tab")?.priority).toBe(200);
+  });
+
+  it("内置 Typora 标题级别键位已注册（Ctrl+1~6 设级别、Ctrl+0 转段落、Ctrl+=/- 增减级别）", () => {
+    // 级别循环 1-6 全部注册
+    for (let level = 1; level <= 6; level++) {
+      expect(hasEditorKeymap(`Mod-${level}`)).toBe(true);
+    }
+    expect(hasEditorKeymap("Mod-0")).toBe(true);
+    expect(hasEditorKeymap("Mod-=")).toBe(true);
+    expect(hasEditorKeymap("Mod--")).toBe(true);
+    // 默认优先级 200，压制表格内置（100）与 baseKeymap（50）
+    expect(listEditorKeymaps().find((e) => e.key === "Mod-=")?.priority).toBe(200);
+    expect(listEditorKeymaps().find((e) => e.key === "Mod--")?.priority).toBe(200);
+  });
+
+  it("默认优先级为 200（压制表格内置 100 与 baseKeymap 50）", () => {
+    const entry = listEditorKeymaps().find((e) => e.key === "Mod-[");
+    expect(entry?.priority).toBe(200);
+  });
+});
