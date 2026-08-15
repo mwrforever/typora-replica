@@ -92,6 +92,8 @@
 
 ## 交互与无障碍（MASTER Pre-Delivery Checklist 落地）
 
+- 动效规范（v2 设计稿定案）：时长 150-250ms、进入 easing `cubic-bezier(0.16, 1, 0.3, 1)`、仅动画 transform/opacity、全部动效尊重 `prefers-reduced-motion`；触觉反馈用 `:active` 轻微收缩（scale 0.97），禁止布局位移型动效
+- 圆角体系（形状一致性锁定）：控件 6px、容器 8px、胶囊 999px、行内高亮 2px
 - 焦点环：`:focus-visible` 2px 主色描边，禁止移除焦点样式
 - 可点击元素（工具栏/浮层按钮）`cursor: pointer` + 悬停过渡 150-250ms
 - 动画尊重 `prefers-reduced-motion`（编辑器核心不引入装饰动画）

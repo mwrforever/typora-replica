@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MarkWell 配色设计 v2「纸墨 Ink &amp; Paper」— 亮/暗双态展示</title>
+    <title>MarkWell 配色设计 v2「纸墨 Ink &amp; Paper」亮暗双态展示</title>
     <style>
       /* ============================================================
      MarkWell 配色设计 v2「纸墨 Ink & Paper」
@@ -33,7 +33,8 @@
         --mw-quote-bg: #f5f3ee; /* 引用块底 */
         --mw-shadow-sm: 0 1px 2px rgba(42, 39, 32, 0.06);
         --mw-shadow-md: 0 4px 6px rgba(42, 39, 32, 0.08);
-        --mw-radius: 8px;
+        --mw-radius: 8px; /* 容器圆角 */
+        --mw-radius-sm: 6px; /* 控件圆角 */
 
         /* 字体栈 */
         --mw-font-sans: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -88,6 +89,12 @@
           color 200ms ease;
       }
 
+      /* 文本选中：纸面内选区底色（与 Crepe --crepe-color-selected 同令牌） */
+      ::selection {
+        background: var(--mw-selection);
+        color: var(--mw-ink);
+      }
+
       /* ============ 应用外壳预览（复用窗口骨架，视觉层重做） ============ */
       .app-shell {
         display: flex;
@@ -109,7 +116,7 @@
       }
       .menu-item {
         padding: 4px 10px;
-        border-radius: 4px;
+        border-radius: 6px;
         cursor: pointer;
         transition: background 150ms ease;
         color: var(--mw-ink-2);
@@ -216,6 +223,18 @@
       }
       .side-panel.active {
         display: block;
+        animation: panel-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      /* 面板切换：轻微下浮入场，仅 transform/opacity */
+      @keyframes panel-in {
+        from {
+          opacity: 0;
+          transform: translateY(4px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
       }
 
       .tree-item {
@@ -260,7 +279,7 @@
 
       .outline-item {
         padding: 3px 8px;
-        border-radius: 4px;
+        border-radius: 6px;
         font-size: 13px;
         color: var(--mw-ink-2);
         cursor: pointer;
@@ -416,16 +435,47 @@
         height: 16px;
       }
 
-      /* 编辑器纸面 */
+      /* 触觉反馈：按压时轻微收缩（transform 不引起布局位移） */
+      .menu-item:active,
+      .side-tab:active,
+      .tree-item:active,
+      .outline-item:active,
+      .search-hit:active,
+      .icon-btn:active,
+      .status-item:active,
+      .tab-close:active {
+        transform: scale(0.97);
+      }
+      .theme-toggle:active {
+        transform: translateY(0) scale(0.97);
+      }
+      .task-check:active {
+        transform: scale(0.9);
+      }
+
+      /* 编辑器纸面：画布铺底 + 纸面顶部一道极淡的「灯下」暖光，强化纸的厚度 */
       .editor-area {
         flex: 1;
         overflow: auto;
         background: var(--mw-bg);
       }
       .paper {
+        position: relative;
         max-width: 800px;
         margin: 0 auto;
         padding: 48px 24px 120px;
+      }
+      .paper::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto;
+        height: 260px;
+        background: linear-gradient(
+          to bottom,
+          color-mix(in srgb, var(--mw-bg) 55%, var(--mw-surface-low)),
+          transparent
+        );
+        pointer-events: none;
       }
       .paper .doc-title {
         font-size: 32px;
@@ -438,7 +488,7 @@
         margin-bottom: 8px;
         outline: none;
         transition: box-shadow 150ms ease;
-        border-radius: 4px;
+        border-radius: 6px;
       }
       .paper .doc-title:focus {
         box-shadow: 0 0 0 2px var(--mw-primary-soft);
@@ -489,7 +539,7 @@
         background: var(--mw-code-bg);
         color: var(--mw-code-text);
         padding: 0.15em 0.35em;
-        border-radius: 4px;
+        border-radius: 6px;
       }
       .md pre {
         background: var(--mw-code-bg);
@@ -585,7 +635,7 @@
         width: 15px;
         height: 15px;
         border: 1.5px solid var(--mw-ink-3);
-        border-radius: 4px;
+        border-radius: 6px;
         flex: none;
         position: relative;
         top: 2px;
@@ -697,7 +747,7 @@
         align-items: center;
         gap: 4px;
         padding: 2px 8px;
-        border-radius: 4px;
+        border-radius: 6px;
         cursor: pointer;
         transition: background 150ms ease;
         font-size: 12px;
@@ -736,6 +786,49 @@
         color: var(--mw-ink-2);
         font-size: 14px;
         margin-bottom: 24px;
+      }
+
+      /* 「纸墨」概念条：两个大字直接用纸/墨两色字面表达主题 */
+      .concept {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        border: 1px solid var(--mw-border);
+        border-radius: var(--mw-radius);
+        padding: 18px 20px;
+        margin-bottom: 28px;
+        background: var(--mw-surface);
+      }
+      .concept-word {
+        display: flex;
+        gap: 8px;
+        flex: none;
+      }
+      .concept-word span {
+        width: 54px;
+        height: 54px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 28px;
+        font-weight: 700;
+        border-radius: var(--mw-radius-sm);
+      }
+      .c-paper {
+        background: var(--mw-bg);
+        color: var(--mw-ink);
+        border: 1px solid var(--mw-border);
+      }
+      .c-ink {
+        background: var(--mw-ink);
+        color: var(--mw-bg);
+      }
+      .concept-copy {
+        font-size: 13.5px;
+        color: var(--mw-ink-2);
+      }
+      .concept-copy b {
+        color: var(--mw-ink);
       }
 
       /* 设计理念：v1 否决原因 → v2 决策 */
@@ -818,7 +911,6 @@
         font-family: var(--mw-font-code);
         font-size: 11px;
         color: var(--mw-ink-2);
-        margin-left: 6px;
       }
 
       /* 语法色 */
@@ -871,6 +963,50 @@
         color: #8fc9a8;
       }
 
+      /* 渐次显现：进入视口后淡入上浮（仅 transform/opacity；prefers-reduced-motion 下瞬时呈现） */
+      .reveal {
+        opacity: 0;
+        transform: translateY(12px);
+        transition:
+          opacity 500ms cubic-bezier(0.16, 1, 0.3, 1),
+          transform 500ms cubic-bezier(0.16, 1, 0.3, 1);
+        transition-delay: calc(var(--i, 0) * 45ms);
+      }
+      .reveal.in {
+        opacity: 1;
+        transform: none;
+      }
+
+      /* 色板卡片：对比度评级徽标（AAA / AA / 装饰） */
+      .swatch .info .aa {
+        font-size: 10px;
+        font-weight: 600;
+        margin-left: 6px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        vertical-align: 1px;
+      }
+      .aa-ok {
+        color: #1e6b4f;
+        background: rgba(30, 107, 79, 0.12);
+      }
+      .markwell-dark .aa-ok {
+        color: #8fc9a8;
+        background: rgba(143, 201, 168, 0.14);
+      }
+      .aa-aaa {
+        color: #1e4f8a;
+        background: rgba(30, 79, 138, 0.12);
+      }
+      .markwell-dark .aa-aaa {
+        color: #8fb3dc;
+        background: rgba(143, 179, 220, 0.14);
+      }
+      .aa-muted {
+        color: var(--mw-ink-3);
+        background: var(--mw-surface-low);
+      }
+
       /* 主题切换按钮（设计稿演示用，产品侧由 08 主题模块接管） */
       .theme-toggle {
         position: fixed;
@@ -917,11 +1053,26 @@
       }
 
       @media (prefers-reduced-motion: reduce) {
-        * {
+        *,
+        *::before,
+        *::after {
           transition: none !important;
+          animation: none !important;
+        }
+        .reveal {
+          opacity: 1 !important;
+          transform: none !important;
         }
       }
     </style>
+    <noscript>
+      <style>
+        .reveal {
+          opacity: 1 !important;
+          transform: none !important;
+        }
+      </style>
+    </noscript>
   </head>
   <body>
     <div class="app-shell">
@@ -1108,7 +1259,8 @@
               />
               <div class="doc-meta">
                 <span>2026-08-15</span>
-                <span>亮色 · 暖纸 / 暗色 · 夜读</span>
+                <span>亮色 暖纸</span>
+                <span>暗色 夜读</span>
                 <span>22 项对比度全过</span>
               </div>
 
@@ -1120,7 +1272,7 @@
                 </p>
                 <p>
                   正文使用<a href="#">墨蓝链接</a>（7.9:1），行内代码用
-                  <code>枣红墨色</code>，强调色只有一种——墨蓝，不再有第二撞色。
+                  <code>枣红墨色</code>，强调色只有一种：墨蓝，不再有第二撞色。
                 </p>
 
                 <h2>1.1 为什么 v1 显得「丑」</h2>
@@ -1232,7 +1384,7 @@
           >H1
         </span>
         <span class="status-spacer"></span>
-        <span class="status-hint">UTF-8 · LF · Markdown</span>
+        <span class="status-hint">UTF-8 · LF</span>
         <span class="status-item">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
             <circle cx="10" cy="10" r="6" />
@@ -1249,6 +1401,16 @@
         <p class="sub">
           取代 2026-08-15 被否决的 v1（teal + orange）。亮/暗两态同一气质，正文对比度全部达标。
         </p>
+
+        <div class="concept">
+          <div class="concept-word">
+            <span class="c-paper">纸</span><span class="c-ink">墨</span>
+          </div>
+          <div class="concept-copy">
+            <b>Ink &amp; Paper</b
+            >：一张纸（暖纸白）、一瓶墨（暖黑）、一支笔（墨蓝）。写作工具的配色应该安静、克制、有书卷气，界面只负责退后。
+          </div>
+        </div>
 
         <div class="rationale">
           <div class="box bad">
@@ -1282,8 +1444,12 @@
         <table class="contrast-table" id="contrast"></table>
         <p class="sub" style="margin-top: 12px">
           弱化文字（ink-3）仅用于禁用态/图标/装饰，可读小字一律使用
-          ink-2；普通边框（border）为装饰性 分隔线（不承担控件边界职责），输入框/控件边界使用
+          ink-2；普通边框（border）为装饰性分隔线（不承担控件边界职责），输入框/控件边界使用
           border-strong（≥3:1）。
+        </p>
+        <p class="sub" style="margin-top: 4px">
+          圆角体系：控件 6px、容器 8px、胶囊 999px、行内高亮 2px。动效规范：150-250ms、仅
+          transform/opacity、尊重 prefers-reduced-motion。
         </p>
       </div>
     </section>
@@ -1298,22 +1464,58 @@
     <script>
       // —— 令牌数据（与 :root/.markwell-dark 保持一致；改色先改这里再改 CSS） ——
       const TOKENS = [
-        { role: "paper / 纸面", light: "#faf9f6", dark: "#211e1a", note: "画布底色" },
-        { role: "ink / 正文墨", light: "#2a2720", dark: "#e8e4da", note: "正文 14.2/13.1:1" },
-        { role: "ink-2 / 次要", light: "#6e6a5e", dark: "#a39e92", note: "≥5.1:1" },
-        { role: "ink-3 / 弱化", light: "#807a6d", dark: "#878173", note: "禁用/图标 ≥3:1" },
-        { role: "surface / 外壳", light: "#f2f0ea", dark: "#26231f", note: "浮层/侧栏底" },
-        { role: "surface-low", light: "#eae7df", dark: "#2d2925", note: "悬停底" },
-        { role: "border", light: "#e2ded3", dark: "#3b372f", note: "装饰分隔" },
-        { role: "border-strong", light: "#8f897a", dark: "#70695a", note: "控件边界 ≥3:1" },
-        { role: "primary / 墨蓝", light: "#1e4f8a", dark: "#8fb3dc", note: "链接/焦点 7.9/7.6:1" },
-        { role: "primary-soft", light: "#e3eaf3", dark: "#2e3a4e", note: "选中项背景" },
-        { role: "on-primary", light: "#ffffff", dark: "#1b3a5e", note: "主色底文字 8.3/5.3:1" },
-        { role: "code-text / 枣红", light: "#9e2b25", dark: "#e29a86", note: "行内代码 7.1/7.3:1" },
-        { role: "code-bg", light: "#f1efe9", dark: "#26231f", note: "代码围栏底" },
-        { role: "error / 危险", light: "#c62828", dark: "#e06c5f", note: "5.3/5.1:1" },
-        { role: "selection", light: "#d3dfee", dark: "#3a4a63", note: "文本选中底" },
-        { role: "quote-bg", light: "#f5f3ee", dark: "#26231f", note: "引用块底" },
+        { role: "paper 纸面", light: "#faf9f6", dark: "#211e1a", note: "画布底色", aa: "装饰" },
+        {
+          role: "ink 正文墨",
+          light: "#2a2720",
+          dark: "#e8e4da",
+          note: "正文 14.2/13.1:1",
+          aa: "AAA",
+        },
+        { role: "ink-2 次要", light: "#6e6a5e", dark: "#a39e92", note: "≥5.1:1", aa: "AA" },
+        { role: "ink-3 弱化", light: "#807a6d", dark: "#878173", note: "禁用/图标 ≥3:1", aa: "AA" },
+        {
+          role: "surface 外壳",
+          light: "#f2f0ea",
+          dark: "#26231f",
+          note: "浮层/侧栏底",
+          aa: "装饰",
+        },
+        { role: "surface-low", light: "#eae7df", dark: "#2d2925", note: "悬停底", aa: "装饰" },
+        { role: "border", light: "#e2ded3", dark: "#3b372f", note: "装饰分隔", aa: "装饰" },
+        {
+          role: "border-strong",
+          light: "#8f897a",
+          dark: "#70695a",
+          note: "控件边界 ≥3:1",
+          aa: "AA",
+        },
+        {
+          role: "primary 墨蓝",
+          light: "#1e4f8a",
+          dark: "#8fb3dc",
+          note: "链接/焦点 7.9/7.6:1",
+          aa: "AAA",
+        },
+        { role: "primary-soft", light: "#e3eaf3", dark: "#2e3a4e", note: "选中项背景", aa: "装饰" },
+        {
+          role: "on-primary",
+          light: "#ffffff",
+          dark: "#1b3a5e",
+          note: "主色底文字 8.3/5.3:1",
+          aa: "AAA",
+        },
+        {
+          role: "code-text 枣红",
+          light: "#9e2b25",
+          dark: "#e29a86",
+          note: "行内代码 7.1/7.3:1",
+          aa: "AAA",
+        },
+        { role: "code-bg", light: "#f1efe9", dark: "#26231f", note: "代码围栏底", aa: "装饰" },
+        { role: "error 危险", light: "#c62828", dark: "#e06c5f", note: "5.3/5.1:1", aa: "AA" },
+        { role: "selection", light: "#d3dfee", dark: "#3a4a63", note: "文本选中底", aa: "装饰" },
+        { role: "quote-bg", light: "#f5f3ee", dark: "#26231f", note: "引用块底", aa: "装饰" },
       ];
       const SYNTAX = [
         { role: "keyword", light: "#9e2b25", dark: "#e29a86" },
@@ -1339,43 +1541,70 @@
 
       const dark = () => document.documentElement.classList.contains("markwell-dark");
       const current = () => (dark() ? "dark" : "light");
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-      // 渲染色板网格
       const swatchBox = document.getElementById("swatches");
-      swatchBox.innerHTML = TOKENS.map(
-        (t) => `
-        <div class="swatch">
-          <div class="chip" style="background:${t[current()]}">
-            <span class="badge">${t[current()]}</span>
-          </div>
-          <div class="info"><span class="role">${t.role}</span><span class="hex">${t[current()]}</span><br />${t.note}</div>
-        </div>`,
-      ).join("");
-
-      // 渲染语法色
       const syntaxBox = document.getElementById("syntax");
-      syntaxBox.innerHTML = SYNTAX.map(
-        (s) => `
-        <div class="syntax-item">
-          <span class="dot" style="background:${s[current()]}"></span>
-          <span>${s.role}</span>
-          <span style="color:var(--mw-ink-3);font-size:11px">${s[current()]}</span>
-        </div>`,
-      ).join("");
-
-      // 渲染对比度表
       const ct = document.getElementById("contrast");
-      ct.innerHTML = `
-        <thead><tr><th>检查项</th><th>亮色</th><th>暗色</th><th>要求</th><th>结论</th></tr></thead>
-        <tbody>${CONTRAST.map(
-          ([name, l, d, req]) => `
-          <tr>
-            <td>${name}</td><td>${l}</td><td>${d}</td><td>≥${req}:1</td>
-            <td class="ok">✓ 通过</td>
-          </tr>`,
-        ).join("")}</tbody>`;
 
-      // 主题切换
+      // 渐次显现：元素进入视口后淡入上浮；prefers-reduced-motion 下瞬时呈现
+      const revealObserver = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((e) => {
+            if (e.isIntersecting) {
+              e.target.classList.add("in");
+              revealObserver.unobserve(e.target);
+            }
+          });
+        },
+        { threshold: 0.15 },
+      );
+      function setupReveals(instant) {
+        document.querySelectorAll(".reveal:not(.in)").forEach((el) => {
+          if (instant || reduceMotion) el.classList.add("in");
+          else revealObserver.observe(el);
+        });
+      }
+
+      function renderSpec(instant) {
+        swatchBox.innerHTML = TOKENS.map(
+          (t, i) => `
+          <div class="swatch reveal" style="--i:${i}">
+            <div class="chip" style="background:${t[current()]}">
+              <span class="badge">${t[current()]}</span>
+            </div>
+            <div class="info">
+              <span class="role">${t.role}</span>
+              <span class="aa ${t.aa === "AA" ? "aa-ok" : t.aa === "AAA" ? "aa-aaa" : "aa-muted"}">${t.aa}</span>
+              <div class="hex">${t[current()]}</div>
+              ${t.note}
+            </div>
+          </div>`,
+        ).join("");
+        syntaxBox.innerHTML = SYNTAX.map(
+          (s, i) => `
+          <div class="syntax-item reveal" style="--i:${i}">
+            <span class="dot" style="background:${s[current()]}"></span>
+            <span>${s.role}</span>
+            <span style="color:var(--mw-ink-3);font-size:11px">${s[current()]}</span>
+          </div>`,
+        ).join("");
+        ct.innerHTML = `
+          <thead><tr><th>检查项</th><th>亮色</th><th>暗色</th><th>要求</th><th>结论</th></tr></thead>
+          <tbody>${CONTRAST.map(
+            ([name, l, d, req], i) => `
+            <tr class="reveal" style="--i:${i}">
+              <td>${name}</td><td>${l}</td><td>${d}</td><td>≥${req}:1</td>
+              <td class="ok">✓ 通过</td>
+            </tr>`,
+          ).join("")}</tbody>`;
+        setupReveals(instant);
+      }
+
+      // 首屏渲染：滚动渐现
+      renderSpec(false);
+
+      // 主题切换（演示用；产品侧由 08 主题模块接管）
       const toggle = document.getElementById("themeToggle");
       toggle.addEventListener("click", () => {
         const isDark = dark();
@@ -1383,28 +1612,9 @@
         toggle.innerHTML = isDark
           ? `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 3v2M10 15v2M3 10h2M15 10h2M5.5 5.5l1.4 1.4M13.1 13.1l1.4 1.4M14.5 5.5l-1.4 1.4M6.9 13.1l-1.4 1.4"/><circle cx="10" cy="10" r="3.5"/></svg>切换亮色`
           : `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M15 12a6 6 0 01-7-7 6 6 0 107 7z"/></svg>切换暗色`;
-        renderSpec();
+        // 重渲染令牌区；切主题时不做渐现，避免内容闪没再淡入
+        renderSpec(true);
       });
-
-      function renderSpec() {
-        swatchBox.innerHTML = TOKENS.map(
-          (t) => `
-          <div class="swatch">
-            <div class="chip" style="background:${t[current()]}">
-              <span class="badge">${t[current()]}</span>
-            </div>
-            <div class="info"><span class="role">${t.role}</span><span class="hex">${t[current()]}</span><br />${t.note}</div>
-          </div>`,
-        ).join("");
-        syntaxBox.innerHTML = SYNTAX.map(
-          (s) => `
-          <div class="syntax-item">
-            <span class="dot" style="background:${s[current()]}"></span>
-            <span>${s.role}</span>
-            <span style="color:var(--mw-ink-3);font-size:11px">${s[current()]}</span>
-          </div>`,
-        ).join("");
-      }
 
       // 侧栏面板切换（演示用）
       document.querySelectorAll(".side-tab").forEach((btn) => {
