@@ -2,6 +2,8 @@
 //
 // 全部命令为薄封装：入参校验（路径安全）→ 纯函数实现 → DTO 序列化。
 // DTO 统一 camelCase（serde rename_all），供前端 invoke 消费。
+use crate::io::atomic::{assert_safe_path, atomic_write};
+use crate::io::encoding::{encoding_name, line_ending_name, normalize_line_ending, LineEnding};
 use serde::{Deserialize, Serialize};
 
 /// 目录遍历结果项
@@ -68,4 +70,148 @@ pub struct CliArgs {
     pub new: bool,
     /// --reopen-file=<path> 或 --reopen-file <path> 的目标路径
     pub reopen_file: Option<String>,
+}
+
+/// 读文件命令：编码探测 + 行尾探测（内容统一 UTF-8）
+///
+/// @param path 目标文件完整路径（拒绝 .. 逃逸）
+/// @returns 解码内容 + 编码/行尾元信息；失败返回中文错误
+#[tauri::command]
+pub fn read_file(path: String) -> Result<ReadResultDto, String> {
+    let p = std::path::Path::new(&path);
+    assert_safe_path(p)?;
+    let bytes = std::fs::read(p).map_err(|e| format!("读取文件失败: {e}"))?;
+    let decoded = crate::io::encoding::decode_text(&bytes)?;
+    Ok(ReadResultDto {
+        content: decoded.text,
+        encoding: encoding_name(decoded.encoding).to_string(),
+        line_ending: line_ending_name(decoded.line_ending).to_string(),
+    })
+}
+
+/// 写文件命令：行尾归一 + 原子写（落盘恒 UTF-8 无 BOM）
+///
+/// @param path 目标文件完整路径（父目录须存在）
+/// @param content 完整文档内容（编辑器序列化产物，已补尾换行）
+/// @param opts 写盘选项（lineEnding: lf/crlf，非法值回落 lf）
+#[tauri::command]
+pub fn write_file(path: String, content: String, opts: WriteOptions) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    assert_safe_path(p)?;
+    let target = match opts.line_ending.as_str() {
+        "crlf" => LineEnding::Crlf,
+        // 未知取值按默认 LF（安全回落，不拒绝写盘）
+        _ => LineEnding::Lf,
+    };
+    let normalized = normalize_line_ending(&content, target);
+    atomic_write(p, &normalized)
+}
+
+/// 目录遍历命令：递归列出根下全部条目（扩展名过滤 + 自然序）
+///
+/// @param path 遍历根目录（必须存在）
+/// @param ext_filter 扩展名过滤（仅文件；None/null 不过滤）
+#[tauri::command]
+pub fn list_dir(path: String, ext_filter: Option<String>) -> Result<Vec<DirEntry>, String> {
+    crate::io::fs::list_dir(std::path::Path::new(&path), ext_filter.as_deref())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    /// 创建独立临时目录（进程内自增后缀防并发冲突）
+    fn temp_dir() -> std::path::PathBuf {
+        static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("markwell-cmd-{}-{n}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn read_file_utf8_with_metadata() {
+        let dir = temp_dir();
+        let p = dir.join("doc.md");
+        fs::write(&p, "中文\n第二行").unwrap();
+        let out = read_file(p.to_string_lossy().into_owned()).unwrap();
+        assert_eq!(out.content, "中文\n第二行");
+        assert_eq!(out.encoding, "utf8");
+        assert_eq!(out.line_ending, "lf");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_file_crlf_detected() {
+        let dir = temp_dir();
+        let p = dir.join("doc.md");
+        fs::write(&p, "a\r\nb\r\n").unwrap();
+        let out = read_file(p.to_string_lossy().into_owned()).unwrap();
+        assert_eq!(out.line_ending, "crlf");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_file_missing_rejected() {
+        assert!(read_file("Z:/no-such-file-xyz.md".into()).is_err());
+    }
+
+    #[test]
+    fn write_file_converts_line_ending() {
+        let dir = temp_dir();
+        let p = dir.join("doc.md");
+        write_file(
+            p.to_string_lossy().into_owned(),
+            "a\nb\n".into(),
+            WriteOptions {
+                line_ending: "crlf".into(),
+            },
+        )
+        .unwrap();
+        let raw = fs::read(&p).unwrap();
+        assert_eq!(String::from_utf8(raw).unwrap(), "a\r\nb\r\n");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_file_defaults_to_lf_on_unknown_option() {
+        let dir = temp_dir();
+        let p = dir.join("doc.md");
+        write_file(
+            p.to_string_lossy().into_owned(),
+            "a\r\nb\r\n".into(),
+            WriteOptions {
+                line_ending: "weird".into(),
+            },
+        )
+        .unwrap();
+        let raw = fs::read(&p).unwrap();
+        assert_eq!(String::from_utf8(raw).unwrap(), "a\nb\n");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_file_dotdot_rejected() {
+        assert!(write_file(
+            "a/../b.md".into(),
+            "x".into(),
+            WriteOptions {
+                line_ending: "lf".into()
+            }
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn list_dir_command_with_filter() {
+        let dir = temp_dir();
+        fs::write(dir.join("x.md"), "").unwrap();
+        fs::write(dir.join("y.txt"), "").unwrap();
+        let out = list_dir(dir.to_string_lossy().into_owned(), Some("md".into())).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].name, "x.md");
+        assert!(!out[0].is_dir);
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
