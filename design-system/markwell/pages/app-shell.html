@@ -1,0 +1,1293 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MarkWell 界面设计稿 — 窗口外壳 / 编辑器 / 基础渲染</title>
+    <style>
+      /* ============================================================
+   MarkWell UI 设计稿（HTML 落地）
+   依据：design-system/markwell/MASTER.md + pages/editor.md
+   - 瑞士极简 / 内容优先；teal 主色 + orange 强调
+   - 亮/暗两态（.markwell-dark 激活，08 主题模块接入后复用）
+   - 桌面离线：字体一律系统栈，禁止网络字体
+   ============================================================ */
+      :root {
+        /* 品牌色板（editor.md 亮色映射） */
+        --mw-bg: #ffffff; /* 纸面 */
+        --mw-ink: #1f2937; /* 正文墨色 */
+        --mw-ink-2: #475569; /* 次要文字 */
+        --mw-ink-3: #94a3b8; /* 弱化文字 */
+        --mw-surface: #f8fafc; /* 浮层底 */
+        --mw-surface-low: #f1f5f9; /* 次级浮层底 */
+        --mw-border: #e2e8f0; /* 边框/分隔 */
+        --mw-primary: #0f766e; /* 品牌主色 teal-700 */
+        --mw-primary-soft: #ccfbf1; /* 主色浅底 */
+        --mw-on-primary: #ffffff;
+        --mw-accent: #ea580c; /* 强调 orange-600 */
+        --mw-inline-code: #c2410c; /* 行内代码文字 */
+        --mw-code-bg: #f1f5f9; /* 代码块底 */
+        --mw-danger: #dc2626;
+        --mw-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+        --mw-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.08);
+        --mw-radius: 8px;
+
+        /* 字体栈 */
+        --mw-font-sans: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        --mw-font-code:
+          "Cascadia Code", "Fira Code", "JetBrains Mono", Consolas, "Courier New", monospace;
+
+        /* 布局 */
+        --sidebar-w: 260px;
+        --menu-h: 32px;
+        --status-h: 28px;
+      }
+      .markwell-dark {
+        --mw-bg: #1e1e1e;
+        --mw-ink: #e5e7eb;
+        --mw-ink-2: #a1a1aa;
+        --mw-ink-3: #71717a;
+        --mw-surface: #252525;
+        --mw-surface-low: #2b2b2b;
+        --mw-border: #3f3f46;
+        --mw-primary: #2dd4bf;
+        --mw-primary-soft: #134e4a;
+        --mw-on-primary: #134e4a;
+        --mw-accent: #fb923c;
+        --mw-inline-code: #fb923c;
+        --mw-code-bg: #2b2b2b;
+        --mw-danger: #f87171;
+        --mw-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+        --mw-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        font-family: var(--mw-font-sans);
+        font-size: 16px;
+        line-height: 1.5;
+        color: var(--mw-ink);
+        background: var(--mw-surface);
+        transition:
+          background 200ms ease,
+          color 200ms ease;
+      }
+
+      /* 桌面窗口骨架：菜单栏 / 主区（侧栏+中央）/ 状态栏 */
+      .app-shell {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+
+      /* ---------- 菜单栏（12 窗口外壳：原生菜单栏模拟） ---------- */
+      .menu-bar {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        height: var(--menu-h);
+        padding: 0 8px;
+        background: var(--mw-surface);
+        border-bottom: 1px solid var(--mw-border);
+        font-size: 13px;
+        flex: none;
+      }
+      .menu-item {
+        padding: 4px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background 150ms ease;
+      }
+      .menu-item:hover {
+        background: var(--mw-primary-soft);
+        color: var(--mw-primary);
+      }
+      .menu-item.active {
+        background: var(--mw-primary-soft);
+        color: var(--mw-primary);
+      }
+      .menu-spacer {
+        flex: 1;
+      }
+      .menu-window {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        color: var(--mw-ink-3);
+      }
+      .win-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        cursor: pointer;
+        transition: opacity 150ms ease;
+      }
+      .win-dot:hover {
+        opacity: 0.7;
+      }
+      .win-dot.min {
+        background: #fbbf24;
+      }
+      .win-dot.max {
+        background: #34d399;
+      }
+      .win-dot.close {
+        background: #f87171;
+      }
+
+      /* ---------- 主区 ---------- */
+      .main-area {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+      }
+
+      /* ---------- 侧栏（12 容器；03 文件树 / 05 大纲 / 06 搜索 三面板） ---------- */
+      .sidebar {
+        width: var(--sidebar-w);
+        flex: none;
+        background: var(--mw-surface);
+        border-right: 1px solid var(--mw-border);
+        display: flex;
+        flex-direction: column;
+        transition: width 200ms ease;
+      }
+      .sidebar.collapsed {
+        width: 0;
+        border-right: none;
+        overflow: hidden;
+      }
+      .sidebar-tabs {
+        display: flex;
+        padding: 6px 8px 0;
+        gap: 2px;
+        border-bottom: 1px solid var(--mw-border);
+      }
+      .side-tab {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        padding: 6px 4px;
+        font-size: 12px;
+        color: var(--mw-ink-2);
+        border: none;
+        background: none;
+        border-radius: 6px 6px 0 0;
+        cursor: pointer;
+        transition: all 150ms ease;
+        font-family: inherit;
+      }
+      .side-tab:hover {
+        background: var(--mw-surface-low);
+      }
+      .side-tab.active {
+        color: var(--mw-primary);
+        background: var(--mw-bg);
+        box-shadow: inset 0 -2px 0 var(--mw-primary);
+      }
+      .side-tab svg {
+        width: 14px;
+        height: 14px;
+      }
+      .side-body {
+        flex: 1;
+        overflow: auto;
+        padding: 8px;
+      }
+      .side-panel {
+        display: none;
+      }
+      .side-panel.active {
+        display: block;
+      }
+
+      /* 文件树 */
+      .tree-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: background 150ms ease;
+        color: var(--mw-ink-2);
+      }
+      .tree-item:hover {
+        background: var(--mw-surface-low);
+      }
+      .tree-item.active {
+        background: var(--mw-primary-soft);
+        color: var(--mw-primary);
+      }
+      .tree-item svg {
+        width: 14px;
+        height: 14px;
+        flex: none;
+      }
+      .tree-item .chevron {
+        width: 10px;
+        height: 10px;
+        color: var(--mw-ink-3);
+      }
+      .tree-group {
+        margin-left: 16px;
+        border-left: 1px solid var(--mw-border);
+        padding-left: 4px;
+      }
+      .tree-meta {
+        font-size: 11px;
+        color: var(--mw-ink-3);
+        margin-left: auto;
+      }
+
+      /* 大纲 */
+      .outline-item {
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-size: 13px;
+        color: var(--mw-ink-2);
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        transition: all 150ms ease;
+        border-left: 2px solid transparent;
+      }
+      .outline-item:hover {
+        background: var(--mw-surface-low);
+        color: var(--mw-ink);
+      }
+      .outline-item.active {
+        color: var(--mw-primary);
+        border-left-color: var(--mw-primary);
+        background: var(--mw-primary-soft);
+      }
+      .outline-item.l1 {
+        font-weight: 600;
+        padding-left: 8px;
+      }
+      .outline-item.l2 {
+        padding-left: 22px;
+      }
+      .outline-item.l3 {
+        padding-left: 36px;
+        font-size: 12px;
+      }
+
+      /* 搜索 */
+      .search-input {
+        width: 100%;
+        padding: 6px 10px;
+        font-size: 13px;
+        font-family: inherit;
+        border: 1px solid var(--mw-border);
+        border-radius: 6px;
+        background: var(--mw-bg);
+        color: var(--mw-ink);
+        transition:
+          border-color 150ms ease,
+          box-shadow 150ms ease;
+      }
+      .search-input:focus {
+        outline: none;
+        border-color: var(--mw-primary);
+        box-shadow: 0 0 0 2px var(--mw-primary-soft);
+      }
+      .search-hit {
+        padding: 6px 8px;
+        border-radius: 6px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .search-hit:hover {
+        background: var(--mw-surface-low);
+      }
+      .search-hit .hit-line {
+        color: var(--mw-ink-2);
+      }
+      .search-hit mark {
+        background: var(--mw-accent);
+        color: #fff;
+        border-radius: 2px;
+        padding: 0 1px;
+      }
+
+      /* ---------- 中央区 ---------- */
+      .center {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .tab-bar {
+        display: flex;
+        align-items: center;
+        height: 36px;
+        padding: 0 8px;
+        gap: 2px;
+        background: var(--mw-surface);
+        border-bottom: 1px solid var(--mw-border);
+        flex: none;
+      }
+      .tab {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 6px 6px 0 0;
+        font-size: 13px;
+        color: var(--mw-ink-2);
+        cursor: pointer;
+        transition: all 150ms ease;
+        max-width: 180px;
+      }
+      .tab:hover {
+        background: var(--mw-surface-low);
+      }
+      .tab.active {
+        color: var(--mw-ink);
+        background: var(--mw-bg);
+        box-shadow: inset 0 -2px 0 var(--mw-primary);
+      }
+      .tab .tab-name {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .tab-close {
+        width: 14px;
+        height: 14px;
+        border: none;
+        background: none;
+        border-radius: 50%;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--mw-ink-3);
+        transition: all 150ms ease;
+      }
+      .tab-close:hover {
+        background: var(--mw-danger);
+        color: #fff;
+      }
+      .tab-close svg {
+        width: 10px;
+        height: 10px;
+      }
+      .tab-new {
+        margin-left: 4px;
+      }
+      .icon-btn {
+        width: 26px;
+        height: 26px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        background: none;
+        border-radius: 6px;
+        color: var(--mw-ink-2);
+        cursor: pointer;
+        transition: all 150ms ease;
+      }
+      .icon-btn:hover {
+        background: var(--mw-surface-low);
+        color: var(--mw-primary);
+      }
+      .icon-btn svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      /* 编辑器纸面 */
+      .editor-area {
+        flex: 1;
+        overflow: auto;
+        background: var(--mw-bg);
+      }
+      .paper {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 48px 24px 120px;
+      }
+      .paper .doc-title {
+        font-size: 32px;
+        font-weight: 700;
+        line-height: 1.3;
+        border: none;
+        width: 100%;
+        color: var(--mw-ink);
+        font-family: inherit;
+        margin-bottom: 8px;
+        outline: none;
+        transition: box-shadow 150ms ease;
+        border-radius: 4px;
+      }
+      .paper .doc-title:focus {
+        box-shadow: 0 0 0 2px var(--mw-primary-soft);
+      }
+      .paper .doc-meta {
+        font-size: 13px;
+        color: var(--mw-ink-3);
+        margin-bottom: 32px;
+        display: flex;
+        gap: 16px;
+      }
+
+      /* Markdown 基础渲染展示 */
+      .md h1,
+      .md h2,
+      .md h3,
+      .md h4 {
+        font-weight: 600;
+        line-height: 1.3;
+        margin: 1.4em 0 0.5em;
+        color: var(--mw-ink);
+      }
+      .md h1 {
+        font-size: 26px;
+        border-bottom: 1px solid var(--mw-border);
+        padding-bottom: 0.3em;
+      }
+      .md h2 {
+        font-size: 21px;
+      }
+      .md h3 {
+        font-size: 18px;
+      }
+      .md p {
+        margin: 0.6em 0;
+      }
+      .md a {
+        color: var(--mw-primary);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      .md strong {
+        font-weight: 600;
+      }
+      .md code {
+        font-family: var(--mw-font-code);
+        font-size: 0.875em;
+        background: var(--mw-code-bg);
+        color: var(--mw-inline-code);
+        padding: 0.15em 0.35em;
+        border-radius: 4px;
+      }
+      .md pre {
+        background: var(--mw-code-bg);
+        border: 1px solid var(--mw-border);
+        border-radius: var(--mw-radius);
+        padding: 14px 16px;
+        overflow-x: auto;
+        margin: 0.8em 0;
+      }
+      .md pre code {
+        background: none;
+        color: var(--mw-ink);
+        padding: 0;
+        font-size: 13px;
+        line-height: 1.6;
+      }
+      .md pre .lang-tag {
+        float: right;
+        font-size: 11px;
+        color: var(--mw-ink-3);
+        font-family: var(--mw-font-sans);
+      }
+      .md blockquote {
+        border-left: 3px solid var(--mw-primary);
+        padding: 2px 16px;
+        margin: 0.8em 0;
+        color: var(--mw-ink-2);
+        background: var(--mw-primary-soft);
+        border-radius: 0 var(--mw-radius) var(--mw-radius) 0;
+      }
+      .md blockquote blockquote {
+        border-left-color: var(--mw-accent);
+        background: transparent;
+      }
+      .md ul,
+      .md ol {
+        margin: 0.6em 0;
+        padding-left: 1.6em;
+      }
+      .md li {
+        margin: 0.2em 0;
+      }
+      .md li::marker {
+        color: var(--mw-primary);
+      }
+      .md .task-list {
+        list-style: none;
+        padding-left: 0.2em;
+      }
+      .md .task-list li {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+      }
+      .md .task-check {
+        width: 15px;
+        height: 15px;
+        border: 1.5px solid var(--mw-ink-3);
+        border-radius: 4px;
+        flex: none;
+        position: relative;
+        top: 2px;
+        cursor: pointer;
+        transition: all 150ms ease;
+      }
+      .md .task-check.done {
+        background: var(--mw-primary);
+        border-color: var(--mw-primary);
+      }
+      .md .task-check.done::after {
+        content: "";
+        position: absolute;
+        left: 4px;
+        top: 1px;
+        width: 4px;
+        height: 8px;
+        border: solid #fff;
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+      }
+      .md .task-check.pending {
+        background: var(--mw-bg);
+      }
+      .md .task-done-text {
+        color: var(--mw-ink-3);
+        text-decoration: line-through;
+      }
+
+      /* 表格 */
+      .md table {
+        border-collapse: collapse;
+        margin: 0.8em 0;
+        width: 100%;
+        font-size: 14px;
+      }
+      .md th,
+      .md td {
+        border: 1px solid var(--mw-border);
+        padding: 6px 12px;
+        text-align: left;
+      }
+      .md th {
+        background: var(--mw-surface-low);
+        font-weight: 600;
+      }
+      .md tr:hover td {
+        background: var(--mw-surface);
+      }
+
+      /* 数学公式（KaTeX 静态展示） */
+      .md .math-inline {
+        color: var(--mw-primary);
+        font-family: var(--mw-font-code);
+        font-size: 0.95em;
+      }
+      .md .math-block {
+        text-align: center;
+        margin: 0.8em 0;
+        padding: 10px;
+        background: var(--mw-surface);
+        border-radius: var(--mw-radius);
+        font-family: var(--mw-font-code);
+        color: var(--mw-ink);
+      }
+
+      /* Mermaid 图表（静态示意） */
+      .md .diagram {
+        border: 1px solid var(--mw-border);
+        border-radius: var(--mw-radius);
+        padding: 12px;
+        background: var(--mw-surface);
+        margin: 0.8em 0;
+      }
+      .md .diagram .diagram-label {
+        font-size: 11px;
+        color: var(--mw-ink-3);
+        margin-bottom: 6px;
+        font-family: var(--mw-font-sans);
+      }
+
+      /* TOC */
+      .md .toc {
+        border: 1px dashed var(--mw-border);
+        border-radius: var(--mw-radius);
+        padding: 10px 16px;
+        font-size: 13px;
+        color: var(--mw-ink-2);
+        margin: 0.8em 0;
+      }
+      .md .toc b {
+        color: var(--mw-ink);
+      }
+
+      /* 分隔线 */
+      .md hr {
+        border: none;
+        border-top: 1px solid var(--mw-border);
+        margin: 1.6em 0;
+      }
+
+      /* ---------- 状态栏（11 状态栏容器） ---------- */
+      .status-bar {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: var(--status-h);
+        padding: 0 10px;
+        background: var(--mw-surface);
+        border-top: 1px solid var(--mw-border);
+        font-size: 12px;
+        color: var(--mw-ink-2);
+        flex: none;
+      }
+      .status-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background 150ms ease;
+        font-size: 12px;
+      }
+      .status-item:hover {
+        background: var(--mw-primary-soft);
+        color: var(--mw-primary);
+      }
+      .status-item svg {
+        width: 13px;
+        height: 13px;
+      }
+      .status-spacer {
+        flex: 1;
+      }
+      .status-hint {
+        color: var(--mw-ink-3);
+        font-size: 11px;
+      }
+
+      /* ---------- 设计令牌展示区（设计稿附页） ---------- */
+      .design-spec {
+        border-top: 3px solid var(--mw-primary);
+        padding: 24px;
+        background: var(--mw-bg);
+      }
+      .design-spec h2 {
+        font-size: 18px;
+        margin-bottom: 16px;
+      }
+      .swatch-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 12px;
+      }
+      .swatch {
+        border: 1px solid var(--mw-border);
+        border-radius: var(--mw-radius);
+        overflow: hidden;
+      }
+      .swatch .chip {
+        height: 48px;
+      }
+      .swatch .info {
+        padding: 6px 10px;
+        font-size: 12px;
+      }
+      .swatch .info .role {
+        color: var(--mw-ink-2);
+      }
+      .swatch .info .hex {
+        font-family: var(--mw-font-code);
+        font-size: 11px;
+        color: var(--mw-ink-3);
+      }
+      .type-sample {
+        margin-top: 16px;
+        display: flex;
+        gap: 32px;
+        flex-wrap: wrap;
+      }
+      .type-sample .sample {
+        flex: 1;
+        min-width: 240px;
+      }
+      .type-sample .label {
+        font-size: 12px;
+        color: var(--mw-ink-3);
+        margin-bottom: 6px;
+      }
+
+      /* 主题切换按钮（设计稿演示用，产品侧由 08 主题模块接管） */
+      .theme-toggle {
+        position: fixed;
+        right: 16px;
+        bottom: 44px;
+        z-index: 50;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 14px;
+        border: 1px solid var(--mw-border);
+        border-radius: 999px;
+        background: var(--mw-bg);
+        color: var(--mw-ink-2);
+        font-size: 13px;
+        font-family: inherit;
+        cursor: pointer;
+        box-shadow: var(--mw-shadow-md);
+        transition: all 200ms ease;
+      }
+      .theme-toggle:hover {
+        color: var(--mw-primary);
+        border-color: var(--mw-primary);
+        transform: translateY(-1px);
+      }
+      .theme-toggle svg {
+        width: 15px;
+        height: 15px;
+      }
+
+      /* 滚动条 */
+      ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--mw-border);
+        border-radius: 5px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--mw-ink-3);
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app-shell">
+      <!-- ============ 菜单栏（12 窗口外壳：File/Edit/Paragraph/Format/View/Themes/Help） ============ -->
+      <nav class="menu-bar">
+        <span class="menu-item active">文件</span>
+        <span class="menu-item">编辑</span>
+        <span class="menu-item">段落</span>
+        <span class="menu-item">格式</span>
+        <span class="menu-item">视图</span>
+        <span class="menu-item">主题</span>
+        <span class="menu-item">帮助</span>
+        <span class="menu-spacer"></span>
+        <span class="menu-window">
+          <span class="win-dot min" title="最小化"></span>
+          <span class="win-dot max" title="最大化"></span>
+          <span class="win-dot close" title="关闭"></span>
+        </span>
+      </nav>
+
+      <div class="main-area">
+        <!-- ============ 侧栏（Ctrl+Shift+L 开合；Ctrl+Shift+1/2/3 面板切换） ============ -->
+        <aside class="sidebar" id="sidebar">
+          <div class="sidebar-tabs">
+            <button class="side-tab active" data-panel="tree" title="文件树 (Ctrl+Shift+3)">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M2 4h5l2 2h9v10H2z" /></svg
+              >文件
+            </button>
+            <button class="side-tab" data-panel="outline" title="大纲 (Ctrl+Shift+1)">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M3 5h14M3 10h10M3 15h12" /></svg
+              >大纲
+            </button>
+            <button class="side-tab" data-panel="search" title="搜索 (Ctrl+Shift+2)">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                <circle cx="9" cy="9" r="5" />
+                <path d="M13 13l4 4" /></svg
+              >搜索
+            </button>
+          </div>
+
+          <div class="side-body">
+            <!-- 03 文件树面板 -->
+            <div class="side-panel active" id="panel-tree">
+              <div class="tree-item active">
+                <svg class="chevron" viewBox="0 0 10 10" fill="currentColor">
+                  <path d="M2 1l5 4-5 4z" />
+                </svg>
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <rect x="3" y="3" width="14" height="14" rx="2" />
+                </svg>
+                MarkWell 笔记
+                <span class="tree-meta">12</span>
+              </div>
+              <div class="tree-group">
+                <div class="tree-item">
+                  <svg class="chevron" viewBox="0 0 10 10" fill="currentColor">
+                    <path d="M2 1l5 4-5 4z" />
+                  </svg>
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                    <rect x="3" y="3" width="14" height="14" rx="2" />
+                  </svg>
+                  01 编辑核心
+                  <span class="tree-meta">8</span>
+                </div>
+                <div class="tree-group">
+                  <div class="tree-item">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                      <path d="M5 3h7l3 3v11H5z" />
+                    </svg>
+                    编辑核心完成与内存排查.md
+                  </div>
+                  <div class="tree-item">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                      <path d="M5 3h7l3 3v11H5z" />
+                    </svg>
+                    12 项 FIX 修复记录.md
+                  </div>
+                </div>
+                <div class="tree-item">
+                  <svg
+                    class="chevron"
+                    viewBox="0 0 10 10"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  >
+                    <path d="M2 1l5 4-5 4" />
+                  </svg>
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                    <rect x="3" y="3" width="14" height="14" rx="2" />
+                  </svg>
+                  02 文档管理
+                  <span class="tree-meta">3</span>
+                </div>
+                <div class="tree-item">
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                    <path d="M5 3h7l3 3v11H5z" />
+                  </svg>
+                  设计稿与调研.md
+                </div>
+              </div>
+            </div>
+
+            <!-- 05 大纲面板 -->
+            <div class="side-panel" id="panel-outline">
+              <div class="outline-item l1 active">MarkWell 界面设计稿</div>
+              <div class="outline-item l2">窗口外壳布局</div>
+              <div class="outline-item l3">菜单栏 / 侧栏 / 状态栏</div>
+              <div class="outline-item l2">基础配色</div>
+              <div class="outline-item l3">亮色 / 暗色双态</div>
+              <div class="outline-item l2">基础渲染展示</div>
+              <div class="outline-item l3">标题 / 代码 / 表格 / 图表</div>
+            </div>
+
+            <!-- 06 搜索面板 -->
+            <div class="side-panel" id="panel-search">
+              <input class="search-input" type="search" placeholder="搜索文档…" value="设计" />
+              <div style="height: 8px"></div>
+              <div class="search-hit">
+                <div><mark>设计</mark>稿与调研.md</div>
+                <div class="hit-line">MarkWell 界面<mark>设计</mark>稿落地</div>
+              </div>
+              <div class="search-hit">
+                <div>12 项 FIX 修复记录.md</div>
+                <div class="hit-line">修复<mark>设计</mark>评审清单问题</div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- ============ 中央区（04 标签条 + 01 编辑器） ============ -->
+        <section class="center">
+          <div class="tab-bar">
+            <div class="tab active">
+              <span class="tab-name">编辑核心完成与内存排查.md</span>
+              <button class="tab-close" title="关闭标签">
+                <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M1 1l8 8M9 1l-8 8" />
+                </svg>
+              </button>
+            </div>
+            <div class="tab">
+              <span class="tab-name">12 项 FIX 修复记录.md</span>
+              <button class="tab-close" title="关闭标签">
+                <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M1 1l8 8M9 1l-8 8" />
+                </svg>
+              </button>
+            </div>
+            <button class="icon-btn tab-new" title="新建标签 (Ctrl+T)">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M10 4v12M4 10h12" />
+              </svg>
+            </button>
+            <span class="menu-spacer"></span>
+            <button class="icon-btn" title="源代码模式">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M7 6l-4 4 4 4M13 6l4 4-4 4" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="editor-area">
+            <article class="paper">
+              <input class="doc-title" value="MarkWell 界面设计稿" aria-label="文档标题" />
+              <div class="doc-meta">
+                <span>修改于 2026-08-15 14:30</span>
+                <span>1,024 字</span>
+                <span>自动保存</span>
+              </div>
+
+              <div class="md">
+                <!-- 基础渲染展示：标题层级 / 段落 / 强调 / 行内代码 / 链接 -->
+                <h1>MarkWell 界面设计稿</h1>
+                <p>
+                  本文是 <strong>MarkWell</strong> 整体界面风格与结构的
+                  <em>HTML 设计稿</em>，覆盖窗口外壳、侧栏三面板、编辑器纸面与基础渲染展示。设计依据
+                  <code>design-system/markwell/MASTER.md</code> 与
+                  <code>pages/editor.md</code>（瑞士极简、内容优先、亮暗双态）。
+                </p>
+                <p>
+                  编辑器核心体验：<a href="#">沉浸式写作</a
+                  >、居中纸面（800px）、低疲劳配色；正文对比度亮色 ≈13:1、暗色 ≈13:1，均高于 4.5:1
+                  底线。
+                </p>
+
+                <h2>窗口外壳布局</h2>
+                <p>
+                  顶部为原生菜单栏（文件/编辑/段落/格式/视图/主题/帮助），左侧为可开合侧栏（<strong
+                    >文件树 / 大纲 / 搜索</strong
+                  >
+                  三面板，Ctrl+Shift+1/2/3 切换），中央为标签条 +
+                  编辑器，底部为状态栏（字数统计与侧栏开关）。
+                </p>
+
+                <h3>代码围栏（TypeScript）</h3>
+                <pre><span class="lang-tag">TypeScript</span><code><span style="color:var(--mw-inline-code)">import</span> { editorManager } <span style="color:var(--mw-inline-code)">from</span> <span style="color:var(--mw-primary)">"./services/editor-manager"</span>;
+<span style="color:var(--mw-inline-code)">export function</span> <span style="color:var(--mw-ink)">saveCurrentDocument</span>(): <span style="color:var(--mw-ink-2)">Promise&lt;void&gt;</span> {
+  <span style="color:var(--mw-ink-3)">// 02 文档管理模块：自动保存入口</span>
+  <span style="color:var(--mw-inline-code)">const</span> markdown = editorManager.getMarkdown();
+  <span style="color:var(--mw-inline-code)">await</span> persist(markdown);
+}</code></pre>
+
+                <h3>表格（GFM 对齐标记）</h3>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>模块</th>
+                      <th style="text-align: center">状态</th>
+                      <th>覆盖率</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>01 编辑核心</td>
+                      <td style="text-align: center">完成</td>
+                      <td>核心 100%</td>
+                    </tr>
+                    <tr>
+                      <td>02 文档管理</td>
+                      <td style="text-align: center">待开工</td>
+                      <td>—</td>
+                    </tr>
+                    <tr>
+                      <td>12 窗口外壳</td>
+                      <td style="text-align: center">待开工</td>
+                      <td>—</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <h3>任务列表</h3>
+                <ul class="task-list">
+                  <li>
+                    <span class="task-check done"></span
+                    ><span class="task-done-text">01 编辑核心 22 任务全部实现</span>
+                  </li>
+                  <li>
+                    <span class="task-check done"></span
+                    ><span class="task-done-text">2026-08-15 审查 12 项 FIX 修复闭环</span>
+                  </li>
+                  <li><span class="task-check pending"></span>UI 设计稿落地（本文）</li>
+                  <li><span class="task-check pending"></span>02 文档管理模块开工</li>
+                </ul>
+
+                <h3>引用与嵌套引用</h3>
+                <blockquote>
+                  <p>内容优先的沉浸式写作区：UI 装饰最小化，长时间连续写作不疲劳。</p>
+                  <blockquote><p>—— editor.md 页面定位</p></blockquote>
+                </blockquote>
+
+                <h3>数学公式（KaTeX 静态展示）</h3>
+                <p>
+                  行内公式：欧拉恒等式 <span class="math-inline">e^{i\pi} + 1 = 0</span>，块级公式：
+                </p>
+                <div class="math-block">\int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}</div>
+
+                <h3>Mermaid 图表（懒加载渲染示意）</h3>
+                <div class="diagram">
+                  <div class="diagram-label">flowchart — MarkWell 模块依赖</div>
+                  <svg
+                    viewBox="0 0 560 160"
+                    width="100%"
+                    height="160"
+                    font-family="var(--mw-font-sans)"
+                    font-size="12"
+                  >
+                    <defs>
+                      <marker
+                        id="arrow"
+                        viewBox="0 0 10 10"
+                        refX="9"
+                        refY="5"
+                        markerWidth="7"
+                        markerHeight="7"
+                        orient="auto"
+                      >
+                        <path d="M0 0L10 5L0 10z" fill="var(--mw-ink-3)" />
+                      </marker>
+                    </defs>
+                    <g>
+                      <rect
+                        x="20"
+                        y="60"
+                        width="120"
+                        height="40"
+                        rx="8"
+                        fill="var(--mw-primary-soft)"
+                        stroke="var(--mw-primary)"
+                      />
+                      <text
+                        x="80"
+                        y="84"
+                        text-anchor="middle"
+                        fill="var(--mw-primary)"
+                        font-weight="600"
+                      >
+                        01 编辑核心
+                      </text>
+                      <rect
+                        x="220"
+                        y="60"
+                        width="120"
+                        height="40"
+                        rx="8"
+                        fill="var(--mw-surface-low)"
+                        stroke="var(--mw-ink-3)"
+                      />
+                      <text x="280" y="84" text-anchor="middle" fill="var(--mw-ink-2)">
+                        02 文档管理
+                      </text>
+                      <rect
+                        x="420"
+                        y="60"
+                        width="120"
+                        height="40"
+                        rx="8"
+                        fill="var(--mw-surface-low)"
+                        stroke="var(--mw-ink-3)"
+                      />
+                      <text x="480" y="84" text-anchor="middle" fill="var(--mw-ink-2)">
+                        12 窗口外壳
+                      </text>
+                      <rect
+                        x="120"
+                        y="10"
+                        width="140"
+                        height="30"
+                        rx="8"
+                        fill="var(--mw-bg)"
+                        stroke="var(--mw-accent)"
+                      />
+                      <text
+                        x="190"
+                        y="29"
+                        text-anchor="middle"
+                        fill="var(--mw-accent)"
+                        font-weight="600"
+                      >
+                        事件桥 / 实例管理
+                      </text>
+                      <path
+                        d="M140 60L190 42"
+                        stroke="var(--mw-ink-3)"
+                        stroke-width="1.5"
+                        marker-end="url(#arrow)"
+                      />
+                      <path
+                        d="M340 60L310 42"
+                        stroke="var(--mw-ink-3)"
+                        stroke-width="1.5"
+                        marker-end="url(#arrow)"
+                      />
+                      <path
+                        d="M480 100V130H80V100"
+                        stroke="var(--mw-ink-3)"
+                        stroke-width="1.5"
+                        fill="none"
+                        marker-end="url(#arrow)"
+                      />
+                    </g>
+                  </svg>
+                </div>
+
+                <h3>目录（[toc] 节点）</h3>
+                <div class="toc"><b>[toc]</b> — 窗口外壳布局 / 基础配色 / 基础渲染展示</div>
+
+                <hr />
+
+                <p>
+                  以上为
+                  <strong>基础渲染展示</strong
+                  >：标题、段落、强调、行内代码、代码围栏、表格、任务列表、引用、数学公式、Mermaid
+                  图表、[toc] 与分隔线。全部样式经由 <code>--markwell-*</code> /
+                  <code>--crepe-*</code> 令牌驱动，暗色态复用同一结构。
+                </p>
+              </div>
+
+              <!-- 设计令牌附页 -->
+              <section class="design-spec">
+                <h2>基础配色（亮色 / 暗色双态令牌）</h2>
+                <div class="swatch-grid" id="swatches"></div>
+                <div class="type-sample">
+                  <div class="sample">
+                    <div class="label">正文 / 标题 / 次要文字</div>
+                    <div style="font-size: 22px; font-weight: 700">瑞士极简 Aa</div>
+                    <div style="font-size: 16px">正文样例：内容优先的写作体验。</div>
+                    <div style="font-size: 13px; color: var(--mw-ink-2)">
+                      次要文字：模块状态、元信息。
+                    </div>
+                    <div style="font-size: 11px; color: var(--mw-ink-3)">
+                      弱化：占位符、时间戳。
+                    </div>
+                  </div>
+                  <div class="sample">
+                    <div class="label">字体栈（桌面离线，系统回退）</div>
+                    <div style="font-size: 15px">
+                      正文：Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif
+                    </div>
+                    <div style="font-size: 13px; font-family: var(--mw-font-code)">
+                      代码：Cascadia Code, Fira Code, JetBrains Mono, Consolas
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </article>
+          </div>
+        </section>
+      </div>
+
+      <!-- ============ 状态栏（11 状态栏：字数 / 侧栏开关） ============ -->
+      <footer class="status-bar">
+        <span class="status-item" title="字数统计（点击切换单位）">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M4 6h12M4 10h8M4 14h10" />
+          </svg>
+          1,024 字
+        </span>
+        <span class="status-item" title="侧栏开关 (Ctrl+Shift+L)" id="sidebar-toggle">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+            <rect x="3" y="4" width="14" height="12" rx="2" />
+            <path d="M8 4v12" />
+          </svg>
+        </span>
+        <span class="status-spacer"></span>
+        <span class="status-hint">Ctrl+Shift+1/2/3 面板切换 · Ctrl+Shift+L 侧栏开关</span>
+      </footer>
+    </div>
+
+    <button class="theme-toggle" id="theme-toggle" aria-pressed="false">
+      <svg id="theme-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M17 11.5A6.5 6.5 0 018.5 3a6.5 6.5 0 108.5 8.5z" />
+      </svg>
+      <span id="theme-label">暗色</span>
+    </button>
+
+    <script>
+      /* ---------- 设计稿交互（仅演示；产品侧由 08 主题 / 12 外壳模块接管） ---------- */
+      "use strict";
+
+      /* 亮暗切换：.markwell-dark 作用域（与产品 tokens.css 同构） */
+      const themeToggle = document.getElementById("theme-toggle");
+      const themeLabel = document.getElementById("theme-label");
+      themeToggle.addEventListener("click", () => {
+        const dark = document.documentElement.classList.toggle("markwell-dark");
+        themeLabel.textContent = dark ? "亮色" : "暗色";
+        themeToggle.setAttribute("aria-pressed", String(dark));
+      });
+
+      /* 侧栏开合（Ctrl+Shift+L 语义演示） */
+      const sidebar = document.getElementById("sidebar");
+      document.getElementById("sidebar-toggle").addEventListener("click", () => {
+        sidebar.classList.toggle("collapsed");
+      });
+
+      /* 侧栏面板切换（Ctrl+Shift+1/2/3 语义演示） */
+      document.querySelectorAll(".side-tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          document.querySelectorAll(".side-tab").forEach((t) => t.classList.remove("active"));
+          document.querySelectorAll(".side-panel").forEach((p) => p.classList.remove("active"));
+          tab.classList.add("active");
+          document.getElementById(`panel-${tab.dataset.panel}`).classList.add("active");
+        });
+      });
+
+      /* 色板附页：亮暗双态令牌渲染（CSS 变量取值） */
+      const SWATCHES = [
+        { role: "品牌主色", var: "--mw-primary", css: "background: var(--mw-primary)" },
+        { role: "强调色", var: "--mw-accent", css: "background: var(--mw-accent)" },
+        {
+          role: "纸面",
+          var: "--mw-bg",
+          css: "background: var(--mw-bg); border: 1px solid var(--mw-border)",
+        },
+        { role: "正文墨色", var: "--mw-ink", css: "background: var(--mw-ink)" },
+        { role: "次要文字", var: "--mw-ink-2", css: "background: var(--mw-ink-2)" },
+        {
+          role: "浮层底",
+          var: "--mw-surface",
+          css: "background: var(--mw-surface); border: 1px solid var(--mw-border)",
+        },
+        {
+          role: "次级浮层",
+          var: "--mw-surface-low",
+          css: "background: var(--mw-surface-low); border: 1px solid var(--mw-border)",
+        },
+        { role: "边框", var: "--mw-border", css: "background: var(--mw-border)" },
+        { role: "主色浅底", var: "--mw-primary-soft", css: "background: var(--mw-primary-soft)" },
+        { role: "行内代码", var: "--mw-inline-code", css: "background: var(--mw-inline-code)" },
+      ];
+      const swatchBox = document.getElementById("swatches");
+      for (const s of SWATCHES) {
+        const value = getComputedStyle(document.documentElement).getPropertyValue(s.var).trim();
+        const el = document.createElement("div");
+        el.className = "swatch";
+        el.innerHTML = `<div class="chip" style="${s.css}"></div>
+    <div class="info"><div class="role">${s.role}</div><div class="hex">${s.var} · ${value}</div></div>`;
+        swatchBox.appendChild(el);
+      }
+    </script>
+  </body>
+</html>
