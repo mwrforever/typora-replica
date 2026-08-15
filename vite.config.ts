@@ -116,6 +116,19 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 02 核心 100%：Open Quickly 模糊匹配与数据源组装（大小写不敏感包含/排序/去重，F11）
+        "src/features/open-quickly/fuzzy.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        "src/features/open-quickly/open-quickly.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },

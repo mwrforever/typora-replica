@@ -4,6 +4,9 @@
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import EditorPage from "./components/editor/EditorPage.vue";
+import OpenQuicklyPanel from "./features/open-quickly/OpenQuicklyPanel.vue";
+import { buildQuickItems } from "./features/open-quickly/open-quickly";
+import type { QuickItem } from "./features/open-quickly/fuzzy";
 import { AutoSaveController } from "./services/auto-save";
 import { DraftRecovery } from "./services/draft-recovery";
 import { DocumentSession } from "./services/document-session";
@@ -13,6 +16,7 @@ import { resolveLaunch } from "./services/launch-behavior";
 import { loadSettings } from "./services/settings";
 import { registerAppShortcuts } from "./services/app-shortcuts";
 import { saveAsDialog } from "./services/open-commands";
+import { RecentFiles } from "./services/recent-files";
 
 /** 编辑器初始文档（随会话事件更新；docKey 强制重建编辑器实例） */
 const initialDoc = ref("");
@@ -41,6 +45,11 @@ const autoSave = new AutoSaveController({
 /** 草稿：5s 心跳 + 退出备份 */
 const drafts = new DraftRecovery(session);
 
+/** Ctrl+P 面板开关 */
+const quickOpenVisible = ref(false);
+/** 面板候选（打开时构建） */
+const quickOpenItems = ref<QuickItem[]>([]);
+
 /** 窗口级快捷键（12 窗口外壳可接管）：Ctrl+S 保存/另存、Ctrl+P 快速打开 */
 const cleanupShortcuts = registerAppShortcuts({
   onSave: () => {
@@ -52,8 +61,12 @@ const cleanupShortcuts = registerAppShortcuts({
       })();
   },
   onQuickOpen: () => {
-    // Ctrl+P 面板（Task 17 接线；当前为占位入口，Task 17 替换为面板打开）
-    console.info("[MarkWell] Open Quickly 面板（Task 17 接入）");
+    // 构建候选：当前目录 .md ∪ 最近文件（固定项保留）
+    void (async () => {
+      const recent = await new RecentFiles().list().catch(() => []);
+      quickOpenItems.value = await buildQuickItems(session.currentDir, recent);
+      quickOpenVisible.value = true;
+    })();
   },
 });
 
@@ -106,4 +119,15 @@ onBeforeUnmount(() => {
 
 <template>
   <EditorPage :initial-doc="initialDoc" :key="docKey" />
+  <OpenQuicklyPanel
+    v-if="quickOpenVisible"
+    :items="quickOpenItems"
+    @select="
+      (path) => {
+        quickOpenVisible = false;
+        void session.openFile(path);
+      }
+    "
+    @close="quickOpenVisible = false"
+  />
 </template>
