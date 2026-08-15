@@ -1,4 +1,4 @@
-import { $, browser, expect } from "@wdio/globals";
+import { $, $$, browser, expect } from "@wdio/globals";
 
 /**
  * 应用冒烟测试（E2E）
@@ -29,8 +29,11 @@ describe("应用冒烟测试", () => {
     // 光标移至行尾后回车另起新行，键入 `# ` 触发 Crepe 输入规则把段落转为标题
     // （wdio v9 browser.keys 会把命名键映射为 WebDriver unicode 键，如 "End"→\uE010、"Enter"→\uE007）
     await browser.keys(["End", "Enter", "#", " ", "冒烟标题"]);
-    // 新标题文本已进入文档（编辑器整体文本包含该串）
-    await expect($(".milkdown")).toHaveText(expect.stringContaining("冒烟标题"));
+    // 断言规则本体：新增 h1 出现（初始标题 + 规则生成共 2 个），且新 h1 自身含「冒烟标题」。
+    // 只断言文本出现对规则回归是真空的——`# ` 不转标题时以普通段落「# 冒烟标题」落入测试仍会误绿
+    const h1s = await $$(".milkdown h1");
+    await expect(h1s).toBeElementsArrayOfSize(2);
+    await expect(h1s[1]).toHaveText(expect.stringContaining("冒烟标题"));
   });
 
   it("快捷键冒烟：Ctrl+B 加粗选中文字", async () => {
