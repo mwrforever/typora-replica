@@ -121,13 +121,19 @@ if (typeof URL.createObjectURL !== "function") {
     `blob:mock/${(file as File).name ?? "file"}`) as typeof URL.createObjectURL;
 }
 
-afterEach(async () => {
-  // 销毁本用例创建的编辑器实例并卸载 Vue 组件。
-  // 延迟导入 editor-test-utils：setup 阶段若静态导入会提前求值编辑器模块链
-  //（editor-test-utils → 各插件 → services），使测试文件内 vi.mock（如 E14 对
-  // external-open）无法作用于已求值模块；延迟到用例结束再导入时模块已被测试
-  // 文件按 mock 求值并缓存，销毁语义不变。
-  const { destroyTestEditors } = await import("./editor-test-utils");
-  destroyTestEditors();
-  cleanup();
-});
+afterEach(
+  async () => {
+    // 销毁本用例创建的编辑器实例并卸载 Vue 组件。
+    // 延迟导入 editor-test-utils：setup 阶段若静态导入会提前求值编辑器模块链
+    //（editor-test-utils → 各插件 → services），使测试文件内 vi.mock（如 E14 对
+    // external-open）无法作用于已求值模块；延迟到用例结束再导入时模块已被测试
+    // 文件按 mock 求值并缓存，销毁语义不变。
+    const { destroyTestEditors } = await import("./editor-test-utils");
+    destroyTestEditors();
+    cleanup();
+  },
+  // 纯函数类 spec（如 html-sanitize）不静态导入编辑器链，本钩子承担其首次冷加载；
+  // v8 覆盖率插桩下的冷转换可能超过默认 10s 钩子超时（新增文件后首跑实测超时），
+  // 放宽到 60s 保证单文件聚焦运行在冷启动机器上稳定通过
+  60_000,
+);

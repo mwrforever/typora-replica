@@ -8,6 +8,8 @@ import type { Options } from "remark-stringify";
 // mhchem 副作用导入：KaTeX 化学式扩展（E7），全应用只需一次
 import "katex/contrib/mhchem";
 import { configureFootnoteTooltip, footnoteTooltipPlugin } from "./footnote-tooltip";
+import { configureHtmlMerge } from "./html/html-merge";
+import { setupHtmlNodeView } from "./html/html-node-view";
 import { getUploadHandler } from "./image-upload";
 import { registerEditorInputRules } from "./input-rules";
 import { applyEditorKeymaps } from "./keymaps";
@@ -203,6 +205,10 @@ export function createMarkwellEditor(
     // TOC 解析/序列化接线（remark 转换 + stringify handler）与节点视图注册
     configureToc(ctx);
     setupTocNodeView(ctx);
+    // E20 html 节点渲染 NodeView：清洗 + 渲染剥离 class/id/data-*（导出保留原文）
+    setupHtmlNodeView(ctx);
+    // E20 行内 HTML 开闭标签与纯文本合并（WYSIWYG 平价，解析侧）
+    configureHtmlMerge(ctx);
     // Typora 式落盘序列化选项（列表 `- ` 前缀、GFM 单词内下划线不转义）
     applyMarkwellStringifyOptions(ctx);
   });

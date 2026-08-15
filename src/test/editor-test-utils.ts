@@ -12,6 +12,8 @@ import {
   configureFootnoteTooltip,
   footnoteTooltipPlugin,
 } from "../features/editor/footnote-tooltip";
+import { configureHtmlMerge } from "../features/editor/html/html-merge";
+import { setupHtmlNodeView } from "../features/editor/html/html-node-view";
 import { registerEditorInputRules } from "../features/editor/input-rules";
 import { applyEditorKeymaps } from "../features/editor/keymaps";
 import { openLinkPlugin } from "../features/editor/link/open-link";
@@ -105,6 +107,10 @@ export async function makeTestEditor(
     // TOC 解析/序列化接线与节点视图注册（E12），与产品工厂同源
     configureToc(ctx);
     setupTocNodeView(ctx);
+    // E20 html 节点渲染 NodeView（清洗 + 渲染剥离），与产品工厂同源
+    setupHtmlNodeView(ctx);
+    // E20 行内 HTML 开闭标签合并（WYSIWYG 平价），与产品工厂同源
+    configureHtmlMerge(ctx);
   });
   // 目录防抖重算接线（E12），与产品工厂同源
   setupTocRebuildListener(crepe);
