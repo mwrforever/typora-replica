@@ -27,7 +27,8 @@ pub fn run() {
             io::commands::list_dir,
             io::drafts::save_draft_cmd,
             io::drafts::list_drafts_cmd,
-            io::drafts::recover_draft_cmd
+            io::drafts::recover_draft_cmd,
+            io::watch::watch_dir
         ])
         .run(tauri::generate_context!())
     {
