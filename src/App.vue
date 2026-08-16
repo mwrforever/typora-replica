@@ -169,12 +169,16 @@ onMounted(async () => {
       await handleOpenFolder(decision.path);
       break;
     case "open-file":
-      // F14-2：restore-both 恢复上次文件夹为侧栏目录；--reopen-file 不恢复
-      // 文件夹（Q 修复：避免陈旧 lastFolder 置顶污染最近文件列表）
+      // F14-2：restore-both 恢复上次文件夹为侧栏目录（目录先入侧栏再打开文件，
+      // 不再被文件父目录覆盖）；纯 --reopen-file 走 handleOpenFile——F1-2 语义
+      // 父目录进侧栏（内部已含 created 才 loadDir 联动，不重复加载）。
+      // Q 修复：--reopen-file 不恢复文件夹，避免陈旧 lastFolder 置顶污染最近文件列表
       if (decision.restoreFolder && settings.launch.lastFolder) {
         await handleOpenFolder(settings.launch.lastFolder);
+        await tabs.openFile(decision.path, basenameOf(decision.path));
+      } else {
+        await handleOpenFile(decision.path);
       }
-      await tabs.openFile(decision.path, basenameOf(decision.path));
       break;
   }
   // 启动提示（回退新建原因等）：会话可能尚未挂载（实例上缴前无激活会话），
