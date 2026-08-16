@@ -1,11 +1,11 @@
 <!-- App.vue
      应用根组件（02 装配：启动决策/文档会话/自动保存/快捷键；
      03 装配：侧栏/右键菜单/快捷键/拖入插链接/启动目录联动；
+     04 装配：多标签控制器——TabHost 挂载、启动/打开/文件夹/保存改接激活会话；
      布局为 03 阶段临时形态（编辑器 + 左侧栏），12 窗口外壳替换为完整窗口装配） -->
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import EditorPage from "./components/editor/EditorPage.vue";
 import FileTreeMenu from "./features/file-tree/FileTreeMenu.vue";
 import SidebarPanel from "./features/file-tree/SidebarPanel.vue";
 import { registerFileTreeShortcuts } from "./features/file-tree/file-tree-shortcuts";
@@ -15,10 +15,11 @@ import { normalizePath, relativeLinkPath } from "./features/file-tree/tree-utils
 import OpenQuicklyPanel from "./features/open-quickly/OpenQuicklyPanel.vue";
 import { buildQuickItems } from "./features/open-quickly/open-quickly";
 import type { QuickItem } from "./features/open-quickly/fuzzy";
-import { AutoSaveController } from "./features/document/auto-save";
 import { DraftRecovery } from "./features/document/draft-recovery";
-import { DocumentSession } from "./features/document/document-session";
+import type { DocumentSession } from "./features/document/document-session";
 import { editorManager } from "./features/editor/editor-manager";
+import TabHost from "./features/tabs/TabHost.vue";
+import { useTabsController } from "./features/tabs/tabs-controller";
 import { getCliArgs, probePathExists } from "./services/file-io";
 import { resolveLaunch } from "./services/launch-behavior";
 import { openFolderDialog, saveAsDialog } from "./services/open-commands";
@@ -26,32 +27,26 @@ import { loadSettings } from "./services/settings";
 import { registerAppShortcuts } from "./services/app-shortcuts";
 import { RecentFiles } from "./services/recent-files";
 
-/** 编辑器初始文档（随会话事件更新；docKey 强制重建编辑器实例） */
-const initialDoc = ref("");
-const docKey = ref(0);
+/**
+ * 多标签控制器（04：TabHost 挂载编排 + 每标签会话栈/自动保存；
+ * 本文件所有会话消费改经 tabs.activeSession() 取激活标签会话）。
+ * 控制器为模块级单例（useTabsController 与 TabHost 各调一次拿到同一实例）。
+ */
+const tabs = useTabsController();
 
-/** 文档会话（单例；事件接线 UI 层） */
-const session = new DocumentSession();
-session.on({
-  onDocumentChange: (doc) => {
-    initialDoc.value = doc.content;
-    docKey.value += 1;
+/**
+ * 草稿备份（P1 门面订阅：仅激活标签编辑触发心跳；dirty/currentPath 委托
+ * 激活会话，Task 14 聚合改造）。DraftRecovery 构造签名要求 DocumentSession，
+ * 此处以 getter 委托对象桥接——备份执行时点才解析激活会话，避免持有过期引用。
+ */
+const drafts = new DraftRecovery({
+  get dirty(): boolean {
+    return tabs.activeSession()?.dirty ?? false;
   },
-  onNotice: (notice) => {
-    if (notice.level === "error") console.error("[MarkWell]", notice.message);
-    else console.info("[MarkWell]", notice.message);
+  get currentPath(): string | undefined {
+    return tabs.activeSession()?.currentPath;
   },
-});
-
-/** 自动保存：停笔 1s ∪ 定时 5min（偏好开关联动） */
-const autoSave = new AutoSaveController({
-  session,
-  getSettings: loadSettings,
-  subscribeMarkdown: (cb) => editorManager.subscribeMarkdownUpdated(cb),
-});
-
-/** 草稿：5s 心跳 + 退出备份 */
-const drafts = new DraftRecovery(session);
+} as unknown as DocumentSession);
 
 /** Ctrl+P 面板开关 */
 const quickOpenVisible = ref(false);
@@ -72,9 +67,11 @@ const cleanupFileTreeShortcuts = registerFileTreeShortcuts({
 });
 
 /**
- * 打开文件夹（AC-F9-1）：空串走系统对话框选目录；随后 session.openFolder 切换
- * 文档目录 + fileTree.loadDir 拉取侧栏数据 + RecentLocations 记录最近位置。
- * 最近位置记录失败不阻断主流程（store 持久化异常静默吞掉）。
+ * 打开文件夹（AC-F9-1）：空串走系统对话框选目录；随后激活标签会话 openFolder
+ * 登记目录（lastFolder 偏好持久化）+ fileTree.loadDir 拉取侧栏数据 +
+ * RecentLocations 记录最近位置。最近位置记录失败不阻断主流程
+ * （store 持久化异常静默吞掉）。会话未挂载（optional chain 落空）时仅侧栏
+ * 联动，目录登记缺失为 P1 已知边缘（实例上缴前调用场景）。
  */
 async function handleOpenFolder(path: string): Promise<void> {
   if (!path) {
@@ -82,18 +79,22 @@ async function handleOpenFolder(path: string): Promise<void> {
     if (!picked) return;
     path = picked;
   }
-  await session.openFolder(path);
+  await tabs.activeSession()?.openFolder(path);
   await fileTree.loadDir(path);
   await new RecentLocations().record(path).catch(() => undefined);
 }
 
 /**
- * 打开文件（F1-2 父目录加载）：session.openFile 走 02 文档链路；
- * 随后以 session.currentDir 为基准同步侧栏数据源（打开文件所在目录进入侧栏）。
+ * 打开文件（F1-2 父目录加载）：controller.openFile 走多标签链路——同路径
+ * 去重激活既有标签（created=false 不联动）；新标签内容就绪后以文件父目录
+ * 为基准同步侧栏数据源（打开时一次性联动，切标签不重载侧栏）。
  */
 async function handleOpenFile(path: string): Promise<void> {
-  await session.openFile(path);
-  if (session.currentDir) await fileTree.loadDir(session.currentDir);
+  const created = await tabs.openFile(path, basenameOf(path));
+  if (created) {
+    const dir = dirnameOf(path);
+    if (dir) await fileTree.loadDir(dir);
+  }
 }
 
 /**
@@ -118,11 +119,13 @@ function handleMenuOpen(path: string): void {
  *
  * 仅接受树内条目（application/x-markwell-path 由 FileTreeItem dragstart 写入，
  * 携带完整路径）；名称取末级，相对路径含扩展名经 relativeLinkPath 计算，
- * 插入 `[名称](相对路径)` 到光标处。dragover 阻止默认行为以允许 drop。
+ * 插入 `[名称](相对路径)` 到光标处。相对基准为激活标签会话当前目录
+ * （无激活会话/目录时忽略）。dragover 阻止默认行为以允许 drop。
  */
 function onEditorDrop(event: DragEvent): void {
+  const session = tabs.activeSession();
   const path = event.dataTransfer?.getData("application/x-markwell-path");
-  if (!path || !session.currentDir) return;
+  if (!path || !session?.currentDir) return;
   event.preventDefault();
   const name = path.split(/[/\\]/).pop() ?? path;
   const rel = relativeLinkPath(path, session.currentDir);
@@ -132,52 +135,52 @@ function onEditorDrop(event: DragEvent): void {
 /** 窗口级快捷键（12 窗口外壳可接管）：Ctrl+S 保存/另存、Ctrl+P 快速打开 */
 const cleanupShortcuts = registerAppShortcuts({
   onSave: () => {
-    if (session.currentPath) void session.save();
+    const session = tabs.activeSession();
+    if (session?.currentPath) void session.save();
     else
       void (async () => {
         const target = await saveAsDialog();
-        if (target) void session.saveAs(target);
+        if (target) void tabs.activeSession()?.saveAs(target);
       })();
   },
   onQuickOpen: () => {
-    // 构建候选：当前目录 .md ∪ 最近文件（固定项保留）
+    // 构建候选：激活标签当前目录 .md ∪ 最近文件（固定项保留）
     void (async () => {
       const recent = await new RecentFiles().list().catch(() => []);
-      quickOpenItems.value = await buildQuickItems(session.currentDir, recent);
+      quickOpenItems.value = await buildQuickItems(tabs.activeSession()?.currentDir, recent);
       quickOpenVisible.value = true;
     })();
   },
 });
 
 onMounted(async () => {
-  // 启动链路：cli 参数 + 偏好 → 决策 → 加载文档（失败回退新建，提示不崩溃）
+  // 启动链路：cli 参数 + 偏好 → 决策 → 多标签装配（失败回退新建，提示不崩溃）
   const [cli, settings] = await Promise.all([getCliArgs(), loadSettings()]);
   // 路径存在性探测（I-1 修复）：listDir 优先——readFile 对目录必失败，
   // 旧内联 readFile 探测令文件夹存在性恒 false（AC-F14-1/2 失效根因）
   const decision = await resolveLaunch(cli, settings, probePathExists);
-  if (decision.notice) session.notify({ level: "info", message: decision.notice });
   switch (decision.action) {
     case "new":
-      session.newDocument();
+      tabs.createUntitled();
       break;
     case "open-folder":
-      await session.openFolder(decision.path);
-      session.newDocument();
+      // 02 语义（openFolder + newDocument）：空文档标签 + 目录登记/侧栏联动
+      tabs.createUntitled();
+      await handleOpenFolder(decision.path);
       break;
     case "open-file":
       // F14-2：restore-both 恢复上次文件夹为侧栏目录；--reopen-file 不恢复
       // 文件夹（Q 修复：避免陈旧 lastFolder 置顶污染最近文件列表）
       if (decision.restoreFolder && settings.launch.lastFolder) {
-        await session.openFolder(settings.launch.lastFolder);
+        await handleOpenFolder(settings.launch.lastFolder);
       }
-      await session.openFile(decision.path);
+      await tabs.openFile(decision.path, basenameOf(decision.path));
       break;
   }
-  // 启动决策落地后（open-folder/open-file 分支），同步 fileTreeStore.loadDir(session.currentDir)
-  // ——侧栏数据源与文档目录一致（session.openFolder/openFile 只登记 currentDir，
-  // 树数据由 store 独立拉取并订阅 watchDir 自动刷新；12 窗口外壳可替换此接线）
-  if (session.currentDir) await fileTree.loadDir(session.currentDir);
-  autoSave.start();
+  // 启动提示（回退新建原因等）：会话可能尚未挂载（实例上缴前无激活会话），
+  // optional chain 安全投递——挂载前丢弃可接受（P1 控制台通知口径）
+  if (decision.notice) tabs.activeSession()?.notify({ level: "info", message: decision.notice });
+  // 草稿心跳：门面 markdownUpdated 流（仅激活标签编辑触发，P1 语义）
   drafts.start((cb) => editorManager.subscribeMarkdownUpdated(cb));
   drafts.setupExitBackup(async (onCloseHandler) => {
     // 正常退出：先备份未保存内容再放行关闭（12 窗口外壳可替换关闭流程）
@@ -192,10 +195,22 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   cleanupShortcuts();
   cleanupFileTreeShortcuts();
-  autoSave.stop();
   drafts.stop();
+  // 门面销毁由 04 集成层负责（被动挂载不自动 destroy；应用卸载即终态）
   editorManager.destroy();
 });
+
+/** 取路径父目录（末尾分隔符去除；无分隔符返回 undefined——与 document-session 同构，不扩其导出面） */
+function dirnameOf(path: string): string | undefined {
+  const idx = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return idx === -1 ? undefined : path.slice(0, idx);
+}
+
+/** 取路径文件名（与 document-session/open-quickly 同构） */
+function basenameOf(path: string): string {
+  const idx = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return idx === -1 ? path : path.slice(idx + 1);
+}
 </script>
 
 <template>
@@ -205,11 +220,13 @@ onBeforeUnmount(() => {
       @open-file="handleOpenFile"
       @open-folder="handleOpenFolder"
       @request-menu="(p) => (menu = { visible: true, x: p.x, y: p.y, targetPath: p.path })"
-      @create-file="menu = { visible: true, x: 0, y: 0, targetPath: session.currentDir ?? '' }"
+      @create-file="
+        menu = { visible: true, x: 0, y: 0, targetPath: tabs.activeSession()?.currentDir ?? '' }
+      "
     />
     <!-- 编辑器宿主容器：dragover 阻止默认允许 drop，drop 消费文件树拖拽插链接（F7） -->
     <div class="editor-host" @dragover.prevent @drop="onEditorDrop">
-      <EditorPage :initial-doc="initialDoc" :key="docKey" />
+      <TabHost />
     </div>
   </div>
   <!-- 文件树右键菜单浮层（fixed 定位；状态由 App 层 menu ref 持有，v-if 控制渲染） -->
@@ -230,7 +247,7 @@ onBeforeUnmount(() => {
     @select="
       (path) => {
         quickOpenVisible = false;
-        void session.openFile(path);
+        void handleOpenFile(path);
       }
     "
     @close="quickOpenVisible = false"
