@@ -9,11 +9,12 @@ const mockSubscribe = vi.fn();
 import { AutoSaveController, IDLE_DEBOUNCE_MS } from "./auto-save";
 import type { DocumentSession } from "./document-session";
 
-/** 构造会话替身（仅暴露 auto-save 需要的成员） */
-function makeSession() {
+/** 构造会话替身（仅暴露 auto-save 需要的成员；dirty 默认 true=编辑过） */
+function makeSession(dirty = true) {
   return {
     save: mockSave,
     markDirty: mockMarkDirty,
+    dirty,
   } as unknown as DocumentSession;
 }
 
@@ -157,5 +158,34 @@ describe("自动保存（F30，双条件防抖+定时）", () => {
     resolveSave({ saved: true, path: "C:/a.md" });
     await vi.advanceTimersByTimeAsync(5 * 60 * 1000); // save 完成后定时器不应续期
     expect(mockSave).toHaveBeenCalledTimes(1);
+  });
+
+  it("干净文档定时到期不写盘（A 修复：无编辑不重写磁盘）", async () => {
+    const c = new AutoSaveController({
+      session: makeSession(false),
+      getSettings: mockGetSettings,
+      subscribeMarkdown: mockSubscribe,
+    });
+    c.start();
+    // 无任何编辑：5 分钟定时兜底到期时脏状态为 false，不得触发写盘
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    expect(mockSave).not.toHaveBeenCalled();
+    c.stop();
+  });
+
+  it("停笔定时器到期前文档已切换（openFile 清 dirty）：不落错文件（B 修复）", async () => {
+    const session = makeSession();
+    const c = new AutoSaveController({
+      session,
+      getSettings: mockGetSettings,
+      subscribeMarkdown: mockSubscribe,
+    });
+    c.start();
+    emitted()?.("A 文档内容"); // 编辑 A 停笔，1s 定时器启动
+    // 定时器到期前打开 B（openFile 清除脏状态）；到期时不得把 A 内容写盘
+    session.dirty = false;
+    await vi.advanceTimersByTimeAsync(IDLE_DEBOUNCE_MS);
+    expect(mockSave).not.toHaveBeenCalled();
+    c.stop();
   });
 });

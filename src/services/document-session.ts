@@ -23,7 +23,8 @@ export interface SessionDoc {
 
 /** 保存结果（dirty 联动依据） */
 export type SaveOutcome =
-  { saved: true; path: string } | { saved: false; reason: "no-path" | "io-error"; message: string };
+  | { saved: true; path: string }
+  | { saved: false; reason: "no-path" | "io-error" | "doc-switched"; message: string };
 
 /** 会话事件监听集合 */
 export interface SessionListeners {
@@ -37,14 +38,16 @@ export interface SessionListeners {
 
 /** 文档会话（单例由 App.vue 持有） */
 export class DocumentSession {
-  /** 当前文件路径（undefined=未命名文档） */
-  currentPath: string | undefined;
+  /** 当前文件路径（未命名文档为空） */
+  currentPath?: string;
   /** 当前目录（侧栏数据源；打开文件时=父目录） */
-  currentDir: string | undefined;
+  currentDir?: string;
   /** 脏状态：内容未落盘为 true */
   dirty = false;
   /** 文档版本号（每次文档切换 +1，UI 层用作重建 key） */
   docVersion = 0;
+  /** 编辑纪元（每次 markDirty 递增；save 写盘完成后据此守卫 markSaved 竞态） */
+  private editEpoch = 0;
   /** 当前事件监听（最后一次 on() 覆盖） */
   private listeners: SessionListeners = {};
 
@@ -75,14 +78,15 @@ export class DocumentSession {
         path,
         name: basenameOf(path),
       });
-      // 启动恢复数据源（F14-2 恢复上次文件与文件夹）
-      void updateSettings({ launch: { lastFile: path, lastFolder: this.currentDir } }).catch(
-        () => undefined,
-      );
+      // 启动恢复数据源（F14-2 恢复上次文件与文件夹）；await 自身写回，
+      // 使启动期连续 openFolder/openFile 的偏好写回串行（F 修复：防读改写交错覆盖）
+      await updateSettings({
+        launch: { lastFile: path, lastFolder: this.currentDir },
+      }).catch(() => undefined);
       // 最近文件记录（AC-F13-1：打开文件进入列表首位）
       recordRecent(path);
-    } catch (e) {
-      const message = e instanceof FileIoError ? e.message : "打开文件失败";
+    } catch (error) {
+      const message = error instanceof FileIoError ? error.message : "打开文件失败";
       this.notify({ level: "error", message });
     }
   }
@@ -108,6 +112,8 @@ export class DocumentSession {
 
   /** 标记脏（markdownUpdated 到达时由 auto-save 调用；幂等广播） */
   markDirty(): void {
+    // 每次编辑递增纪元：save 写盘期间的新编辑以此识别（C 竞态守卫）
+    this.editEpoch += 1;
     if (!this.dirty) {
       this.dirty = true;
       this.listeners.onDirtyChange?.(true);
@@ -125,22 +131,35 @@ export class DocumentSession {
   /**
    * 保存当前文档（未命名文档返回 no-path 不写盘）
    * 成功：dirty 清除（AC-F30-4）；失败：dirty 保持 + 广播错误（AC-F30-5）
+   * 竞态守卫：保存期间文档切换则放弃写盘（B），写盘期间新编辑不清脏（C）
    */
   async save(): Promise<SaveOutcome> {
     if (!this.currentPath) {
       return { saved: false, reason: "no-path", message: "未命名文档无法写盘，请使用另存为" };
     }
+    // B 修复：快照保存目标与文档版本——await 期间文档可能被打开/新建/另存切换
+    const pathSnapshot = this.currentPath;
+    const versionSnapshot = this.docVersion;
+    // C 修复：快照编辑纪元——写盘期间的新编辑（markDirty 递增）不得被误标已保存
+    const epochSnapshot = this.editEpoch;
     // 偏好读取失败按默认 LF 回落（读设置失败不阻断保存链路）
-    const settings = await loadSettings().catch(() => null);
+    const settings = await loadSettings().catch(() => undefined);
+    // B 修复：await 后校验文档未切换，否则放弃写盘（防止内容落错文件）
+    if (this.currentPath !== pathSnapshot || this.docVersion !== versionSnapshot) {
+      const message = "保存期间文档已切换，本次写入已放弃";
+      this.notify({ level: "info", message });
+      return { saved: false, reason: "doc-switched", message };
+    }
     const lineEnding = settings?.defaultLineEnding ?? "lf";
     const body = editorManager.getMarkdown();
     const disk = toDiskContent(body, lineEnding);
     try {
-      await writeFile(this.currentPath, disk, lineEnding);
-      this.markSaved();
-      return { saved: true, path: this.currentPath };
-    } catch (e) {
-      const message = e instanceof FileIoError ? e.message : "写盘失败";
+      await writeFile(pathSnapshot, disk, lineEnding);
+      // C 修复：写盘期间无新编辑（纪元未变）才清脏——未落盘内容保留脏标记
+      if (this.editEpoch === epochSnapshot) this.markSaved();
+      return { saved: true, path: pathSnapshot };
+    } catch (error) {
+      const message = error instanceof FileIoError ? error.message : "写盘失败";
       this.notify({ level: "error", message });
       return { saved: false, reason: "io-error", message };
     }

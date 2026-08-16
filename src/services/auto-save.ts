@@ -58,11 +58,14 @@ export class AutoSaveController {
     this.idleTimer = setTimeout(() => void this.saveIfPossible(), IDLE_DEBOUNCE_MS);
   }
 
-  /** 防抖/定时到期统一入口：开关关闭时跳过（AC-F30-3） */
+  /** 防抖/定时到期统一入口：开关关闭时跳过（AC-F30-3）；干净文档不写盘（A 修复） */
   private async saveIfPossible(): Promise<void> {
     if (this.stopped) return;
-    const settings = await this.deps.getSettings().catch(() => null);
+    const settings = await this.deps.getSettings().catch(() => undefined);
     if (!settings?.autoSave.enabled) return;
+    // A 修复：定时兜底仅服务编辑场景（spec AC-F30-2 触发条件），
+    // 无编辑（dirty=false）不写盘——避免 5 分钟重写改写行尾/编码/尾换行
+    if (!this.deps.session.dirty) return;
     this.clearIdle();
     await this.deps.session.save();
     // 写盘后重置定时兜底（无论成败，避免连续失败轰炸）
@@ -73,7 +76,7 @@ export class AutoSaveController {
   private async refreshTimer(): Promise<void> {
     if (this.stopped) return;
     this.clearTimer();
-    const settings = await this.deps.getSettings().catch(() => null);
+    const settings = await this.deps.getSettings().catch(() => undefined);
     if (!settings?.autoSave.enabled) return;
     this.timer = setTimeout(
       () => void this.saveIfPossible(),

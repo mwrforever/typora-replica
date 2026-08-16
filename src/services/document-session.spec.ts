@@ -184,6 +184,24 @@ describe("文档会话（打开/保存/dirty）", () => {
     expect(session.currentPath).toBe("C:/docs/a.md");
   });
 
+  it("openFile 等待自身 updateSettings 完成后再继续（F 修复：启动期偏好写回串行）", async () => {
+    const session = new DocumentSession();
+    session.on({ onDocumentChange: () => undefined });
+    mockReadFile.mockResolvedValue({ content: "你好", encoding: "utf8", lineEnding: "lf" });
+    // 挂起 updateSettings：验证 openFile 等待其完成，避免与后续写回交错覆盖
+    let resolveUpdate!: () => void;
+    mockUpdateSettings.mockImplementation(
+      () => new Promise<void>((resolve) => (resolveUpdate = resolve)),
+    );
+    const opening = session.openFile("C:/docs/a.md");
+    // openFile 已发起 updateSettings（挂起）：recordRecent 必须尚未执行
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockRecord).not.toHaveBeenCalled();
+    resolveUpdate();
+    await opening;
+    expect(mockRecord).toHaveBeenCalledWith("C:/docs/a.md");
+  });
+
   it("save 偏好读取失败回落默认 LF 仍成功保存", async () => {
     const session = new DocumentSession();
     session.dirty = true;
@@ -262,5 +280,48 @@ describe("文档会话（打开/保存/dirty）", () => {
     const out = await session.saveAs("C:/docs/b.md");
     expect(out).toEqual({ saved: false, reason: "io-error", message: expect.any(String) });
     expect(mockRecord).not.toHaveBeenCalled();
+  });
+
+  it("save 进行中切换文档：放弃写盘不落错文件（B 修复）", async () => {
+    const session = new DocumentSession();
+    session.dirty = true;
+    session.currentPath = "C:/docs/a.md";
+    // 挂起 loadSettings：save 在 await 处等待（该窗口内文档可被切换）
+    let resolveLoad!: (v: { defaultLineEnding: string }) => void;
+    mockLoadSettings.mockImplementation(
+      () => new Promise<{ defaultLineEnding: string }>((resolve) => (resolveLoad = resolve)),
+    );
+    const saving = session.save();
+    // save 已进入 await loadSettings：此时打开 B（路径+版本变化、脏状态清除）
+    session.currentPath = "C:/docs/b.md";
+    session.dirty = false;
+    session.docVersion += 1;
+    resolveLoad({ defaultLineEnding: "lf" });
+    const out = await saving;
+    expect(out.saved).toBe(false);
+    expect(out.reason).toBe("doc-switched");
+    // 不得把 A 的内容写入 B
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
+  it("writeFile 进行中 markDirty：写盘完成后脏标记保留（C 修复）", async () => {
+    const session = new DocumentSession();
+    session.dirty = true;
+    session.currentPath = "C:/docs/a.md";
+    // 挂起 writeFile：模拟大文档/慢盘写盘耗时
+    let resolveWrite!: () => void;
+    mockWriteFile.mockImplementation(
+      () => new Promise<void>((resolve) => (resolveWrite = resolve)),
+    );
+    const saving = session.save();
+    // 等待 save 推进到 writeFile 挂起（loadSettings().catch() 链需多个微任务，
+    // 用宏任务确保其后执行），此后写盘进行中
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    session.markDirty();
+    resolveWrite();
+    const out = await saving;
+    // 旧内容已写盘成功，但新编辑未落盘 → 脏标记必须保留
+    expect(out).toEqual({ saved: true, path: "C:/docs/a.md" });
+    expect(session.dirty).toBe(true);
   });
 });
