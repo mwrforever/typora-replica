@@ -129,6 +129,13 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 03 核心 100%：文件树状态（目录加载/防抖刷新/面板切换/排序状态，F2-F12 共享）
+        "src/features/file-tree/file-tree-store.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },
