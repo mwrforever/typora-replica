@@ -45,6 +45,12 @@ pub fn duplicate_path(from: &Path, to: &Path) -> Result<(), String> {
     if to.exists() {
         return Err("目标已存在".to_string());
     }
+    // 目录内自复制防护：目标位于源内部时 copy_dir_recursive 会边复制边遍历到
+    // 新建的目标目录，层级指数增长直至路径超长中断，残留残缺树（BUG-3/P3-1）。
+    // 文件复制不会命中（文件路径无子级），词法前缀判断即可覆盖
+    if to.starts_with(from) {
+        return Err("目标不能位于源目录内部".to_string());
+    }
     if from.is_dir() {
         copy_dir_recursive(from, to)
     } else {
@@ -160,6 +166,21 @@ mod tests {
         duplicate_path(&src, &dst).unwrap();
         assert!(dst.join("inner").join("x.md").exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn duplicate_dir_into_self_rejected() {
+        // BUG-3/P3-1：目标位于源内部时递归复制会无限增长（层级指数扩张），必须拒绝
+        let dir = temp_dir();
+        let src = dir.join("sub");
+        fs::create_dir_all(src.join("inner")).unwrap();
+        fs::write(src.join("inner").join("x.md"), "x").unwrap();
+        let dst = src.join("sub copy"); // 目标在源内部（即使尚不存在）
+        assert!(duplicate_path(&src, &dst).is_err());
+        // 防护生效：源未被复制目录污染
+        assert!(!dst.exists());
+        assert_eq!(fs::read_dir(&src).unwrap().count(), 1);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

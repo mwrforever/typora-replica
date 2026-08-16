@@ -33,8 +33,12 @@ pub const SUPPORTED_TEXT_EXTENSIONS: [&str; 14] = [
 ];
 
 /// 目录遍历选项（03 文件树消费；字段缺省回落旧行为）
+///
+/// serde(default)：前端 ListDirOptions 全字段可选（TS 侧），任一字段缺省时
+/// 回落 Default 实现（目录优先 + 自然序 + 升序 + 不隐藏过滤）——缺标注会令
+/// 缺省字段在反序列化时被 missing field 拒绝，整树加载失败（BUG-4/P3-4）。
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct ListDirOptions {
     /// 扩展名白名单（多值；None=不过滤，优先级高于命令层 ext_filter）
     pub ext_filters: Option<Vec<String>>,
@@ -91,7 +95,19 @@ pub fn list_dir(
         !(e.depth() > 0 && name.starts_with('.') && e.file_type().is_dir())
     });
     for entry in walker {
-        let entry = entry.map_err(|e| format!("遍历目录失败: {e}"))?;
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                // 子目录不可读（ACL 受限）或条目在遍历期间被并发删除：跳过该分支
+                // 继续遍历，整体降级而非失败（BUG-17/P3-5——驱动器根/系统目录存在
+                // System Volume Information 等不可读目录，首错即中止会令整树加载失败）。
+                // 深度 0 的错误（根目录自身不可读）是根问题，不能静默跳过
+                if e.depth() == 0 {
+                    return Err(format!("遍历目录失败: {e}"));
+                }
+                continue;
+            }
+        };
         let path = entry.path();
         // 根自身不返回（调用方已有根引用）
         if path == root_abs {
@@ -382,6 +398,21 @@ mod tests {
         assert_eq!(entries[0].name, "new.md"); // 最近修改在前
         assert!(entries[0].mtime.is_some()); // 元数据已填充
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn list_dir_options_serde_missing_fields_fall_back_to_default() {
+        // BUG-4/P3-4：前端 opts 全可选，缺省字段必须回落 Default（missing field 拒绝即整树加载失败）
+        let opts: ListDirOptions = serde_json::from_str("{}").unwrap();
+        assert!(!opts.hide_hidden);
+        assert!(opts.group_folder_first); // 目录优先默认开（02 原语义）
+        assert_eq!(opts.sort_by, None);
+        assert_eq!(opts.direction, None);
+        // 部分字段传值 + 其余缺省：camelCase 映射与缺省回落共存
+        let partial: ListDirOptions =
+            serde_json::from_str(r#"{"groupFolderFirst": false}"#).unwrap();
+        assert!(!partial.group_folder_first);
+        assert!(!partial.hide_hidden);
     }
 
     #[test]
