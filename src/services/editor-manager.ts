@@ -34,18 +34,27 @@ class EditorManager {
   private transformers: DocumentTransformers = {};
   /** 当前文档的 Front Matter 内文（null 表示无 FM）；create/adopt 解析登记，getMarkdown 回写 */
   private currentFrontMatter: string | null = null;
+  /** markdownUpdated 订阅集合（destroy 不清理——重建后订阅继续生效） */
+  private markdownSubscribers = new Set<(markdown: string) => void>();
+  /** create 并发序号（01 终审裁决：create 并发重入无 in-flight 守卫，本次补上） */
+  private createSeq = 0;
 
   /**
    * 创建编辑器实例（销毁旧实例后创建新实例）
    * @param doc 原始文档内容（可含 Front Matter，由内建 E11 逻辑剥离后再经 transformers.parse）
    */
   async create(doc: string): Promise<void> {
+    // 并发守卫（01 终审裁决）：本次 create 与更新的 create 重叠时让位，
+    // 防止事件桥错挂到已废弃实例
+    const seq = ++this.createSeq;
     this.destroy();
     // 等待旧实例异步销毁完成，避免 teardown 与本次初始化重叠（Editor.destroy 为异步流程）
     if (this.pendingDestroy) {
       await this.pendingDestroy;
       this.pendingDestroy = undefined;
     }
+    // 守卫 1：等待销毁期间已被更新的 create 取代 → 让位不创建
+    if (seq !== this.createSeq) return;
     // 内建 Front Matter 剥离优先于外部 transformers（E11）：FM 不进文档树，仅内存暂存
     const { frontMatter, body: strippedBody } = parseFrontMatter(doc);
     this.currentFrontMatter = frontMatter;
@@ -56,7 +65,10 @@ class EditorManager {
     this.crepe = createMarkwellEditor(root, body);
     this.editor = this.crepe.editor;
     await this.crepe.create();
-    setupEditorEvents(this.crepe);
+    // 守卫 2：创建期间被更新的 create 取代（this.crepe 已被其 destroy 清空）→
+    // 不再挂事件桥（错挂 undefined 会崩溃）；实例销毁已由对方的 pendingDestroy 负责
+    if (seq !== this.createSeq) return;
+    setupEditorEvents(this.crepe, { onMarkdownUpdated: (md) => this.emitMarkdownUpdated(md) });
   }
 
   /**
@@ -73,7 +85,7 @@ class EditorManager {
     this.crepe = crepe;
     this.editor = crepe.editor;
     this.currentFrontMatter = frontMatter;
-    setupEditorEvents(crepe);
+    setupEditorEvents(crepe, { onMarkdownUpdated: (md) => this.emitMarkdownUpdated(md) });
   }
 
   /** 销毁当前实例并解除事件绑定 */
@@ -134,6 +146,26 @@ class EditorManager {
   /** 注册文档级转换器（E11 注入；传空对象还原透传） */
   setDocumentTransformers(transformers: DocumentTransformers): void {
     this.transformers = transformers;
+  }
+
+  /**
+   * 订阅 markdownUpdated 防抖事件（全链路 500ms：本层 300 + listener 内置 200）
+   *
+   * 02 自动保存/草稿心跳消费入口；回调每次触发携带全量 markdown（O(n) 序列化
+   * 已由事件桥在防抖窗口末端执行一次）。
+   * @param cb 回调（markdown 全文）
+   * @returns 取消订阅函数（幂等）
+   */
+  subscribeMarkdownUpdated(cb: (markdown: string) => void): () => void {
+    this.markdownSubscribers.add(cb);
+    return () => {
+      this.markdownSubscribers.delete(cb);
+    };
+  }
+
+  /** 分发 markdownUpdated 到订阅集合（事件桥回调） */
+  private emitMarkdownUpdated(markdown: string): void {
+    for (const cb of Array.from(this.markdownSubscribers)) cb(markdown);
   }
 }
 

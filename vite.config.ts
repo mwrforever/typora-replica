@@ -54,6 +54,81 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 02 核心服务 100%：文件 IO 桥（八命令注册/七封装 + 错误规范化）+ 偏好设置（store 持久化）
+        "src/services/file-io.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        "src/services/settings.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        // 02 核心服务 100%：行尾转换器（落盘统一口径——FM 盲区收口/硬换行往返）
+        "src/services/line-ending.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        // 02 核心服务 100%：文档会话（打开/保存/另存/dirty 状态机 + 父目录加载 + lastFile 持久化）
+        "src/services/document-session.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        // 02 核心服务 100%：打开/另存对话框命令层（12 菜单装配消费，F1）
+        "src/services/open-commands.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        // 02 核心服务 100%：最近文件（置顶去重/上限 10/固定项保留/失败移除，F13）
+        "src/services/recent-files.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        // 02 核心服务 100%：启动行为决策（--new 优先/四模式/回退新建提示，F14）
+        "src/services/launch-behavior.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        // 02 核心服务 100%：自动保存（停笔防抖 1s∪定时 5min 双条件/开关联动/dirty 协作，F30）
+        "src/services/auto-save.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        // 02 核心服务 100%：草稿备份与恢复（5s 心跳防抖/退出备份/首标题命名/空内容防护，F31）
+        "src/services/draft-recovery.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        // 02 核心 100%：Open Quickly 模糊匹配与数据源组装（大小写不敏感包含/排序/去重，F11）
+        "src/features/open-quickly/fuzzy.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        "src/features/open-quickly/open-quickly.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },

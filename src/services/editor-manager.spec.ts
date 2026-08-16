@@ -155,4 +155,75 @@ describe("编辑器实例管理", () => {
     expect(editorManager.getMarkdown()).toBe("---\ntitle: 测试\n---\n# 正文\n尾部标注");
     editorManager.setDocumentTransformers({});
   });
+
+  it("subscribeMarkdownUpdated：创建后事件桥分发，重建后订阅仍生效", async () => {
+    const received: string[] = [];
+    const unsubscribe = editorManager.subscribeMarkdownUpdated((md) => received.push(md));
+    await editorManager.create("初始");
+    // 触发 markdownUpdated（防抖 300ms + listener 内置 200ms = 500ms 全链路）
+    const view = editorManager.getView()!;
+    view.dispatch(view.state.tr.insertText("追加"));
+    await new Promise((r) => setTimeout(r, 600));
+    expect(received.length).toBeGreaterThan(0);
+    // 取消订阅后不再收到
+    unsubscribe();
+    view.dispatch(view.state.tr.insertText("再追加"));
+    const countAfterUnsub = received.length;
+    await new Promise((r) => setTimeout(r, 600));
+    expect(received.length).toBe(countAfterUnsub);
+    await editorManager.destroy();
+  });
+
+  it("create 并发让位：后发 create 生效，先发实例不挂载（in-flight 守卫）", async () => {
+    // 两次 create 不等待：第二个的 seq 使第一个让位（防事件桥错挂废弃实例）
+    const p1 = editorManager.create("第一份");
+    const p2 = editorManager.create("第二份");
+    await Promise.all([p1, p2]);
+    expect(editorManager.getMarkdown()).toBe("第二份");
+    await editorManager.destroy();
+  });
+
+  it("create 并发让位：等待销毁期间被更新的 create 取代则让位（销毁等待守卫）", async () => {
+    // 预置已创建实例：首次 create 的 destroy() 产生真实异步销毁（pendingDestroy 非空），
+    // 第二次 create 在其等待期间递增 seq——守卫 1 使先发 create 让位不创建
+    await editorManager.create("旧实例");
+    const p1 = editorManager.create("第一份");
+    const p2 = editorManager.create("第二份");
+    await Promise.all([p1, p2]);
+    expect(editorManager.getMarkdown()).toBe("第二份");
+    await editorManager.destroy();
+  });
+
+  it("create 并发让位：创建期间被更新的 create 取代则让位（事件桥守卫）", async () => {
+    // 先完成一次 create 清空 pendingDestroy 与残留销毁流程，使先发 create 直达创建阶段
+    await editorManager.create("占位");
+    const p1 = editorManager.create("第一份");
+    // MutationObserver 观察 body 子节点：p1 越过守卫 1 建出挂载根时即刻（微任务）唤醒——
+    // 不依赖定时器粒度，保证 p2 在 p1 仍 await crepe.create() 时递增 seq（守卫 2 让位）
+    const rootAppeared = new Promise<void>((resolve) => {
+      const observer = new MutationObserver(() => {
+        observer.disconnect();
+        resolve();
+      });
+      observer.observe(document.body, { childList: true });
+    });
+    await rootAppeared;
+    // 此刻 p1 正 await crepe.create()：p2 递增 seq 并销毁其 crepe——守卫 2 使 p1 让位不再挂事件桥
+    const p2 = editorManager.create("第二份");
+    await Promise.all([p1, p2]);
+    expect(editorManager.getMarkdown()).toBe("第二份");
+    await editorManager.destroy();
+  });
+
+  it("adopt 后 markdownUpdated 事件桥分发到订阅者（adopt 路径）", async () => {
+    const received: string[] = [];
+    const unsubscribe = editorManager.subscribeMarkdownUpdated((md) => received.push(md));
+    const test = await makeTestEditor("采用");
+    editorManager.adopt(test.crepe);
+    test.view.dispatch(test.view.state.tr.insertText("追加"));
+    await new Promise((r) => setTimeout(r, 600));
+    expect(received.length).toBeGreaterThan(0);
+    unsubscribe();
+    await editorManager.destroy();
+  });
 });
