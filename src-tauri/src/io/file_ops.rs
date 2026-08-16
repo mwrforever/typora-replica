@@ -108,6 +108,23 @@ mod tests {
     }
 
     #[test]
+    fn create_dir_creates_and_rejects_existing() {
+        let dir = temp_dir();
+        let p = dir.join("sub");
+        create_dir(&p).unwrap();
+        assert!(p.is_dir());
+        // 已存在报错
+        assert!(create_dir(&p).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn create_dir_missing_parent_rejected() {
+        let p = std::path::Path::new("Z:/no-such-dir-xyz/newdir");
+        assert!(create_dir(p).is_err());
+    }
+
+    #[test]
     fn create_dir_and_rename_roundtrip() {
         let dir = temp_dir();
         let src = dir.join("a.md");
@@ -146,6 +163,28 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_path_existing_target_rejected() {
+        let dir = temp_dir();
+        let src = dir.join("a.md");
+        std::fs::write(&src, "x").unwrap();
+        let dst = dir.join("b.md");
+        std::fs::write(&dst, "y").unwrap();
+        // 目标已存在报错（复制不做覆盖）
+        assert!(duplicate_path(&src, &dst).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rename_path_missing_source_rejected() {
+        let dir = temp_dir();
+        let src = dir.join("no-such.md");
+        let dst = dir.join("b.md");
+        // 源不存在：fs::rename 错误透传
+        assert!(rename_path(&src, &dst).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn delete_to_trash_moves_file_away() {
         let dir = temp_dir();
         let p = dir.join("trash-me.md");
@@ -153,6 +192,26 @@ mod tests {
         delete_to_trash(&p).unwrap();
         // trash crate 保证移入回收站：原路径不再存在（AC-F4-3）
         assert!(!p.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn delete_to_trash_removes_directory() {
+        let dir = temp_dir();
+        let p = dir.join("trash-dir");
+        std::fs::create_dir(&p).unwrap();
+        delete_to_trash(&p).unwrap();
+        // trash crate 保证移入回收站：原目录路径不再存在
+        assert!(!p.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn delete_to_trash_missing_path_rejected() {
+        let dir = temp_dir();
+        let p = dir.join("no-such.md");
+        // 路径不存在：trash 内部 canonicalize 失败透传
+        assert!(delete_to_trash(&p).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
