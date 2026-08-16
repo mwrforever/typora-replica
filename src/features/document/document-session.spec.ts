@@ -386,4 +386,49 @@ describe("文档会话（打开/保存/dirty）", () => {
     expect(out).toEqual({ saved: true, path: "C:/docs/a.md" });
     expect(session.dirty).toBe(true);
   });
+
+  // —— 04 多标签改造（Task 8）：serialize 注入 + restore（后台标签保存正确性）——
+
+  it("serialize 注入：保存内容来自注入器而非门面（04 后台标签保存正确性）", async () => {
+    const session = new DocumentSession({ serialize: () => "注入的B内容" });
+    session.on({});
+    // 直接登记后台标签路径后保存：内容必须来自本实例注入器
+    session.currentPath = "D:\\b.md";
+    mockWriteFile.mockResolvedValue(undefined);
+    await session.save();
+    expect(mockWriteFile).toHaveBeenCalledWith(
+      "D:\\b.md",
+      expect.stringContaining("注入的B内容"),
+      "lf",
+    );
+    // 注入器生效：门面序列化不得被调用（否则激活标签内容会写进后台文件）
+    expect(mockGetMarkdown).not.toHaveBeenCalled();
+  });
+
+  it("restore：登记路径/目录/脏状态并广播，不读盘不写偏好（04 重开脏快照）", async () => {
+    const session = new DocumentSession();
+    const docs: Array<{ content: string; path?: string; name: string }> = [];
+    session.on({ onDocumentChange: (d) => docs.push(d) });
+    session.restore("D:\\a\\b.md", "快照内容", "b.md", true);
+    expect(session.currentPath).toBe("D:\\a\\b.md");
+    // 父目录联动侧栏（与 openFile 语义一致）
+    expect(session.currentDir).toBe("D:\\a");
+    expect(session.dirty).toBe(true);
+    expect(session.docVersion).toBe(1);
+    expect(docs).toEqual([{ content: "快照内容", path: "D:\\a\\b.md", name: "b.md" }]);
+    // restore 只登记不读盘、不写偏好（重开快照路径不得触发 IO）
+    expect(mockReadFile).not.toHaveBeenCalled();
+    expect(mockUpdateSettings).not.toHaveBeenCalled();
+  });
+
+  it("restore 无路径时目录不登记、dirty 透传（LRU 未命名标签重建）", () => {
+    const session = new DocumentSession();
+    const docs: string[] = [];
+    session.on({ onDocumentChange: (d) => docs.push(d.content) });
+    session.restore(undefined, "未命名内容", "未命名", false);
+    expect(session.currentPath).toBeUndefined();
+    expect(session.currentDir).toBeUndefined();
+    expect(session.dirty).toBe(false);
+    expect(docs).toEqual(["未命名内容"]);
+  });
 });
