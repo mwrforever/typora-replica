@@ -1,7 +1,25 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "Capability for the main window（BUG-5 严格修复：自定义命令显式白名单——build.rs 声明 AppManifest.commands 后门禁生效，未引用命令被拒）",
   "windows": ["main"],
-  "permissions": ["core:default", "opener:default", "dialog:default", "store:default"]
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "dialog:default",
+    "store:default",
+    "allow-get-cli-args",
+    "allow-read-file",
+    "allow-write-file",
+    "allow-list-dir",
+    "allow-create-file",
+    "allow-create-dir",
+    "allow-rename-path",
+    "allow-duplicate-path",
+    "allow-delete-to-trash",
+    "allow-watch-dir",
+    "allow-save-draft",
+    "allow-list-drafts",
+    "allow-recover-draft"
+  ]
 }
