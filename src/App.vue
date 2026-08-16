@@ -86,8 +86,11 @@ onMounted(async () => {
       session.newDocument();
       break;
     case "open-file":
-      // F14-2：恢复上次文件与文件夹——文件夹先加载为侧栏目录
-      if (settings.launch.lastFolder) await session.openFolder(settings.launch.lastFolder);
+      // F14-2：restore-both 恢复上次文件夹为侧栏目录；--reopen-file 不恢复
+      // 文件夹（Q 修复：避免陈旧 lastFolder 置顶污染最近文件列表）
+      if (decision.restoreFolder && settings.launch.lastFolder) {
+        await session.openFolder(settings.launch.lastFolder);
+      }
       await session.openFile(decision.path);
       break;
   }

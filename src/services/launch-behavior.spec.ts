@@ -35,7 +35,8 @@ describe("启动行为决策（F14）", () => {
       },
     });
     const d = await resolveLaunch({ new: false }, s, existsAll);
-    expect(d).toEqual({ action: "open-file", path: "C:/docs/a.md" });
+    // restoreFolder=true：App 层需先恢复上次文件夹为侧栏目录（F14-2 语义）
+    expect(d).toEqual({ action: "open-file", path: "C:/docs/a.md", restoreFolder: true });
   });
 
   it("--new 覆盖设置：restore-folder 也新建（AC-F14-3）", async () => {
@@ -59,6 +60,21 @@ describe("启动行为决策（F14）", () => {
     const s = makeSettings();
     const d = await resolveLaunch({ new: false, reopenFile: "C:/x.md" }, s, existsAll);
     expect(d).toEqual({ action: "open-file", path: "C:/x.md" });
+  });
+
+  it("--reopen-file 不携带 restoreFolder（Q 修复：不恢复文件夹、不污染最近列表）", async () => {
+    // 即便设置模式为 restore-both，--reopen-file 也只打开指定文件
+    const s = makeSettings({
+      launch: {
+        mode: "restore-both",
+        customPath: "",
+        lastFolder: "C:/docs",
+        lastFile: "C:/docs/a.md",
+      },
+    });
+    const d = await resolveLaunch({ new: false, reopenFile: "C:/x.md" }, s, existsAll);
+    expect(d).toEqual({ action: "open-file", path: "C:/x.md" });
+    expect(d.restoreFolder).toBeUndefined();
   });
 
   it("--reopen-file 目标不存在回退新建并提示（AC-F1-3 异常路径：提示不崩溃）", async () => {
