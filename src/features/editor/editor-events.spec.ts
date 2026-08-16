@@ -1,7 +1,7 @@
 // 事件桥：markdownUpdated（防抖 300ms）/ updated（防抖 200ms）/ selectionUpdated（即时）
 // 跨模块接口（02 自动保存/05 大纲/11 统计消费），100% 覆盖
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { makeTestEditor } from "../test/editor-test-utils";
+import { makeTestEditor } from "../../test/editor-test-utils";
 import { attachEditorEvents, detachEditorEvents } from "./editor-events";
 
 describe("编辑器事件桥", () => {

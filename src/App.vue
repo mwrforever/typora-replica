@@ -15,10 +15,10 @@ import { normalizePath, relativeLinkPath } from "./features/file-tree/tree-utils
 import OpenQuicklyPanel from "./features/open-quickly/OpenQuicklyPanel.vue";
 import { buildQuickItems } from "./features/open-quickly/open-quickly";
 import type { QuickItem } from "./features/open-quickly/fuzzy";
-import { AutoSaveController } from "./services/auto-save";
-import { DraftRecovery } from "./services/draft-recovery";
-import { DocumentSession } from "./services/document-session";
-import { editorManager } from "./services/editor-manager";
+import { AutoSaveController } from "./features/document/auto-save";
+import { DraftRecovery } from "./features/document/draft-recovery";
+import { DocumentSession } from "./features/document/document-session";
+import { editorManager } from "./features/editor/editor-manager";
 import { getCliArgs, probePathExists } from "./services/file-io";
 import { resolveLaunch } from "./services/launch-behavior";
 import { openFolderDialog, saveAsDialog } from "./services/open-commands";
@@ -222,6 +222,7 @@ onBeforeUnmount(() => {
     @close="menu.visible = false"
     @refresh="fileTree.refresh"
     @open="handleMenuOpen"
+    @notice="(msg) => console.error('[MarkWell]', msg)"
   />
   <OpenQuicklyPanel
     v-if="quickOpenVisible"

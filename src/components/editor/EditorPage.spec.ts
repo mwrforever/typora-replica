@@ -1,7 +1,7 @@
 // EditorPage 挂载冒烟：MilkdownProvider 集成 + 初始文档渲染 + Front Matter 剥离
 import { render, waitFor } from "@testing-library/vue";
 import { describe, expect, it } from "vitest";
-import { editorManager } from "../../services/editor-manager";
+import { editorManager } from "../../features/editor/editor-manager";
 import EditorPage from "./EditorPage.vue";
 
 describe("EditorPage 编辑器宿主", () => {

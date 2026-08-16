@@ -11,10 +11,10 @@ const mockListDrafts = vi.fn();
 const mockRecoverDraft = vi.fn();
 const mockSubscribe = vi.fn();
 
-vi.mock("./editor-manager", () => ({
+vi.mock("../editor/editor-manager", () => ({
   editorManager: { getMarkdown: (...a: unknown[]) => mockGetMarkdown(...a) },
 }));
-vi.mock("./file-io", () => ({
+vi.mock("../../services/file-io", () => ({
   saveDraft: (...a: unknown[]) => mockSaveDraft(...a),
   listDrafts: (...a: unknown[]) => mockListDrafts(...a),
   recoverDraft: (...a: unknown[]) => mockRecoverDraft(...a),

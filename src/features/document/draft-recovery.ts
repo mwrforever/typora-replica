@@ -6,9 +6,9 @@
 // 留备份，AC-F31-4）；恢复入口为偏好面板按钮（10/12 装配 UI，本模块提供
 // listRecoverable/recover 命令层）；不自动弹恢复提示。
 // 命名：有路径用文件名；未命名文档用首标题/首句（extractDraftName）。
-import { editorManager } from "./editor-manager";
-import { listDrafts, recoverDraft, saveDraft } from "./file-io";
-import type { DraftEntry } from "./file-io";
+import { editorManager } from "../editor/editor-manager";
+import { listDrafts, recoverDraft, saveDraft } from "../../services/file-io";
+import type { DraftEntry } from "../../services/file-io";
 import type { DocumentSession } from "./document-session";
 
 /** 心跳间隔：编辑后 5s 写草稿（崩溃窗口 ≤ 5s + 事件防抖 500ms） */
