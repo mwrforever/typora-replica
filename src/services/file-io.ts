@@ -5,7 +5,7 @@
 // 命令名以 spec §5 锁定契约为准：草稿三命令在 Rust 侧经 #[tauri::command(rename = ...)]
 // 注册为 save_draft/list_drafts/recover_draft（函数名带 _cmd 后缀仅为 Rust 内部命名，
 // 不参与 wire 名）；get_cli_args 由 Task 13 注册，本封装先行就位。
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 
 /** 源文本编码（readFile 探测结果；保存一律 UTF-8 无 BOM） */
 export type TextEncoding = "utf8" | "utf8-bom" | "gbk";
@@ -32,6 +32,10 @@ export interface DirEntry {
   isDir: boolean;
   /** 扩展名（不含点） */
   ext: string;
+  /** 最后修改时间（unix 毫秒时间戳；03 文件树按 mtime 排序消费，02 不读取） */
+  mtime?: number;
+  /** 创建时间（unix 毫秒时间戳；03 文件树按 ctime 排序消费，02 不读取） */
+  ctime?: number;
 }
 
 /** 草稿条目 */
@@ -140,4 +144,63 @@ export async function probePathExists(path: string): Promise<boolean> {
       return false;
     }
   }
+}
+
+/** 目录遍历选项（03 文件树：白名单/隐藏/排序/Group by Folder；缺省回落 02 语义） */
+export interface ListDirOptions {
+  /** 扩展名白名单（多值；缺省不过滤） */
+  extFilters?: string[];
+  /** 隐藏条目（. 开头）过滤 */
+  hideHidden?: boolean;
+  /** 排序键：字母/自然序/修改时间/创建时间 */
+  sortBy?: "alpha" | "natural" | "mtime" | "ctime";
+  /** 排序方向 */
+  direction?: "asc" | "desc";
+  /** Group by Folder：目录优先（默认开） */
+  groupFolderFirst?: boolean;
+}
+
+/** 目录监视事件（watch_dir Channel 载荷） */
+export interface WatchEvent {
+  /** create / remove / modify / other */
+  kind: string;
+  /** 变更条目的完整路径 */
+  path: string;
+}
+
+/** 目录遍历（带过滤/排序选项；03 文件树数据源） */
+export function listDirDetailed(path: string, opts: ListDirOptions): Promise<DirEntry[]> {
+  return invokeOrThrow<DirEntry[]>("list_dir", { path, extFilter: null, opts });
+}
+
+/** 目录监视（Channel 事件流；再次调用替换旧监视——Rust 侧语义） */
+export function watchDir(path: string, onEvent: (ev: WatchEvent) => void): Promise<void> {
+  const channel = new Channel<WatchEvent>();
+  channel.onmessage = onEvent;
+  return invokeOrThrow<void>("watch_dir", { path, channel });
+}
+
+/** 新建文件（空内容） */
+export function createFile(path: string): Promise<void> {
+  return invokeOrThrow<void>("create_file", { path });
+}
+
+/** 新建文件夹 */
+export function createDir(path: string): Promise<void> {
+  return invokeOrThrow<void>("create_dir", { path });
+}
+
+/** 重命名（目标已存在报错） */
+export function renamePath(from: string, to: string): Promise<void> {
+  return invokeOrThrow<void>("rename_path", { from, to });
+}
+
+/** 复制（文件或目录，目标已存在报错） */
+export function duplicatePath(from: string, to: string): Promise<void> {
+  return invokeOrThrow<void>("duplicate_path", { from, to });
+}
+
+/** 删除到回收站（trash crate，非永久删除） */
+export function deleteToTrash(path: string): Promise<void> {
+  return invokeOrThrow<void>("delete_to_trash", { path });
 }

@@ -5,12 +5,18 @@
 // 对齐契约名（见 task-8-report 修复记录）。
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// 统一 mock invoke：每个用例可覆写行为（jsdom 无 Tauri 运行时，invoke 不可用）
+// 统一 mock invoke：每个用例可覆写行为（jsdom 无 Tauri 运行时，invoke 不可用）。
+// 03 起同时 mock Channel：watchDir 封装在实现侧执行 new Channel()，工厂若只给 invoke，
+// 构造器会取到 undefined 抛错；桩类提供可赋值的 onmessage 字段即可满足事件投递语义
+//（类型断言走真实 core.d.ts 声明，与运行时桩互不影响）。
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
+  Channel: class Channel<T> {
+    onmessage: ((ev: T) => void) | null = null;
+  },
 }));
 
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import {
   readFile,
   writeFile,
@@ -20,6 +26,13 @@ import {
   recoverDraft,
   getCliArgs,
   probePathExists,
+  createFile,
+  createDir,
+  renamePath,
+  duplicatePath,
+  deleteToTrash,
+  listDirDetailed,
+  watchDir,
   FileIoError,
 } from "./file-io";
 
@@ -135,5 +148,70 @@ describe("file-io 桥（Rust command 封装）", () => {
     mockInvoke.mockRejectedValueOnce("目录不存在或不可访问: 系统找不到指定的路径");
     mockInvoke.mockRejectedValueOnce("读取文件失败: 系统找不到指定的文件");
     await expect(probePathExists("C:/gone")).resolves.toBe(false);
+  });
+});
+
+// 沿用既有 mock invoke 模式（文件顶部 vi.mock 已存在则复用）。
+// 注：vitest 的 beforeEach 按 describe 作用域生效，上层 describe 的 reset 不覆盖本块，
+// 若不在此重置，watchDir 用例写入的 mockImplementation 会泄漏到后续用例导致断言串扰
+describe("03 文件树封装", () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+  });
+
+  it("listDirDetailed 透传 opts 且返回条目", async () => {
+    vi.mocked(invoke).mockResolvedValue([
+      { path: "C:/a.md", name: "a.md", isDir: false, ext: "md", mtime: 1, ctime: 1 },
+    ]);
+    const out = await listDirDetailed("C:/dir", {
+      extFilters: ["md"],
+      hideHidden: true,
+      sortBy: "mtime",
+      direction: "desc",
+      groupFolderFirst: true,
+    });
+    expect(invoke).toHaveBeenCalledWith("list_dir", {
+      path: "C:/dir",
+      extFilter: null,
+      opts: {
+        extFilters: ["md"],
+        hideHidden: true,
+        sortBy: "mtime",
+        direction: "desc",
+        groupFolderFirst: true,
+      },
+    });
+    expect(out[0].name).toBe("a.md");
+  });
+
+  it("watchDir 创建 Channel 并投递事件", async () => {
+    let handler: ((ev: unknown) => void) | undefined;
+    // args 声明为 unknown：tauri 的 InvokeArgs 联合含 Uint8Array/ArrayBuffer 等非 Record 形态，
+    // 直接标 Record<string, unknown> 在 strict 下不可赋值给 invoke 形参（TS2345），收窄后取 channel
+    vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {
+      expect(cmd).toBe("watch_dir");
+      handler = (args as { channel: Channel<unknown> }).channel.onmessage;
+      return undefined;
+    });
+    const events: string[] = [];
+    await watchDir("C:/dir", (ev) => events.push(ev.kind));
+    (handler as (ev: { kind: string; path: string }) => void)({
+      kind: "create",
+      path: "C:/dir/x.md",
+    });
+    expect(events).toEqual(["create"]);
+  });
+
+  it("五命令封装调用对应 command", async () => {
+    await createFile("C:/a.md");
+    expect(invoke).toHaveBeenCalledWith("create_file", { path: "C:/a.md" });
+    await createDir("C:/d");
+    expect(invoke).toHaveBeenCalledWith("create_dir", { path: "C:/d" });
+    await renamePath("C:/a.md", "C:/b.md");
+    expect(invoke).toHaveBeenCalledWith("rename_path", { from: "C:/a.md", to: "C:/b.md" });
+    await duplicatePath("C:/a.md", "C:/a copy.md");
+    expect(invoke).toHaveBeenCalledWith("duplicate_path", { from: "C:/a.md", to: "C:/a copy.md" });
+    await deleteToTrash("C:/a.md");
+    expect(invoke).toHaveBeenCalledWith("delete_to_trash", { path: "C:/a.md" });
   });
 });
