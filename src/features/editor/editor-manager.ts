@@ -94,7 +94,8 @@ class EditorManager {
     // 销毁路径不主动关闭会残留菜单 div 直至下一次任意点击（FIX-10）。幂等：无菜单时 no-op
     closeMermaidMenu();
     if (this.crepe) {
-      destroyEditorEvents();
+      // 定向解绑当前实例的事件桥（04 多标签：per-Crepe 清理，不影响其他实例）
+      destroyEditorEvents(this.crepe);
       // Editor.destroy 为异步流程（含插件清理）：登记 promise 供下次 create 串行等待，
       // 同步清空引用维持「destroy 后即为空态」的对外契约。
       // P1-1：milkdown #cleanup 用 Promise.all 聚合全部插件清理，任一插件 cleanup

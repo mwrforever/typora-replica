@@ -5,6 +5,9 @@
 //   markdownUpdated → 300ms（供 02 自动保存，全量序列化 O(n) 必须防抖）
 //   updated(doc)   → 200ms（供 05 大纲收集、11 字数统计）
 //   selectionUpdated → 即时（供 05 当前标题高亮、11 选中统计）
+//
+// 04 多标签：清理按 Crepe 实例定向（Map 键控），销毁任一实例只取消该实例的防抖，
+// 其余实例的注册与计时不受影响。
 import type { Crepe } from "@milkdown/crepe";
 import type { Node as ProseMirrorNode } from "@milkdown/kit/prose/model";
 import type { Selection } from "@milkdown/kit/prose/state";
@@ -19,8 +22,8 @@ export interface EditorEventCallbacks {
   onSelectionUpdated?: (selection: Selection) => void;
 }
 
-/** 当前挂载的取消函数（防抖计时器清理，内容可变但引用不变） */
-const detachFns: Array<() => void> = [];
+/** 各 Crepe 实例的取消函数清单（04 多标签：销毁一个实例不得取消其余实例的防抖） */
+const detachFnsByCrepe = new Map<Crepe, Array<() => void>>();
 
 /** 防抖包装：返回带取消能力的包装函数 */
 function debounce<T extends unknown[]>(fn: (...args: T) => void, wait: number) {
@@ -42,10 +45,14 @@ function debounce<T extends unknown[]>(fn: (...args: T) => void, wait: number) {
 
 /**
  * 将 Crepe listener 事件桥接到业务回调
- * @param crepe 目标 Crepe 实例
+ * @param crepe 目标 Crepe 实例（作为清理 Map 的键，定向解绑）
  * @param callbacks 回调集合
  */
 export function attachEditorEvents(crepe: Crepe, callbacks: EditorEventCallbacks): void {
+  // 先登记本实例的取消函数清单，再注入监听——底层 listener 无移除接口，
+  // 解绑统一走本清单（Map 按实例隔离，不跨实例取消）
+  const detachFns: Array<() => void> = [];
+  detachFnsByCrepe.set(crepe, detachFns);
   // 先行取出回调引用，避免防抖回调内二次空值检查（回调在 attach 时点确定）
   const { onMarkdownUpdated, onDocUpdated, onSelectionUpdated } = callbacks;
   crepe.on((listener) => {
@@ -60,14 +67,26 @@ export function attachEditorEvents(crepe: Crepe, callbacks: EditorEventCallbacks
       detachFns.push(() => debounced.cancel());
     }
     if (onSelectionUpdated) {
-      listener.selectionUpdated((_ctx, selection) => onSelectionUpdated(selection));
+      // O-8 修复：selectionUpdated 无防抖但 listener 无法解绑——登记取消标记，
+      // 与其余分支对称清理（多实例下残留监听会向已销毁实例的回调继续投递）
+      const cancelled = { value: false };
+      listener.selectionUpdated((_ctx, selection) => {
+        if (!cancelled.value) onSelectionUpdated(selection);
+      });
+      detachFns.push(() => {
+        cancelled.value = true;
+      });
     }
   });
 }
 
-/** 解绑事件桥（编辑器销毁时调用） */
-export function detachEditorEvents(): void {
-  for (const fn of detachFns.splice(0)) fn();
+/** 解绑指定实例的事件桥（编辑器销毁/门面切换时调用） */
+export function detachEditorEvents(crepe: Crepe): void {
+  const fns = detachFnsByCrepe.get(crepe);
+  if (fns) {
+    detachFnsByCrepe.delete(crepe);
+    for (const fn of fns) fn();
+  }
 }
 
 /** 编辑器实例生命周期内的事件桥入口（editor-manager 调用） */
@@ -76,6 +95,6 @@ export function setupEditorEvents(crepe: Crepe, callbacks: EditorEventCallbacks)
 }
 
 /** 编辑器实例销毁时的清理入口（editor-manager 调用） */
-export function destroyEditorEvents(): void {
-  detachEditorEvents();
+export function destroyEditorEvents(crepe: Crepe): void {
+  detachEditorEvents(crepe);
 }
