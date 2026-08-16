@@ -19,20 +19,25 @@ export async function buildQuickItems(
   const items: QuickItem[] = [];
   const seen = new Set<string>();
   // 最近文件优先（含固定项）
-  for (const r of recent) {
-    if (seen.has(r.path)) continue;
-    seen.add(r.path);
-    items.push({ path: r.path, label: basenameOf(r.path), kind: "file", pinned: r.pinned });
+  for (const recentItem of recent) {
+    if (seen.has(recentItem.path)) continue;
+    seen.add(recentItem.path);
+    items.push({
+      path: recentItem.path,
+      label: basenameOf(recentItem.path),
+      kind: "file",
+      pinned: recentItem.pinned,
+    });
   }
   // 当前目录递归 .md（跳过目录项）
   if (currentDir) {
     const entries = await listDir(currentDir, "md").catch(() => []);
-    for (const e of entries) {
-      if (e.isDir || seen.has(e.path)) continue;
-      seen.add(e.path);
+    for (const entry of entries) {
+      if (entry.isDir || seen.has(entry.path)) continue;
+      seen.add(entry.path);
       items.push({
-        path: e.path,
-        label: e.name.replace(/\.md$/i, ""),
+        path: entry.path,
+        label: entry.name.replace(/\.md$/i, ""),
         kind: "file",
         pinned: false,
       });

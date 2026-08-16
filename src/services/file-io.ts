@@ -71,8 +71,13 @@ async function invokeOrThrow<T>(command: string, args?: Record<string, unknown>)
   try {
     // 无参命令不传 args（避免 invoke 收到显式 undefined 第二参，mock 断言与真实调用均以单参为准）
     return await (args === undefined ? invoke<T>(command) : invoke<T>(command, args));
-  } catch (e) {
-    const message = typeof e === "string" ? e : e instanceof Error ? e.message : "未知文件 IO 错误";
+  } catch (error) {
+    const message =
+      typeof error === "string"
+        ? error
+        : error instanceof Error
+          ? error.message
+          : "未知文件 IO 错误";
     throw new FileIoError(message);
   }
 }

@@ -23,17 +23,23 @@ export interface QuickItem {
 export function searchQuickItems(query: string, items: QuickItem[]): QuickItem[] {
   const q = query.trim().toLowerCase();
   if (!q) return items;
-  const scored: Array<{ item: QuickItem; score: number }> = [];
+  // 命中位置（前缀=0 最优；排序层级依据）
+  const matched: Array<{ item: QuickItem; idx: number }> = [];
   for (const item of items) {
-    const label = item.label.toLowerCase();
-    const idx = label.indexOf(q);
+    const idx = item.label.toLowerCase().indexOf(q);
     if (idx === -1) continue;
-    // 分数：位置（前缀=0 优先）*10 + 名称长度（短优先）；固定项再降 5
-    let score = idx * 10 + label.length;
-    if (idx === 0) score -= 10;
-    if (item.pinned) score -= 5;
-    scored.push({ item, score });
+    matched.push({ item, idx });
   }
-  scored.sort((a, b) => a.score - b.score || a.item.label.localeCompare(b.item.label));
-  return scored.map((s) => s.item);
+  // 严格层级排序（头注释即契约）：前缀命中 > 名称长度短 > 固定项 > 字典序
+  matched.sort((left, right) => {
+    const leftPrefix = left.idx === 0 ? 1 : 0;
+    const rightPrefix = right.idx === 0 ? 1 : 0;
+    if (leftPrefix !== rightPrefix) return rightPrefix - leftPrefix;
+    if (left.item.label.length !== right.item.label.length) {
+      return left.item.label.length - right.item.label.length;
+    }
+    if (left.item.pinned !== right.item.pinned) return left.item.pinned ? -1 : 1;
+    return left.item.label.localeCompare(right.item.label);
+  });
+  return matched.map((entry) => entry.item);
 }

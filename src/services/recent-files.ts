@@ -43,9 +43,12 @@ export class RecentFiles {
    */
   async record(path: string): Promise<void> {
     const items = await this.list();
-    const existing = items.find((f) => f.path === path);
+    const existing = items.find((entry) => entry.path === path);
     const pinned = existing?.pinned ?? false;
-    const next = [{ path, pinned, openedAt: Date.now() }, ...items.filter((f) => f.path !== path)];
+    const next = [
+      { path, pinned, openedAt: Date.now() },
+      ...items.filter((entry) => entry.path !== path),
+    ];
     // 超限截断：简单保留前 MAX_RECENT 条（固定项优先截断策略留待 03 侧栏落地时用户拍板）
     const trimmed = next.slice(0, MAX_RECENT);
     await this.persist(trimmed);
@@ -54,19 +57,21 @@ export class RecentFiles {
   /** 切换固定标记（03/12 UI 入口调用；幂等） */
   async togglePin(path: string): Promise<void> {
     const items = await this.list();
-    const next = items.map((f) => (f.path === path ? { ...f, pinned: !f.pinned } : f));
+    const next = items.map((entry) =>
+      entry.path === path ? { ...entry, pinned: !entry.pinned } : entry,
+    );
     await this.persist(next);
   }
 
   /** 清除列表（固定项保留，AC-F13-3） */
   async clear(): Promise<void> {
     const items = await this.list();
-    await this.persist(items.filter((f) => f.pinned));
+    await this.persist(items.filter((entry) => entry.pinned));
   }
 
   /** 移除条目（打开失败时调用，AC-F13-4） */
   async remove(path: string): Promise<void> {
     const items = await this.list();
-    await this.persist(items.filter((f) => f.path !== path));
+    await this.persist(items.filter((entry) => entry.path !== path));
   }
 }

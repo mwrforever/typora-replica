@@ -38,6 +38,16 @@ describe("Open Quickly 模糊匹配（F11）", () => {
     expect(r.map((x) => x.path)).toEqual(["C:/x/ab.md", "C:/y/cb.md"]);
   });
 
+  it("前缀命中长名优先于非前缀固定短名（信号冲突：层级不穿越）", () => {
+    // book-very-long-name.md 前缀命中但名称长；ab.md 非前缀但固定且短——
+    // 前缀命中为最高层级，不得被长度/固定项加权反超
+    const r = searchQuickItems("b", [
+      item("C:/x/ab.md", { pinned: true }),
+      item("C:/x/book-very-long-name.md"),
+    ]);
+    expect(r.map((x) => x.path)).toEqual(["C:/x/book-very-long-name.md", "C:/x/ab.md"]);
+  });
+
   it("无匹配返回空数组（AC-F11-4）", () => {
     expect(searchQuickItems("zzz", items)).toEqual([]);
   });

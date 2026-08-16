@@ -20,7 +20,7 @@ export const HEARTBEAT_MS = 5000;
  * @returns 草稿文件名主体（Rust 侧再加日期前缀与 .md）
  */
 export function extractDraftName(md: string): string {
-  const firstLine = md.split(/\r?\n/).find((l) => l.trim().length > 0);
+  const firstLine = md.split(/\r?\n/).find((line) => line.trim().length > 0);
   if (!firstLine) return "未命名";
   const heading = /^#{1,6}\s+(.+)$/.exec(firstLine.trim());
   const base = heading ? heading[1] : firstLine.trim();
