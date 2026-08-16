@@ -103,7 +103,9 @@ export function duplicateTargetName(name: string, existingNames: string[]): stri
   const ext = dot > 0 ? name.slice(dot) : "";
   let candidate = `${base} copy${ext}`;
   let n = 1;
-  while (existingNames.includes(candidate)) {
+  // P3-9：Windows 文件系统大小写不敏感——冲突判断须大小写不敏感比较，
+  // 否则生成「目标已存在」被后端拒绝的名字（如已有 "A copy.md" 时算出 "a copy.md"）
+  while (existingNames.some((existing) => existing.toLowerCase() === candidate.toLowerCase())) {
     candidate = `${base} copy-${n}${ext}`;
     n += 1;
   }
@@ -113,9 +115,42 @@ export function duplicateTargetName(name: string, existingNames: string[]): stri
 /** Windows 非法文件名（AC-F4-5 前端预校验；Rust 命令侧双保险） */
 const INVALID_NAME_RE = /[\\/:*?"<>|]/;
 
-/** 文件名合法性：非空且不含非法字符 */
+/** Windows 保留设备名（不带扩展名；CON.txt 等带扩展名形态同样非法） */
+const WINDOWS_RESERVED_NAMES = new Set([
+  "CON",
+  "PRN",
+  "AUX",
+  "NUL",
+  "COM1",
+  "COM2",
+  "COM3",
+  "COM4",
+  "COM5",
+  "COM6",
+  "COM7",
+  "COM8",
+  "COM9",
+  "LPT1",
+  "LPT2",
+  "LPT3",
+  "LPT4",
+  "LPT5",
+  "LPT6",
+  "LPT7",
+  "LPT8",
+  "LPT9",
+]);
+
+/** 文件名合法性：非空且不含非法字符，并符合 Windows 文件系统语义（P3-9） */
 export function isInvalidFileName(name: string): boolean {
-  return name.trim() === "" || INVALID_NAME_RE.test(name);
+  if (name.trim() === "" || INVALID_NAME_RE.test(name)) return true;
+  // Windows 文件系统语义：`.`/`..`、尾点/尾空格、保留设备名均不可作为文件名——
+  // 修复前不拦截，后端报「目标已存在/创建失败」才暴露（UX 退化，双保险兜底）
+  if (name === "." || name === "..") return true;
+  if (/[. ]$/.test(name)) return true;
+  // 保留名按主名（首段）判断：CON / con.txt / NUL.any 均非法（大小写不敏感）
+  const base = name.split(".")[0]!.toUpperCase();
+  return WINDOWS_RESERVED_NAMES.has(base);
 }
 
 /**

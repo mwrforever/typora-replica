@@ -62,6 +62,30 @@ describe("tree-utils", () => {
     expect(isInvalidFileName("正常 文件.md")).toBe(false);
   });
 
+  it("isInvalidFileName 拒绝 Windows 语义非法名（P3-9）", () => {
+    // 相对路径项与尾点/尾空格（Windows 创建即失败或静默剥除）
+    expect(isInvalidFileName(".")).toBe(true);
+    expect(isInvalidFileName("..")).toBe(true);
+    expect(isInvalidFileName("a.md.")).toBe(true);
+    expect(isInvalidFileName("a.md ")).toBe(true);
+    // 保留设备名（大小写不敏感、含扩展名形态）
+    expect(isInvalidFileName("CON")).toBe(true);
+    expect(isInvalidFileName("con.txt")).toBe(true);
+    expect(isInvalidFileName("NUL.any")).toBe(true);
+    expect(isInvalidFileName("LPT1")).toBe(true);
+    expect(isInvalidFileName("com3.md")).toBe(true);
+    // 正常名不受影响
+    expect(isInvalidFileName("content.md")).toBe(false);
+    expect(isInvalidFileName("conn.md")).toBe(false); // 前缀近似保留名不误伤
+  });
+
+  it("duplicateTargetName 冲突判断大小写不敏感（P3-9 Windows 语义）", () => {
+    // 已存在 "A copy.md"（大小写不同）：不得生成被后端拒绝的 "a copy.md"
+    expect(duplicateTargetName("a.md", ["A copy.md"])).toBe("a copy-1.md");
+    expect(duplicateTargetName("a.md", ["A COPY.MD"])).toBe("a copy-1.md");
+    expect(duplicateTargetName("a.md", ["a copy.md", "A copy-1.md"])).toBe("a copy-2.md");
+  });
+
   it("relativeLinkPath 相对当前目录含扩展名", () => {
     expect(relativeLinkPath("C:/d/readme.md", "C:/d")).toBe("readme.md");
     expect(relativeLinkPath("C:/d/sub/x.md", "C:/d")).toBe("sub/x.md");

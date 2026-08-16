@@ -45,11 +45,16 @@ export const useFileTreeStore = defineStore("fileTree", {
     refreshTimer: undefined as ReturnType<typeof setTimeout> | undefined,
     /** watch 当前目录（避免重复订阅同一目录） */
     watchedDir: undefined as string | undefined,
+    /** loadDir 代次序号（P3-2：并发加载时后发起者胜出，过期结果丢弃） */
+    loadSeq: 0,
   }),
 
   actions: {
     /** 加载目录（F1-1/2：选择文件夹/打开文件父目录进入侧栏） */
     async loadDir(dir: string): Promise<void> {
+      // 代次守卫：本次请求序号——await 期间被更新的 loadDir 取代时让位，
+      // 防止「后完成者覆盖后发起者」导致 currentDir/tree 与编辑器目录漂移
+      const seq = ++this.loadSeq;
       this.loading = true;
       try {
         const entries = await listDirDetailed(dir, {
@@ -59,6 +64,8 @@ export const useFileTreeStore = defineStore("fileTree", {
           direction: this.direction,
           groupFolderFirst: this.groupFolderFirst,
         });
+        // 过期结果（等待期间已有更新的 loadDir）：丢弃，不覆盖新目录数据
+        if (seq !== this.loadSeq) return;
         // 拉取成功后才登记目录并更新数据：失败时保持旧目录/旧树一致，
         // 避免 currentDir 已指向新目录而 tree/entries 仍是旧数据的漂移态
         this.currentDir = dir;
@@ -67,11 +74,20 @@ export const useFileTreeStore = defineStore("fileTree", {
         // 目录切换后重新订阅监视（Rust 侧替换旧监视）；仅成功路径切换，
         // 失败不破坏旧目录的既有监视
         if (this.watchedDir !== dir) {
-          this.watchedDir = dir;
-          void watchDir(dir, () => this.scheduleRefresh());
+          try {
+            await watchDir(dir, () => this.scheduleRefresh());
+            // 订阅成功才登记 watchedDir；订阅期间被更新的 loadDir 取代
+            // 则不登记本代（防 watchedDir 漂移回旧目录）
+            if (seq === this.loadSeq) this.watchedDir = dir;
+          } catch {
+            // P3-3：watch_dir 拒绝（invoke 失败）时保持 watchedDir 旧值——
+            // 同目录下次 loadDir 会重试订阅（自愈），目录数据本身仍可用
+            // （仅自动刷新暂缺，不阻断加载链路）
+          }
         }
       } finally {
-        this.loading = false;
+        // 仅最新代复位 loading（过期代不得覆盖新代的加载中状态）
+        if (seq === this.loadSeq) this.loading = false;
       }
     },
 

@@ -8,6 +8,7 @@ import FileTreePanel from "./FileTreePanel.vue";
 import OutlinePanel from "./OutlinePanel.vue";
 import RecentLocationsPanel from "./RecentLocationsPanel.vue";
 import { useFileTreeStore, type PanelKey } from "./file-tree-store";
+import { createSearchEntry } from "./search-entry";
 
 const store = useFileTreeStore();
 
@@ -20,6 +21,22 @@ const panels: Array<{ key: PanelKey; label: string }> = [
 
 /** 底部 ⋯ 菜单开关 */
 const moreOpen = ref(false);
+
+/** 搜索框输入值（03 阶段仅占位收集，搜索逻辑归 06 模块消费） */
+const searchQuery = ref("");
+/** 搜索入口处理器（P3-7：AC-F12-1 侧栏搜索框 UI 落地，事件透传给 06） */
+const searchEntry = createSearchEntry();
+
+/** 输入变化：透传查询事件（06 消费） */
+function onSearchInput(event: Event): void {
+  searchQuery.value = (event.target as HTMLInputElement).value;
+  searchEntry.handleInput(searchQuery.value);
+}
+
+/** 提交（Enter）：透传当前查询（06 消费） */
+function onSearchSubmit(): void {
+  searchEntry.handleSubmit(searchQuery.value);
+}
 
 const emit = defineEmits<{
   "open-file": [path: string];
@@ -53,6 +70,24 @@ function onSort(by: "alpha" | "natural" | "mtime" | "ctime"): void {
 
 <template>
   <aside class="sidebar-panel" v-if="store.sidebarVisible">
+    <div v-if="store.searchVisible" class="sidebar-panel__search">
+      <input
+        v-model="searchQuery"
+        class="sidebar-panel__search-input"
+        placeholder="搜索当前目录…"
+        data-search-input
+        @input="onSearchInput"
+        @keydown.enter="onSearchSubmit"
+      />
+      <button
+        class="sidebar-panel__search-close"
+        title="关闭搜索框"
+        data-search-close
+        @click="store.hideSearch()"
+      >
+        ×
+      </button>
+    </div>
     <div class="sidebar-panel__tabs">
       <button
         v-for="p in panels"
@@ -118,6 +153,38 @@ function onSort(by: "alpha" | "natural" | "mtime" | "ctime"): void {
   display: flex;
   flex-shrink: 0;
   border-bottom: 1px solid var(--markwell-border, #ddd);
+}
+
+/* 全局搜索框（F12：侧栏顶部显示；03 阶段占位收集，06 接入搜索逻辑） */
+.sidebar-panel__search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--markwell-border, #ddd);
+}
+
+.sidebar-panel__search-input {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  font-size: 13px;
+  border: 1px solid var(--markwell-border, #ddd);
+  border-radius: 4px;
+  background: var(--markwell-surface, #fff);
+  color: var(--markwell-text, #333);
+}
+
+.sidebar-panel__search-close {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: none;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--markwell-text-dim, #888);
+  cursor: pointer;
 }
 
 .sidebar-panel__tab {

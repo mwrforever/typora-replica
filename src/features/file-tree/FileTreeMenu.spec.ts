@@ -200,23 +200,25 @@ describe("FileTreeMenu", () => {
     expect(wrapper.emitted("refresh")).toBeTruthy();
   });
 
-  it("Duplicate 失败：静默处理并仍请求刷新", async () => {
-    vi.mocked(fileIo.duplicatePath).mockRejectedValueOnce(new Error("io"));
+  it("Duplicate 失败：错误消息经 notice 透传并仍请求刷新（P3-8 不静默）", async () => {
+    vi.mocked(fileIo.duplicatePath).mockRejectedValueOnce(new Error("目标已存在"));
     const store = useFileTreeStore();
     store.entries = [];
     const wrapper = mount(FileTreeMenu, {
       props: { visible: true, x: 10, y: 10, targetPath: "C:/d/a.md" },
     });
     await wrapper.find('[data-menu="duplicate"]').trigger("click");
+    expect(wrapper.emitted("notice")?.[0]).toEqual(["目标已存在"]);
     expect(wrapper.emitted("refresh")).toBeTruthy();
   });
 
-  it("删除失败：静默处理并仍请求刷新", async () => {
-    vi.mocked(fileIo.deleteToTrash).mockRejectedValueOnce(new Error("io"));
+  it("删除失败：错误消息经 notice 透传并仍请求刷新（P3-8 不静默）", async () => {
+    vi.mocked(fileIo.deleteToTrash).mockRejectedValueOnce(new Error("文件被占用"));
     const wrapper = mount(FileTreeMenu, {
       props: { visible: true, x: 10, y: 10, targetPath: "C:/d/a.md" },
     });
     await wrapper.find('[data-menu="delete"]').trigger("click");
+    expect(wrapper.emitted("notice")?.[0]).toEqual(["文件被占用"]);
     expect(wrapper.emitted("refresh")).toBeTruthy();
   });
 

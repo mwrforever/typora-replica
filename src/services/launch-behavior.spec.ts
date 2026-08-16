@@ -112,4 +112,15 @@ describe("启动行为决策（F14）", () => {
     expect(d.action).toBe("new");
     expect(d.notice).toContain("不存在");
   });
+
+  it("未知 mode（settings 损坏）回落新建不崩溃（P3-6）", async () => {
+    // settings 文件被手改/损坏出现未知 mode：不得返回 undefined（App 层访问
+    // decision.notice 会抛 TypeError 白屏），须回落新建并携带提示
+    const s = makeSettings({
+      launch: { mode: "corrupt-mode" as never, customPath: "" },
+    });
+    const d = await resolveLaunch({ new: false }, s, existsAll);
+    expect(d.action).toBe("new");
+    expect(d.notice).toContain("未知启动模式");
+  });
 });

@@ -55,7 +55,8 @@ describe("fileTreeStore", () => {
   });
 
   it("watch 事件 300ms 防抖合并刷新", async () => {
-    let handler: ((ev: { kind: string; path: string }) => void) | undefined;
+    // Rust 侧按合并窗口批量回调（WatchEvent[]，BUG-14 契约）
+    let handler: ((evs: { kind: string; path: string }[]) => void) | undefined;
     vi.mocked(watchDir).mockImplementation(async (_p: string, cb) => {
       handler = cb;
     });
@@ -63,8 +64,8 @@ describe("fileTreeStore", () => {
     const store = useFileTreeStore();
     await store.loadDir("C:/d");
     expect(store.loading).toBe(false);
-    handler?.({ kind: "create", path: "C:/d/x.md" });
-    handler?.({ kind: "modify", path: "C:/d/x.md" }); // 防抖窗口内合并
+    handler?.([{ kind: "create", path: "C:/d/x.md" }]);
+    handler?.([{ kind: "modify", path: "C:/d/x.md" }]); // 防抖窗口内合并
     expect(listDirDetailed).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(300);
     expect(listDirDetailed).toHaveBeenCalledTimes(2); // 防抖后只重扫一次
@@ -147,5 +148,66 @@ describe("fileTreeStore", () => {
     expect(store.tree).toHaveLength(1); // 树保持旧数据
     expect(store.loading).toBe(false); // loading 恢复
     expect(watchDir).toHaveBeenCalledTimes(1); // 失败目录不建立监视
+  });
+
+  it("loadDir 并发：后发起者胜出，过期结果丢弃且只订阅胜出目录（P3-2 代次守卫）", async () => {
+    // 第一个 loadDir（A）挂起，第二个 loadDir（B）先完成——A 的过期结果必须被丢弃
+    let resolveA!: (v: { path: string; name: string; isDir: boolean; ext: string }[]) => void;
+    vi.mocked(listDirDetailed)
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveA = resolve)))
+      .mockResolvedValue([{ path: "C:/b/x.md", name: "x.md", isDir: false, ext: "md" }]);
+    const store = useFileTreeStore();
+    const pA = store.loadDir("C:/a");
+    const pB = store.loadDir("C:/b");
+    await pB; // B 完成：currentDir=B、订阅 B
+    expect(store.currentDir).toBe("C:/b");
+    // A 的 listDir 晚完成：代次守卫丢弃过期结果（不覆盖 B、不订阅 A）
+    resolveA([{ path: "C:/a/old.md", name: "old.md", isDir: false, ext: "md" }]);
+    await pA;
+    expect(store.currentDir).toBe("C:/b");
+    expect(store.tree.map((n) => n.path)).toEqual(["C:/b/x.md"]);
+    expect(store.loading).toBe(false);
+    expect(watchDir).toHaveBeenCalledTimes(1); // 仅胜出目录订阅一次
+    expect(watchDir).toHaveBeenCalledWith("C:/b", expect.any(Function));
+  });
+
+  it("watchDir 订阅失败：目录数据可用、watchedDir 不登记、下次同目录重试（P3-3 自愈）", async () => {
+    vi.mocked(listDirDetailed).mockResolvedValue([
+      { path: "C:/d/a.md", name: "a.md", isDir: false, ext: "md" },
+    ]);
+    vi.mocked(watchDir).mockRejectedValueOnce(new Error("注册监视目录失败"));
+    const store = useFileTreeStore();
+    await store.loadDir("C:/d");
+    // 订阅失败不阻断加载链路：currentDir/树已更新（仅自动刷新暂缺）
+    expect(store.currentDir).toBe("C:/d");
+    expect(store.tree).toHaveLength(1);
+    // 失败不登记 watchedDir：同目录再次 loadDir 会重试订阅（自愈，不永久静默失效）
+    expect(store.watchedDir).toBeUndefined();
+    await store.loadDir("C:/d");
+    expect(watchDir).toHaveBeenCalledTimes(2);
+    expect(store.watchedDir).toBe("C:/d");
+  });
+
+  it("watchDir 订阅期间被更新的 loadDir 取代：不登记过期代 watchedDir（P3-2 守卫延伸）", async () => {
+    // B 的订阅挂起期间 C 完成：B 的订阅结果不得把 watchedDir 漂移回旧目录
+    let resolveWatchB!: () => void;
+    vi.mocked(listDirDetailed)
+      .mockResolvedValueOnce([{ path: "C:/b/x.md", name: "x.md", isDir: false, ext: "md" }])
+      .mockResolvedValueOnce([{ path: "C:/c/y.md", name: "y.md", isDir: false, ext: "md" }]);
+    vi.mocked(watchDir)
+      .mockImplementationOnce(() => new Promise<void>((resolve) => (resolveWatchB = resolve)))
+      .mockResolvedValue(undefined);
+    const store = useFileTreeStore();
+    const pB = store.loadDir("C:/b");
+    await Promise.resolve(); // B 已发起订阅（挂起）
+    const pC = store.loadDir("C:/c");
+    await pC; // C 完成：watchedDir=C
+    expect(store.currentDir).toBe("C:/c");
+    expect(store.watchedDir).toBe("C:/c");
+    // B 的订阅晚完成：代次守卫阻止登记（watchedDir 保持 C）
+    resolveWatchB();
+    await pB;
+    expect(store.watchedDir).toBe("C:/c");
+    expect(watchDir).toHaveBeenCalledTimes(2);
   });
 });

@@ -84,4 +84,28 @@ describe("SidebarPanel", () => {
     await wrapper.vm.$nextTick();
     expect(wrapper.find(".sidebar-panel__recent").exists()).toBe(true);
   });
+
+  it("AC-F12-1 搜索框 UI：searchVisible 时侧栏顶部渲染输入框（P3-7）", async () => {
+    const store = useFileTreeStore();
+    store.showSearch();
+    const wrapper = mount(SidebarPanel);
+    expect(wrapper.find("[data-search-input]").exists()).toBe(true);
+    expect(wrapper.find("[data-search-input]").attributes("placeholder")).toContain("搜索");
+    // 关闭按钮 hideSearch：搜索框消失
+    await wrapper.find("[data-search-close]").trigger("click");
+    expect(store.searchVisible).toBe(false);
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find("[data-search-input]").exists()).toBe(false);
+  });
+
+  it("搜索框输入/回车透传查询事件（search-entry 装配，06 消费）", async () => {
+    const store = useFileTreeStore();
+    store.searchVisible = true;
+    const wrapper = mount(SidebarPanel);
+    const input = wrapper.find("[data-search-input]");
+    await input.setValue("foo");
+    await input.trigger("keydown", { key: "Enter" });
+    // 输入与提交均透传（search-entry 单测已锁定载荷形态；此处验证组件装配不抛错）
+    expect(input.element as HTMLInputElement).toHaveProperty("value", "foo");
+  });
 });

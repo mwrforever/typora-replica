@@ -31,6 +31,8 @@ const emit = defineEmits<{
   close: [];
   refresh: [];
   open: [path: string];
+  /** 操作失败提示（Rust 中文错误消息透传；P3-8：修复前失败零反馈） */
+  notice: [message: string];
 }>();
 
 const store = useFileTreeStore();
@@ -141,8 +143,10 @@ async function runDuplicate(): Promise<void> {
   const target = duplicateTargetName(name, collectSiblingNames());
   try {
     await duplicatePath(props.targetPath, `${dir}${target}`);
-  } catch {
-    /* 错误提示由父组件统一 onNotice（Rust 中文消息透传） */
+  } catch (error) {
+    // P3-8：失败不得静默——Rust 中文消息经 notice 透传给 App 层展示
+    //（修复前 catch 为空，注释声称「父组件统一 onNotice」但 App 无此通道，注释与事实相反）
+    emit("notice", error instanceof Error ? error.message : "复制失败");
   }
   emit("refresh");
 }
@@ -164,8 +168,9 @@ function collectSiblingNames(): string[] {
 async function runDelete(): Promise<void> {
   try {
     await deleteToTrash(props.targetPath);
-  } catch {
-    /* 错误提示父组件统一处理 */
+  } catch (error) {
+    // P3-8：删除失败同样经 notice 透传（不静默）
+    emit("notice", error instanceof Error ? error.message : "删除失败");
   }
   emit("refresh");
 }

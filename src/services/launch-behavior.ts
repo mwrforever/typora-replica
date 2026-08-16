@@ -61,5 +61,9 @@ export async function resolveLaunch(
       if (custom && (await exists(custom))) return { action: "open-folder", path: custom };
       return { action: "new", notice: "自定义文件夹已不存在，已新建文档" };
     }
+    // P3-6：settings 文件损坏/手改出未知 mode 时回落新建——修复前返回 undefined，
+    // App 层访问 decision.notice 抛 TypeError 启动白屏且无恢复路径
+    default:
+      return { action: "new", notice: "未知启动模式，已新建文档" };
   }
 }
