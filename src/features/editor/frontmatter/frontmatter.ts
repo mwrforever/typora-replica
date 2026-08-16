@@ -30,8 +30,10 @@ export function parseFrontMatter(md: string): { frontMatter: string | null; body
   // 分支①内文在捕获组 1；分支②（空 front matter）捕获组 1 为 undefined，统一取空串
   const inner = match[1] ?? "";
   if (!isValidFrontMatter(inner)) {
-    // 非法 YAML：不剥离、按原文保留并告警（AC-E11-4）
-    console.warn("[MarkWell] 文首 front matter YAML 非法，按原文保留：", inner.slice(0, 80));
+    // 非法 YAML：不剥离、按原文保留并告警（AC-E11-4）。
+    // P1-10：告警不输出内文内容——FM 可含 api_key 类敏感键值（AGENTS.md §8.2
+    // 日志禁止输出敏感信息）；修复前 inner.slice(0, 80) 把文档内容片段写入日志
+    console.warn("[MarkWell] 文首 front matter YAML 非法，按原文保留");
     return { frontMatter: null, body: md };
   }
   return { frontMatter: inner, body: md.slice(match[0].length) };

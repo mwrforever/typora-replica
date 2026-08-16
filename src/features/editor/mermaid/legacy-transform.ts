@@ -39,16 +39,24 @@ function transformLegacyFlow(content: string): string {
       // 交替匹配整体替换：已存在的 -->（其内部含 ->）优先整体命中，原样保留不被拆开。
       // 先占位保护合法连线形态：flowchart.js 的虚线 -.-> 与 mermaid 粗线 ==>（均内部含
       // -/>），若直接整体替换会把虚线补成非法语法 -.-->（转换后比转换前更糟）；占位为
-      // 私有区字符，与连接线内容无碰撞，替换完成后还原
+      // 私有区字符，与连接线内容无碰撞，替换完成后还原。
+      // P1-5：字面 U+E010/U+E011 先映射为第三/四占位——否则还原阶段被无条件
+      // 替换为 -.->/==>（内容含字面 PUA 字符时渲染失真，源文本代码块节点虽无损）
       const dashedArrow = "\uE010"; // 虚线 -.-> 占位
       const thickArrow = "\uE011"; // 粗线 ==> 占位
+      const literalDashed = "\uE012"; // 字面 U+E010 占位（还原时不被替换为 -.->）
+      const literalThick = "\uE013"; // 字面 U+E011 占位（还原时不被替换为 ==>）
       out.push(
         trimmed
+          .replace(/\uE010/g, literalDashed)
+          .replace(/\uE011/g, literalThick)
           .replace(/==>/g, thickArrow)
           .replace(/-.->/g, dashedArrow)
           .replace(/-->|->/g, "-->")
           .replace(/\uE010/g, "-.->")
-          .replace(/\uE011/g, "==>"),
+          .replace(/\uE011/g, "==>")
+          .replace(/\uE012/g, "\uE010")
+          .replace(/\uE013/g, "\uE011"),
       );
       continue;
     }

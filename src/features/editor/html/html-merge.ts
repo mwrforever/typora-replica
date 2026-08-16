@@ -23,6 +23,18 @@ const OPEN_TAG_RE = /^<([a-zA-Z][a-zA-Z0-9-]*)(?:\s[^<>]*)?>$/;
 const CLOSE_TAG_RE = /^<\/([a-zA-Z][a-zA-Z0-9-]*)\s*>$/;
 
 /**
+ * 文本节点内容转义（P1-3：合并值双重实体解码防护）
+ *
+ * mdast 的 text 节点值是已解码的实体（`&amp;lt;` → `&lt;`），而 html 节点
+ * value 是原始源码片段。把已解码文本直接拼入 html 原始值，渲染/重解析时
+ * 实体被二次解码（源文 `<span>a &amp;lt;b</span>` → 显示 `a <b`、落盘被改写）。
+ * 拼入前把文本中的 `&`/`<`/`>` 反转义为实体，保证合并值重解析后等价于原文。
+ */
+function escapeHtmlText(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
  * 尝试从 children[i] 处合并「开标签 + 纯文本 + 同名闭标签」三元组
  *
  * 仅当开标签后的首个非文本子节点为同名闭标签、且中间至少有一个文本节点时
@@ -53,7 +65,11 @@ function tryMergeAt(children: MdastNode[], i: number): { node: MdastNode; next: 
       // 同名闭标签且中间确有文本才合并；空元素（`<span></span>`）与
       // 不配对（`<b>文字</i>`）保持拆分形态，不吞并
       if (closeMatch && closeMatch[1].toLowerCase() === openMatch[1].toLowerCase() && text !== "") {
-        return { node: { type: "html", value: raw + text + child.value }, next: j + 1 };
+        // 已解码文本反转义后拼入 html 原始值（P1-3：防渲染/重解析二次解码）
+        return {
+          node: { type: "html", value: raw + escapeHtmlText(text) + child.value },
+          next: j + 1,
+        };
       }
     }
     // 非文本/非 html 节点（已解析的 markdown 标记）或闭标签不配对：阻断合并

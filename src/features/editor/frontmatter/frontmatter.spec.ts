@@ -69,6 +69,16 @@ describe("Front Matter 纯函数", () => {
     warn.mockRestore();
   });
 
+  it("P1-10 告警不输出文档内文（FM 可含敏感键值，AGENTS.md §8.2）", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // 非法 FM（括号未闭合）且内文含疑似敏感键值：告警不得携带内文片段
+    const md = "---\napi_key: [secret-value-123\n---\n# 正文";
+    parseFrontMatter(md);
+    // 修复前 console.warn 携带 inner.slice(0, 80)（文档内容片段）；修复后仅固定文案
+    expect(warn).toHaveBeenCalledWith("[MarkWell] 文首 front matter YAML 非法，按原文保留");
+    warn.mockRestore();
+  });
+
   it("readFrontMatterKey 读取 Typora 专有属性", () => {
     const fm = "title: 测试\ntypora-root-url: ./assets\n";
     expect(readFrontMatterKey(fm, "typora-root-url")).toBe("./assets");

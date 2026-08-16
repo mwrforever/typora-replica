@@ -63,4 +63,19 @@ describe("E20 HTML/媒体", () => {
     // 未合并的 `<b>` 仍以空标签形态渲染（文字在标签外）
     expect(te.view.dom.querySelector("b")).not.toBeNull();
   });
+
+  it("P1-3 行内 HTML 合并文本含实体：只解码一次、落盘原文保留", async () => {
+    // 修复前：text 节点已解码（`&lt;`），拼入 html 原始值后渲染/重解析二次解码——
+    // 显示 `a <b`（应为字面 `a &lt;b`）且落盘被改写为 `<span>a &lt;b</span>`
+    const source = "<span>a &amp;lt;b</span>";
+    const te = await makeTestEditor(source);
+    // 渲染：实体只解码一次（内容 span 的文本为字面 `a &lt;b`，`<` 不生效为标签）
+    const content = te.view.dom.querySelector("span > span");
+    expect(content?.textContent).toBe("a &lt;b");
+    // 落盘：与原文逐字一致（无二次解码改写）
+    expect(te.getMarkdown()).toBe(source);
+    // 普通文本合并不受影响（无实体时输出与输入一致）
+    const plain = await makeTestEditor("<span>普通文字</span>");
+    expect(plain.getMarkdown()).toBe("<span>普通文字</span>");
+  });
 });

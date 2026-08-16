@@ -56,6 +56,19 @@ describe("legacy 图表语法转换", () => {
     expect(out).not.toContain("--->");
   });
 
+  it("P1-5 字面 U+E010/U+E011 不被哨兵还原替换（字面 PUA 渲染失真防护）", () => {
+    // 修复前：连接线内容中的字面 U+E010/U+E011 被无条件替换为 -.->/==>（渲染失真）
+    const out = transformLegacyDiagram("flow", "a\uE010b->c\uE011d");
+    // 字面 PUA 字符原样保留
+    expect(out).toContain("a\uE010b-->c\uE011d");
+    // 单横线转换不受影响（同时验证占位还原与箭头映射互不干扰）
+    expect(out).not.toContain("-.->");
+    expect(out).not.toContain("==>");
+    // 与真实虚线/粗线混排：字面与语法占位各自还原
+    const mixed = transformLegacyDiagram("flow", "x\uE010y-.->z\uE011w==>v");
+    expect(mixed).toContain("x\uE010y-.->z\uE011w==>v");
+  });
+
   it("legacy flow 的 condition 节点映射为菱形、inputoutput 映射为圆角矩形", () => {
     const out = transformLegacyDiagram("flow", "cond=>condition: 判断\nio=>inputoutput: 输入输出");
     expect(out).toContain("cond{判断}");
