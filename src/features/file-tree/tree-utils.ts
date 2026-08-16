@@ -23,6 +23,22 @@ export const SUPPORTED_TEXT_EXTENSIONS: string[] = [
   "mdx",
 ];
 
+/**
+ * 路径归一化：反斜杠 → 正斜杠，并剥离 Windows verbatim 前缀（\\?\ 或 //?/）。
+ *
+ * Rust 侧 DirEntry.path 为 canonicalize 后的 verbatim 形态（如 \\?\C:\d\readme.md），
+ * 树节点 path（菜单 targetPath 来源）经 buildTree 归一为正斜杠且无前缀——
+ * entries 与 targetPath 比较前必须同时归一分隔符与前缀，否则 Windows 下
+ * 菜单「打开」目录判断、Duplicate 冲突判断、「文件→父目录」解析恒失效
+ * （C-1/C-2/I-1，E2E 实测暴露）。App.vue 与 FileTreeMenu.vue 共用本函数，
+ * 避免两处各自实现的行为漂移。
+ * @param path 原始路径（Windows 反斜杠或正斜杠形态，可带 verbatim 前缀）
+ * @returns 正斜杠分隔、无 verbatim 前缀的路径
+ */
+export function normalizePath(path: string): string {
+  return path.replace(/\\/g, "/").replace(/^\/\/\?\/?/, "");
+}
+
 /** 树节点（buildTree 产物；children 为空数组表示叶子） */
 export interface TreeNode {
   /** 完整路径（打开/拖拽/菜单动作统一用，与 DirEntry.path 同源） */

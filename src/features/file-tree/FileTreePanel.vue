@@ -7,10 +7,9 @@ import { useFileTreeStore } from "./file-tree-store";
 
 const store = useFileTreeStore();
 
-/** 事件：打开文件 / 打开文件夹 / 请求右键菜单（SidebarPanel 统一渲染菜单） */
+/** 事件：打开文件 / 请求右键菜单（SidebarPanel 统一渲染菜单） */
 const emit = defineEmits<{
   "open-file": [path: string];
-  "open-folder": [path: string];
   "request-menu": [payload: { path: string; x: number; y: number }];
 }>();
 
@@ -26,9 +25,9 @@ function onOpenFile(path: string): void {
 }
 
 /** 右键空白区域：记录坐标请求根目录菜单（子节点右键已自带 path，见 onItemRequestMenu） */
-function onContextMenu(event: MouseEvent, path?: string): void {
+function onContextMenu(event: MouseEvent): void {
   event.preventDefault();
-  emit("request-menu", { path: path ?? "", x: event.clientX, y: event.clientY });
+  emit("request-menu", { path: "", x: event.clientX, y: event.clientY });
 }
 
 /** 子节点右键请求：payload 已含 path 与坐标，原样透传（F3 契约） */

@@ -109,7 +109,7 @@ export const useFileTreeStore = defineStore("fileTree", {
       void this.refresh();
     },
 
-    /** 展开/折叠目录（递归节点切换） */
+    /** 展开/折叠目录（仅切换该 relPath 节点的展开状态，非递归） */
     toggleExpand(path: string): void {
       if (this.expandedPaths.has(path)) this.expandedPaths.delete(path);
       else this.expandedPaths.add(path);

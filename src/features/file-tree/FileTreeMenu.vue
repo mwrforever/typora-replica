@@ -2,7 +2,7 @@
      打开/新建文件/新建文件夹/重命名/Duplicate/删除（回收站）/复制路径/
      在资源管理器中显示/搜索/最近位置 + 新窗口打开与撤销文件操作（延后 disabled）。
      新建与重命名走内联输入：Enter 确认、Esc 取消、非法字符提示（AC-F4-1/5）。
-     定位：fixed 坐标（右键事件 clientX/Y 透传），visible 由父组件（SidebarPanel）控制。 -->
+     定位：fixed 坐标（右键事件 clientX/Y 透传），visible 由父组件（App.vue）控制。 -->
 <script setup lang="ts">
 import { nextTick, ref } from "vue";
 import {
@@ -13,7 +13,7 @@ import {
   renamePath,
 } from "../../services/file-io";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { duplicateTargetName, isInvalidFileName } from "./tree-utils";
+import { duplicateTargetName, isInvalidFileName, normalizePath } from "./tree-utils";
 import { useFileTreeStore } from "./file-tree-store";
 
 const props = defineProps<{
@@ -47,17 +47,6 @@ const inlineInput = ref<HTMLInputElement | null>(null);
 /** 路径最后分隔符下标（/ 或 \\，兼容 Windows；无分隔符返回 -1） */
 function lastSepIndex(path: string): number {
   return Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
-}
-
-/**
- * 路径归一化：反斜杠 → 正斜杠，并剥离 Windows verbatim 前缀（\\?\）。
- * Rust 侧 DirEntry.path 为 canonicalize 后的 verbatim 形态（如 \\?\C:\d\readme.md），
- * 树节点 path（targetPath 来源）经 buildTree 归一为正斜杠且无前缀——
- * entries 比较前必须同时归一分隔符与前缀，否则 Windows 下 Duplicate
- * 冲突判断与"文件→父目录"解析恒失效（C-1/C-2，E2E 实测暴露）。
- */
-function normalizePath(path: string): string {
-  return path.replace(/\\/g, "/").replace(/^\/\/\?\/?/, "");
 }
 
 /** 目标路径的父目录（含尾分隔符；无分隔符返回空串） */

@@ -3,6 +3,7 @@ import {
   buildTree,
   duplicateTargetName,
   isInvalidFileName,
+  normalizePath,
   relativeLinkPath,
   SUPPORTED_TEXT_EXTENSIONS,
 } from "./tree-utils";
@@ -65,6 +66,18 @@ describe("tree-utils", () => {
     expect(relativeLinkPath("C:/d/readme.md", "C:/d")).toBe("readme.md");
     expect(relativeLinkPath("C:/d/sub/x.md", "C:/d")).toBe("sub/x.md");
     expect(relativeLinkPath("C:/d/sub", "C:/d")).toBe("sub");
+  });
+
+  it("normalizePath 剥离 Windows verbatim 前缀并归一为正斜杠", () => {
+    // verbatim 反斜杠形态（Rust canonicalize 产物，I-1 根因）
+    expect(normalizePath("\\\\?\\C:\\d\\a.md")).toBe("C:/d/a.md");
+    // verbatim 正斜杠形态
+    expect(normalizePath("//?/C:/d/a.md")).toBe("C:/d/a.md");
+    // 普通正斜杠形态不变
+    expect(normalizePath("C:/d/a.md")).toBe("C:/d/a.md");
+    // UNC verbatim（\\?\UNC\srv\share）：剥离后如实为 UNC/srv/share
+    // （既有正则语义只剥 //?/ 前缀、不保留 UNC 双斜杠，如实记录现状）
+    expect(normalizePath("\\\\?\\UNC\\srv\\share")).toBe("UNC/srv/share");
   });
 
   // 补充用例：基准目录之外回退完整路径、等于基准目录返回空串（覆盖 100% 阈值分支）

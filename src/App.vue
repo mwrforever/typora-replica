@@ -11,7 +11,7 @@ import SidebarPanel from "./features/file-tree/SidebarPanel.vue";
 import { registerFileTreeShortcuts } from "./features/file-tree/file-tree-shortcuts";
 import { useFileTreeStore } from "./features/file-tree/file-tree-store";
 import { RecentLocations } from "./features/file-tree/recent-locations";
-import { relativeLinkPath } from "./features/file-tree/tree-utils";
+import { normalizePath, relativeLinkPath } from "./features/file-tree/tree-utils";
 import OpenQuicklyPanel from "./features/open-quickly/OpenQuicklyPanel.vue";
 import { buildQuickItems } from "./features/open-quickly/open-quickly";
 import type { QuickItem } from "./features/open-quickly/fuzzy";
@@ -97,17 +97,9 @@ async function handleOpenFile(path: string): Promise<void> {
 }
 
 /**
- * 路径分隔符归一：反斜杠 → 正斜杠。
- * entries.path 为 Rust 反斜杠形态，菜单 targetPath 来自树节点（正斜杠），
- * 比较前必须归一（与 FileTreeMenu 的 C-2 教训同款），否则 Windows 下目录
- * 「打开」动作恒落入文件分支。
- */
-function normalizePath(path: string): string {
-  return path.replace(/\\/g, "/");
-}
-
-/**
  * 右键菜单「打开」动作（F4）：文件 → handleOpenFile；目录 → 展开/折叠。
+ * entries 比较前经公共 normalizePath 归一（分隔符 + Windows verbatim 前缀，
+ * I-1：Rust 侧 entry.path 带 \\?\ 前缀，剥离后目录判断才能命中）。
  * 展开键取 entry.name——Rust 侧 name 即根相对 / 分隔路径（= 树节点 relPath），
  * 与 store.toggleExpand/expandedPaths 的 relPath 契约一致；03 阶段目录打开
  * 简化为展开语义（12 窗口外壳可扩展为进入目录）。
