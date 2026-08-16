@@ -11,6 +11,10 @@ use tauri::Manager;
 use crate::io::atomic::assert_safe_path;
 use crate::io::commands::WatchEvent;
 
+/// 事件合并窗口：窗口内累积事件、超时批量投递（防事件洪泛打满 IPC，BUG-14）。
+/// 前端 watch 消费为 300ms 防抖重扫，100ms 窗口对其透明
+const MERGE_WINDOW: std::time::Duration = std::time::Duration::from_millis(100);
+
 /// 建立递归目录监视（纯函数，事件经回调投递）
 ///
 /// @param root 监视根目录（必须存在）
@@ -25,8 +29,15 @@ where
     // 闭包 move 捕获后原值不可再用，clone 一份供闭包过滤路径、原值用于注册监视
     let watch_root = root_owned.clone();
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-        // 单条事件错误（如文件被锁）跳过，不终止监视
-        let Ok(event) = res else { return };
+        let event = match res {
+            Ok(event) => event,
+            // 单条事件错误（文件被锁/路径被删）跳过不终止监视；记录错误供排查——
+            // 修复前静默吞掉，监视死亡无感知（BUG-13）
+            Err(err) => {
+                eprintln!("[MarkWell] 目录监视事件错误: {err}");
+                return;
+            }
+        };
         let kind = match event.kind {
             EventKind::Create(_) => "create",
             EventKind::Remove(_) => "remove",
@@ -51,20 +62,56 @@ where
     Ok(watcher)
 }
 
-/// 命令：目录监视（Channel 事件流，句柄入 AppState 持活）
+/// 事件合并循环：窗口内累积事件，超时或 mpsc 断开（监视被替换）时批量投递，
+/// 断开前 flush 残余事件后退出（纯函数，供单测与命令层复用）
+///
+/// @param rx 事件接收端（watch 回调投递；断开即退出）
+/// @param send 批量投递回调（如 tauri Channel）
+fn flush_loop(rx: std::sync::mpsc::Receiver<WatchEvent>, send: impl Fn(Vec<WatchEvent>)) {
+    let mut pending: Vec<WatchEvent> = Vec::new();
+    loop {
+        match rx.recv_timeout(MERGE_WINDOW) {
+            Ok(ev) => pending.push(ev),
+            // 窗口到点：批量投递累积事件（空则继续等待）
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                if !pending.is_empty() {
+                    send(std::mem::take(&mut pending));
+                }
+            }
+            // 发送端断开（watcher 被替换/销毁）：投递残余后退出线程
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                if !pending.is_empty() {
+                    send(std::mem::take(&mut pending));
+                }
+                break;
+            }
+        }
+    }
+}
+
+/// 命令：目录监视（Channel 批量事件流，句柄入 AppState 持活）
 ///
 /// @param path 监视根目录
-/// @param channel 前端 Channel（事件持续推送；再次调用替换旧监视）
+/// @param channel 前端 Channel（事件按 100ms 合并窗口批量投递；再次调用替换旧监视）
 #[tauri::command]
 pub fn watch_dir(
     app: tauri::AppHandle,
     path: String,
-    channel: tauri::ipc::Channel<WatchEvent>,
+    channel: tauri::ipc::Channel<Vec<WatchEvent>>,
 ) -> Result<(), String> {
+    // 事件先经 mpsc 汇集，后台线程按合并窗口批量投递——逐事件 channel.send 在
+    // 事件洪泛（node_modules 安装/git checkout）时每事件一次 IPC、无背压（BUG-14）
+    let (tx, rx) = std::sync::mpsc::channel::<WatchEvent>();
     let watcher = watch_dir_inner(std::path::Path::new(&path), move |ev| {
-        // Channel 发送失败（前端已销毁）忽略：监视继续直到被替换
-        let _ = channel.send(ev);
+        // 合并器已断开（监视被替换、线程退出）后忽略
+        let _ = tx.send(ev);
     })?;
+    std::thread::spawn(move || {
+        flush_loop(rx, move |batch| {
+            // Channel 发送失败（前端已销毁）忽略：监视继续直到被替换
+            let _ = channel.send(batch);
+        });
+    });
     // State 为临时值，须先 let 绑定再取锁，否则锁借用随临时值析构而失效（E0716）
     let state = app.state::<crate::AppState>();
     let mut guard = state
@@ -134,5 +181,50 @@ mod tests {
     #[test]
     fn missing_root_rejected() {
         assert!(watch_dir_inner(std::path::Path::new("Z:/no-such-dir-xyz"), |_| {}).is_err());
+    }
+
+    #[test]
+    fn flush_loop_batches_events_and_flushes_on_disconnect() {
+        // BUG-14：合并循环须把窗口内事件聚合成批次投递（防逐事件 IPC 洪泛），
+        // 且发送端断开时 flush 残余事件
+        let (tx, rx) = mpsc::channel::<WatchEvent>();
+        let batches: std::sync::Mutex<Vec<Vec<WatchEvent>>> = std::sync::Mutex::new(Vec::new());
+        let batches_ref = std::sync::Arc::new(batches);
+        let batches_arc = batches_ref.clone();
+        let thread = std::thread::spawn(move || {
+            flush_loop(rx, move |batch| {
+                batches_arc.lock().unwrap().push(batch);
+            });
+        });
+        let ev = |kind: &str, path: &str| WatchEvent {
+            kind: kind.to_string(),
+            path: path.to_string(),
+        };
+        tx.send(ev("create", "C:/d/a.md")).unwrap();
+        tx.send(ev("modify", "C:/d/b.md")).unwrap();
+        // 断开（监视被替换）：残余事件 flush 后线程退出
+        drop(tx);
+        thread.join().unwrap();
+        let all: Vec<Vec<WatchEvent>> = batches_ref.lock().unwrap().clone();
+        assert_eq!(all.len(), 1, "窗口内事件应合并为单批次投递");
+        assert_eq!(all[0].len(), 2);
+        assert_eq!(all[0][0].path, "C:/d/a.md");
+        assert_eq!(all[0][1].path, "C:/d/b.md");
+    }
+
+    #[test]
+    fn flush_loop_empty_disconnect_exits_without_send() {
+        let (tx, rx) = mpsc::channel::<WatchEvent>();
+        drop(tx); // 立即断开：无事件时线程须直接退出、不产生空批次投递
+        let sends = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sends_arc = sends.clone();
+        std::thread::spawn(move || {
+            flush_loop(rx, move |_| {
+                sends_arc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            });
+        })
+        .join()
+        .unwrap();
+        assert_eq!(sends.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 }

@@ -160,7 +160,7 @@ export interface ListDirOptions {
   groupFolderFirst?: boolean;
 }
 
-/** 目录监视事件（watch_dir Channel 载荷） */
+/** 目录监视事件（watch_dir Channel 载荷；Rust 侧按 100ms 合并窗口批量投递） */
 export interface WatchEvent {
   /** create / remove / modify / other */
   kind: string;
@@ -173,9 +173,9 @@ export function listDirDetailed(path: string, opts: ListDirOptions): Promise<Dir
   return invokeOrThrow<DirEntry[]>("list_dir", { path, extFilter: null, opts });
 }
 
-/** 目录监视（Channel 事件流；再次调用替换旧监视——Rust 侧语义） */
-export function watchDir(path: string, onEvent: (ev: WatchEvent) => void): Promise<void> {
-  const channel = new Channel<WatchEvent>();
+/** 目录监视（Channel 事件流；Rust 侧按合并窗口批量回调——事件洪泛时降 IPC 次数） */
+export function watchDir(path: string, onEvent: (evs: WatchEvent[]) => void): Promise<void> {
+  const channel = new Channel<WatchEvent[]>();
   channel.onmessage = onEvent;
   return invokeOrThrow<void>("watch_dir", { path, channel });
 }

@@ -184,7 +184,7 @@ describe("03 文件树封装", () => {
     expect(out[0].name).toBe("a.md");
   });
 
-  it("watchDir 创建 Channel 并投递事件", async () => {
+  it("watchDir 创建 Channel 并投递批量事件（Rust 合并窗口契约）", async () => {
     let handler: ((ev: unknown) => void) | undefined;
     // args 声明为 unknown：tauri 的 InvokeArgs 联合含 Uint8Array/ArrayBuffer 等非 Record 形态，
     // 直接标 Record<string, unknown> 在 strict 下不可赋值给 invoke 形参（TS2345），收窄后取 channel
@@ -194,12 +194,12 @@ describe("03 文件树封装", () => {
       return undefined;
     });
     const events: string[] = [];
-    await watchDir("C:/dir", (ev) => events.push(ev.kind));
-    (handler as (ev: { kind: string; path: string }) => void)({
-      kind: "create",
-      path: "C:/dir/x.md",
-    });
-    expect(events).toEqual(["create"]);
+    await watchDir("C:/dir", (evs) => events.push(...evs.map((ev) => ev.kind)));
+    (handler as (ev: { kind: string; path: string }[]) => void)([
+      { kind: "create", path: "C:/dir/x.md" },
+      { kind: "modify", path: "C:/dir/y.md" },
+    ]);
+    expect(events).toEqual(["create", "modify"]);
   });
 
   it("五命令封装调用对应 command", async () => {

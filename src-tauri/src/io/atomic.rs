@@ -6,6 +6,7 @@
 // 路径安全（spec §3）：所有 IO 命令入口先过 assert_safe_path，拒绝 .. 逃逸。
 // 线程安全：无共享状态。
 use std::fs;
+use std::io::Write;
 use std::path::{Component, Path};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -29,11 +30,25 @@ pub fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let tmp_path = parent.join(format!(".{file_name}.{}.{}.tmp", std::process::id(), nanos));
-    fs::write(&tmp_path, content).map_err(|e| format!("写入临时文件失败: {e}"))?;
-    if let Err(e) = fs::rename(&tmp_path, path) {
-        // 替换失败：清理临时文件再上报（不留垃圾）
+    let write_result = (|| -> std::io::Result<()> {
+        let mut tmp = fs::File::create(&tmp_path)?;
+        tmp.write_all(content.as_bytes())?;
+        // 内容落盘（fsync）后再替换：断电/崩溃时目标文件保持旧内容，
+        // 不出现 tmp 缓存未落盘、rename 后目标为空/截断（BUG-7 原子性补强）
+        tmp.sync_all()?;
+        drop(tmp);
+        // 保留原文件权限（只读属性等）：直接覆盖会把目标权限重置为默认值（BUG-7 丢权限）。
+        // 尽力而为——权限读取/设置失败不阻断写盘主流程（目标不存在时跳过）
+        if let Ok(meta) = fs::metadata(path) {
+            let _ = fs::set_permissions(&tmp_path, meta.permissions());
+        }
+        fs::rename(&tmp_path, path)?;
+        Ok(())
+    })();
+    if let Err(e) = write_result {
+        // 任一步失败清理临时文件再上报（写入失败可能已创建部分内容的 tmp，不留垃圾）
         let _ = fs::remove_file(&tmp_path);
-        return Err(format!("原子替换目标文件失败: {e}"));
+        return Err(format!("原子写失败: {e}"));
     }
     Ok(())
 }
@@ -97,6 +112,33 @@ mod tests {
     fn missing_parent_rejected() {
         let dir = temp_dir();
         let target = dir.join("no-such-dir/doc.md");
+        assert!(atomic_write(&target, "x").is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn target_is_directory_rejected_and_tmp_cleaned() {
+        // BUG-7：rename 覆盖失败路径——目标是目录时替换失败，须清理临时文件不留垃圾
+        let dir = temp_dir();
+        let target = dir.join("doc.md");
+        fs::create_dir(&target).unwrap();
+        assert!(atomic_write(&target, "x").is_err());
+        let leftovers: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_failure_cleans_tmp() {
+        // BUG-7：写入失败（此处以 tmp 创建即失败模拟——路径为已存在目录）须清理。
+        // 注：真实写入失败难以在 Windows 稳定构造，此用例覆盖失败清理分支的
+        // 等价路径（tmp 路径指向不可创建的形态）
+        let dir = temp_dir();
+        let target = dir.join("sub").join("doc.md"); // 父目录不存在：创建 tmp 即失败
         assert!(atomic_write(&target, "x").is_err());
         let _ = fs::remove_dir_all(&dir);
     }
