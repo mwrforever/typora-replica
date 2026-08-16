@@ -122,6 +122,17 @@ describe("fileTreeStore", () => {
     expect(store.direction).toBe("asc");
   });
 
+  // 简报 Task 12 用例逐字：全局搜索入口（F12）行为锁定——搜索框显示 + 侧栏隐藏时展开 + Outline 面板自动切文件树
+  it("showSearch 展开侧栏并切到文件树面板（AC-F12-1/2/3）", () => {
+    const store = useFileTreeStore();
+    store.toggleSidebar(); // 先隐藏侧栏
+    store.switchPanel("outline"); // 再切到大纲面板
+    store.showSearch();
+    expect(store.sidebarVisible).toBe(true); // 侧栏隐藏时展开（AC-F12-3）
+    expect(store.activePanel).toBe("tree"); // Outline 面板自动切文件树（AC-F12-2）
+    expect(store.searchVisible).toBe(true); // 搜索框显示（AC-F12-1）
+  });
+
   // 补充用例：loadDir 失败路径——保持旧目录/旧树一致、不切换监视（Task 4 审查修复 2）
   it("loadDir 失败时保持旧目录/旧树一致且不建立新目录监视", async () => {
     vi.mocked(listDirDetailed)
