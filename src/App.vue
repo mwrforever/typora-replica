@@ -4,6 +4,7 @@
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import EditorPage from "./components/editor/EditorPage.vue";
+import { useFileTreeStore } from "./features/file-tree/file-tree-store";
 import OpenQuicklyPanel from "./features/open-quickly/OpenQuicklyPanel.vue";
 import { buildQuickItems } from "./features/open-quickly/open-quickly";
 import type { QuickItem } from "./features/open-quickly/fuzzy";
@@ -94,6 +95,11 @@ onMounted(async () => {
       await session.openFile(decision.path);
       break;
   }
+  // 启动决策落地后（open-folder/open-file 分支），同步 fileTreeStore.loadDir(session.currentDir)
+  // ——侧栏数据源与文档目录一致（session.openFolder/openFile 只登记 currentDir，
+  // 树数据由 store 独立拉取并订阅 watchDir 自动刷新；12 窗口外壳可替换此接线）
+  const fileTree = useFileTreeStore();
+  if (session.currentDir) await fileTree.loadDir(session.currentDir);
   autoSave.start();
   drafts.start((cb) => editorManager.subscribeMarkdownUpdated(cb));
   drafts.setupExitBackup(async (onCloseHandler) => {

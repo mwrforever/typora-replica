@@ -70,6 +70,21 @@ describe("fileTreeStore", () => {
     expect(listDirDetailed).toHaveBeenCalledTimes(2); // 防抖后只重扫一次
   });
 
+  // AC-F5-3：手动 Refresh 兜底——绕过防抖窗口强制重扫当前目录，
+  // watch 事件流之外的用户显式操作路径（简报 Task 9 用例逐字）
+  it("手动 refresh 强制重扫（AC-F5-3）", async () => {
+    vi.mocked(listDirDetailed).mockResolvedValue([]);
+    const store = useFileTreeStore();
+    await store.loadDir("C:/d");
+    // 外部目录变更（如手动保存新文件）后 mock 返回值变化，refresh 应拉取最新数据
+    vi.mocked(listDirDetailed).mockResolvedValue([
+      { path: "C:/d/new.md", name: "new.md", isDir: false, ext: "md" },
+    ]);
+    await store.refresh();
+    expect(store.tree).toHaveLength(1);
+    expect(listDirDetailed).toHaveBeenCalledTimes(2);
+  });
+
   it("toggleSidebar/switchPanel/setSort 状态变更", () => {
     const store = useFileTreeStore();
     expect(store.sidebarVisible).toBe(true);
