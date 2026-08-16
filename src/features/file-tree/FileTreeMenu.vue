@@ -50,13 +50,14 @@ function lastSepIndex(path: string): number {
 }
 
 /**
- * 路径归一化：反斜杠 → 正斜杠。
- * Rust 侧 DirEntry.path 为反斜杠形态（如 C:\d\readme.md），树节点 path
- * （targetPath 来源）经 buildTree 归一为正斜杠——entries 比较前必须归一，
- * 否则 Windows 下 Duplicate 冲突判断与"文件→父目录"解析恒失效（C-1/C-2）。
+ * 路径归一化：反斜杠 → 正斜杠，并剥离 Windows verbatim 前缀（\\?\）。
+ * Rust 侧 DirEntry.path 为 canonicalize 后的 verbatim 形态（如 \\?\C:\d\readme.md），
+ * 树节点 path（targetPath 来源）经 buildTree 归一为正斜杠且无前缀——
+ * entries 比较前必须同时归一分隔符与前缀，否则 Windows 下 Duplicate
+ * 冲突判断与"文件→父目录"解析恒失效（C-1/C-2，E2E 实测暴露）。
  */
 function normalizePath(path: string): string {
-  return path.replace(/\\/g, "/");
+  return path.replace(/\\/g, "/").replace(/^\/\/\?\/?/, "");
 }
 
 /** 目标路径的父目录（含尾分隔符；无分隔符返回空串） */

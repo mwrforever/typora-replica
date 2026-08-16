@@ -254,4 +254,32 @@ describe("FileTreeMenu", () => {
     // 归一匹配后判定 a.md 为文件 → 新建目标是其父目录 C:/d/（C-2）
     expect(fileIo.createFile).toHaveBeenCalledWith("C:/d/new.md");
   });
+
+  it("Duplicate 冲突判断兼容 Rust verbatim 前缀 entries（\\?\\ 形态回归）", async () => {
+    const store = useFileTreeStore();
+    store.entries = [
+      { path: "\\\\?\\C:\\d\\readme.md", name: "readme.md", isDir: false, ext: "md" },
+      { path: "\\\\?\\C:\\d\\readme copy.md", name: "readme copy.md", isDir: false, ext: "md" },
+    ];
+    const wrapper = mount(FileTreeMenu, {
+      props: { visible: true, x: 10, y: 10, targetPath: "C:/d/readme.md" },
+    });
+    await wrapper.find('[data-menu="duplicate"]').trigger("click");
+    // entries 带 \\?\ 前缀（Windows canonicalize 产物）、targetPath 无前缀：
+    // 剥离前缀后仍须识别冲突并递增 -1（C-1，E2E 实测暴露）
+    expect(fileIo.duplicatePath).toHaveBeenCalledWith("C:/d/readme.md", "C:/d/readme copy-1.md");
+  });
+
+  it("右键文件新建：verbatim 前缀 entries 下仍取父目录而非文件自身（\\?\\ 形态回归）", async () => {
+    const store = useFileTreeStore();
+    store.entries = [{ path: "\\\\?\\C:\\d\\a.md", name: "a.md", isDir: false, ext: "md" }];
+    const wrapper = mount(FileTreeMenu, {
+      props: { visible: true, x: 10, y: 10, targetPath: "C:/d/a.md" },
+    });
+    await wrapper.find('[data-menu="new-file"]').trigger("click");
+    await wrapper.find(".file-tree-menu__inline input").setValue("new.md");
+    await wrapper.find(".file-tree-menu__inline input").trigger("keydown", { key: "Enter" });
+    // 归一剥离 \\?\ 后判定 a.md 为文件 → 新建目标是其父目录 C:/d/（C-2）
+    expect(fileIo.createFile).toHaveBeenCalledWith("C:/d/new.md");
+  });
 });
