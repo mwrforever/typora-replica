@@ -396,4 +396,45 @@ mod tests {
         );
         let _ = fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn sort_by_ctime_asc_and_metadata_present() {
+        let dir = temp_dir();
+        fs::write(dir.join("old.md"), "").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        fs::write(dir.join("new.md"), "").unwrap();
+        let opts = ListDirOptions {
+            ext_filters: None,
+            hide_hidden: false,
+            sort_by: Some("ctime".into()),
+            direction: Some("asc".into()),
+            group_folder_first: true,
+        };
+        let entries = list_dir(&dir, None, Some(&opts)).unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        // 创建时间升序：先创建者在前
+        assert_eq!(names, vec!["old.md", "new.md"]);
+        assert!(entries[0].ctime.is_some()); // 创建时间元数据已填充
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hidden_dir_pruned_from_traversal() {
+        let dir = temp_dir();
+        fs::create_dir_all(dir.join(".hdir")).unwrap();
+        fs::write(dir.join(".hdir").join("ok.md"), "").unwrap();
+        fs::write(dir.join("ok.md"), "").unwrap();
+        let opts = ListDirOptions {
+            ext_filters: Some(vec!["md".into()]),
+            hide_hidden: true,
+            sort_by: None,
+            direction: None,
+            group_folder_first: true,
+        };
+        let entries = list_dir(&dir, None, Some(&opts)).unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        // 隐藏目录在遍历层剪枝：.hdir 及其内部 ok.md 均不出现，普通 ok.md 正常
+        assert_eq!(names, vec!["ok.md"]);
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
