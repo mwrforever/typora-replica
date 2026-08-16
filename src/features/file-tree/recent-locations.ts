@@ -3,7 +3,8 @@
 // 与 02 RecentFiles 区分：本服务仅记录「打开过的文件夹」（F9 语义），
 // 独立 store 键 recentLocations；02 RecentFiles 同时记录文件与文件夹
 // （Open Quickly/Open Recent 消费），两套并存不互相干扰。
-// 规则：上限 10（自定）；去重置顶；固定项（Pin）不被新记录挤出（AC-F9-2/4）。
+// 规则：上限 10（自定）；去重置顶；固定项（Pin）置顶且不被新记录挤出
+// （AC-F9-2/4：溢出时固定项不占配额恒保留，非固定项截断）。
 import { load } from "@tauri-apps/plugin-store";
 
 /** 最近位置条目 */
@@ -31,21 +32,36 @@ export class RecentLocations {
     return Array.isArray(raw) ? (raw as RecentLocation[]) : [];
   }
 
-  /** 记录打开文件夹：去重置顶 + 超限截断（固定项保留，AC-F9-2/4） */
+  /** 记录打开文件夹：去重置顶 + 超限截断（固定项恒保留不占配额，AC-F9-2/4） */
   async record(path: string): Promise<void> {
     const items = await this.list();
     const existing = items.find((f) => f.path === path);
     const pinned = existing?.pinned ?? false;
+    // 新记录/再次打开置顶（固定项再次打开回到固定区顶部，去重置顶语义）
     const next = [{ path, pinned, openedAt: Date.now() }, ...items.filter((f) => f.path !== path)];
-    const trimmed = next.slice(0, MAX_RECENT_LOCATIONS);
+    // 固定区在前（按固定顺序，即固定动作先后）；非固定项仅保留 MAX - 固定项数：
+    // 固定项不占配额，固定项数量达上限时非固定项全挤出（AC-F9-4「固定项除外」）
+    const pinnedItems = next.filter((f) => f.pinned);
+    const unpinnedItems = next
+      .filter((f) => !f.pinned)
+      .slice(0, MAX_RECENT_LOCATIONS - pinnedItems.length);
     const store = await load(STORE_FILE, { autoSave: true });
-    await store.set(KEY, trimmed);
+    await store.set(KEY, [...pinnedItems, ...unpinnedItems]);
   }
 
-  /** 切换固定标记（hover Pin 按钮，AC-F9-2） */
+  /**
+   * 切换固定标记（hover Pin 按钮，AC-F9-2）
+   * 固定 → 移固定区顶部（「其置顶」）；取消固定 → 移列表尾部（非固定区末端，
+   * 后续再次打开会按去重置顶回到前端）。条目不存在（如损坏存量残留）时为空操作。
+   */
   async togglePin(path: string): Promise<void> {
     const items = await this.list();
-    const next = items.map((f) => (f.path === path ? { ...f, pinned: !f.pinned } : f));
+    const target = items.find((f) => f.path === path);
+    if (!target) return;
+    const rest = items.filter((f) => f.path !== path);
+    const next = target.pinned
+      ? [...rest, { ...target, pinned: false }]
+      : [{ ...target, pinned: true }, ...rest];
     const store = await load(STORE_FILE, { autoSave: true });
     await store.set(KEY, next);
   }

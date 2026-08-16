@@ -64,6 +64,45 @@ describe("RecentLocations", () => {
     expect(list.find((l) => l.path === "C:/a")?.pinned).toBe(false);
   });
 
+  it("togglePin 固定中部条目后置顶，取消固定移至尾部（AC-F9-2）", async () => {
+    mockStore();
+    const svc = new RecentLocations();
+    await svc.record("C:/a");
+    await svc.record("C:/b");
+    await svc.record("C:/c");
+    await svc.togglePin("C:/b"); // 中部条目固定 → 固定区顶部（置顶）
+    let list = await svc.list();
+    expect(list.map((l) => l.path)).toEqual(["C:/b", "C:/c", "C:/a"]);
+    expect(list[0]).toMatchObject({ path: "C:/b", pinned: true });
+    await svc.togglePin("C:/b"); // 取消固定 → 移列表尾部
+    list = await svc.list();
+    expect(list.map((l) => l.path)).toEqual(["C:/c", "C:/a", "C:/b"]);
+    expect(list.every((l) => !l.pinned)).toBe(true);
+  });
+
+  it("togglePin 不存在的路径为空操作（列表不变）", async () => {
+    mockStore();
+    const svc = new RecentLocations();
+    await svc.record("C:/a");
+    await svc.togglePin("C:/missing");
+    const list = await svc.list();
+    expect(list).toHaveLength(1);
+    expect(list[0].pinned).toBe(false);
+  });
+
+  it("溢出时固定项不被挤出且置顶，非固定项截断（AC-F9-4）", async () => {
+    mockStore();
+    const svc = new RecentLocations();
+    for (let i = 1; i <= 10; i++) await svc.record(`C:/dir${i}`);
+    await svc.togglePin("C:/dir1"); // 固定最旧条目
+    await svc.record("C:/dir11"); // 打开第 11 个
+    const list = await svc.list();
+    expect(list[0]).toMatchObject({ path: "C:/dir1", pinned: true }); // 固定项置顶
+    expect(list.some((l) => l.path === "C:/dir1")).toBe(true); // 仍在列表
+    expect(list.some((l) => l.path === "C:/dir2")).toBe(false); // 非固定项被挤出
+    expect(list).toHaveLength(MAX_RECENT_LOCATIONS); // 固定项不占配额，总数仍 10
+  });
+
   it("存量键为非法类型时回落空列表（损坏存量不崩溃）", async () => {
     const { data } = mockStore();
     data.set("recentLocations", "corrupted");
