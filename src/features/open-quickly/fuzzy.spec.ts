@@ -51,4 +51,12 @@ describe("Open Quickly 模糊匹配（F11）", () => {
   it("无匹配返回空数组（AC-F11-4）", () => {
     expect(searchQuickItems("zzz", items)).toEqual([]);
   });
+
+  it("排序：同分时固定项恒在前（pinned 比较两方向）", () => {
+    // 同 idx、同长度、pinned 不同 → 固定项置前（覆盖 pinned 三目的两个方向分支）
+    const r1 = searchQuickItems("b", [item("C:/x/ab.md"), item("C:/x/cb.md", { pinned: true })]);
+    expect(r1.map((x) => x.path)).toEqual(["C:/x/cb.md", "C:/x/ab.md"]); // 非固定向后
+    const r2 = searchQuickItems("b", [item("C:/x/ab.md", { pinned: true }), item("C:/x/cb.md")]);
+    expect(r2.map((x) => x.path)).toEqual(["C:/x/ab.md", "C:/x/cb.md"]); // 固定保持在前
+  });
 });
