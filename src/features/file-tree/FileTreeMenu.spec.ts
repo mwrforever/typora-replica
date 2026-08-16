@@ -224,4 +224,34 @@ describe("FileTreeMenu", () => {
     const wrapper = mount(FileTreeMenu, { props: { visible: false, x: 0, y: 0, targetPath: "" } });
     expect(wrapper.find(".file-tree-menu").exists()).toBe(false);
   });
+
+  it("Duplicate 冲突判断兼容 Rust 反斜杠 entries（Windows 形态回归）", async () => {
+    const store = useFileTreeStore();
+    store.entries = [
+      { path: "C:\\d\\readme.md", name: "readme.md", isDir: false, ext: "md" },
+      { path: "C:\\d\\readme copy.md", name: "readme copy.md", isDir: false, ext: "md" },
+    ];
+    const wrapper = mount(FileTreeMenu, {
+      props: { visible: true, x: 10, y: 10, targetPath: "C:/d/readme.md" },
+    });
+    await wrapper.find('[data-menu="duplicate"]').trigger("click");
+    // entries 为反斜杠、targetPath 为正斜杠：归一后仍须识别冲突并递增 -1（C-1）
+    expect(fileIo.duplicatePath).toHaveBeenCalledWith("C:/d/readme.md", "C:/d/readme copy-1.md");
+  });
+
+  it("右键文件新建：反斜杠 entries 下仍取父目录而非文件自身（Windows 形态回归）", async () => {
+    const store = useFileTreeStore();
+    store.entries = [
+      { path: "C:\\d\\a.md", name: "a.md", isDir: false, ext: "md" },
+      { path: "C:\\d\\sub", name: "sub", isDir: true, ext: "" },
+    ];
+    const wrapper = mount(FileTreeMenu, {
+      props: { visible: true, x: 10, y: 10, targetPath: "C:/d/a.md" },
+    });
+    await wrapper.find('[data-menu="new-file"]').trigger("click");
+    await wrapper.find(".file-tree-menu__inline input").setValue("new.md");
+    await wrapper.find(".file-tree-menu__inline input").trigger("keydown", { key: "Enter" });
+    // 归一匹配后判定 a.md 为文件 → 新建目标是其父目录 C:/d/（C-2）
+    expect(fileIo.createFile).toHaveBeenCalledWith("C:/d/new.md");
+  });
 });

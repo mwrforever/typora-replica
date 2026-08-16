@@ -49,6 +49,16 @@ function lastSepIndex(path: string): number {
   return Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
 }
 
+/**
+ * 路径归一化：反斜杠 → 正斜杠。
+ * Rust 侧 DirEntry.path 为反斜杠形态（如 C:\d\readme.md），树节点 path
+ * （targetPath 来源）经 buildTree 归一为正斜杠——entries 比较前必须归一，
+ * 否则 Windows 下 Duplicate 冲突判断与"文件→父目录"解析恒失效（C-1/C-2）。
+ */
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
 /** 目标路径的父目录（含尾分隔符；无分隔符返回空串） */
 function parentDirOf(path: string): string {
   const sep = lastSepIndex(path);
@@ -63,8 +73,9 @@ function parentDirOf(path: string): string {
 function resolveNewDir(): string {
   const base = props.targetPath || store.currentDir || "";
   if (!base) return "";
-  // 仅已知文件需要父目录；未知路径按目录处理（新建目标 = 目标目录自身）
-  const entry = store.entries.find((e) => e.path === props.targetPath);
+  // 仅已知文件需要父目录；未知路径按目录处理（新建目标 = 目标目录自身）。
+  // entries 为 Rust 反斜杠形态，targetPath 为正斜杠形态，比较前归一（C-2）
+  const entry = store.entries.find((e) => normalizePath(e.path) === props.targetPath);
   if (entry && !entry.isDir) return parentDirOf(base);
   return base.replace(/[/\\]+$/, "") + "/";
 }
@@ -146,13 +157,15 @@ async function runDuplicate(): Promise<void> {
   emit("refresh");
 }
 
-/** 同目录既有名称（Duplicate 冲突判断；基于 entries 完整路径） */
+/** 同目录既有名称（Duplicate 冲突判断；基于 entries 完整路径，比较前归一分隔符） */
 function collectSiblingNames(): string[] {
   const dir = parentDirOf(props.targetPath).replace(/[/\\]$/, "");
   return store.entries
     .filter((e) => {
-      const es = lastSepIndex(e.path);
-      return es === -1 ? dir === "" : e.path.slice(0, es) === dir;
+      // Rust 反斜杠形态归一为正斜杠再与 targetPath 的 dirname 比较（C-1）
+      const normalized = normalizePath(e.path);
+      const es = normalized.lastIndexOf("/");
+      return es === -1 ? dir === "" : normalized.slice(0, es) === dir;
     })
     .map((e) => e.name);
 }
