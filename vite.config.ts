@@ -143,6 +143,13 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 03 核心 100%：最近位置（去重置顶/上限 10/固定项保留/移除，F9）
+        "src/features/file-tree/recent-locations.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },

@@ -6,6 +6,7 @@ import { ref } from "vue";
 import FileListPanel from "./FileListPanel.vue";
 import FileTreePanel from "./FileTreePanel.vue";
 import OutlinePanel from "./OutlinePanel.vue";
+import RecentLocationsPanel from "./RecentLocationsPanel.vue";
 import { useFileTreeStore, type PanelKey } from "./file-tree-store";
 
 const store = useFileTreeStore();
@@ -36,6 +37,12 @@ function onRefresh(): void {
 function onSearch(): void {
   moreOpen.value = false;
   store.showSearch();
+}
+
+/** ⋯ 菜单「最近位置」：切入 recent 面板（F9 入口，右键菜单同款 action） */
+function onRecent(): void {
+  moreOpen.value = false;
+  store.switchPanel("recent");
 }
 
 function onSort(by: "alpha" | "natural" | "mtime" | "ctime"): void {
@@ -70,6 +77,11 @@ function onSort(by: "alpha" | "natural" | "mtime" | "ctime"): void {
         class="sidebar-panel__file-list"
         @open-file="emit('open-file', $event)"
       />
+      <RecentLocationsPanel
+        v-else-if="store.activePanel === 'recent'"
+        class="sidebar-panel__recent"
+        @open-folder="emit('open-folder', $event)"
+      />
       <OutlinePanel v-else class="sidebar-panel__outline" />
     </div>
     <div class="sidebar-panel__footer">
@@ -78,6 +90,7 @@ function onSort(by: "alpha" | "natural" | "mtime" | "ctime"): void {
       <div v-if="moreOpen" class="sidebar-panel__more">
         <button @click="onRefresh">手动刷新</button>
         <button @click="emit('open-folder', '')">打开文件夹…</button>
+        <button @click="onRecent">最近位置</button>
         <button @click="onSearch">全局搜索</button>
         <button @click="onSort('alpha')">按字母排序</button>
         <button @click="onSort('mtime')">按修改时间排序</button>
