@@ -1,10 +1,16 @@
 <!-- App.vue
-     应用根组件（02 阶段：启动装配 + 文档会话接线；12 窗口外壳模块将替换为完整窗口装配） -->
+     应用根组件（02 装配：启动决策/文档会话/自动保存/快捷键；
+     03 装配：侧栏/右键菜单/快捷键/拖入插链接/启动目录联动；
+     布局为 03 阶段临时形态（编辑器 + 左侧栏），12 窗口外壳替换为完整窗口装配） -->
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import EditorPage from "./components/editor/EditorPage.vue";
+import FileTreeMenu from "./features/file-tree/FileTreeMenu.vue";
+import SidebarPanel from "./features/file-tree/SidebarPanel.vue";
+import { registerFileTreeShortcuts } from "./features/file-tree/file-tree-shortcuts";
 import { useFileTreeStore } from "./features/file-tree/file-tree-store";
+import { RecentLocations } from "./features/file-tree/recent-locations";
 import { relativeLinkPath } from "./features/file-tree/tree-utils";
 import OpenQuicklyPanel from "./features/open-quickly/OpenQuicklyPanel.vue";
 import { buildQuickItems } from "./features/open-quickly/open-quickly";
@@ -15,9 +21,9 @@ import { DocumentSession } from "./services/document-session";
 import { editorManager } from "./services/editor-manager";
 import { getCliArgs, probePathExists } from "./services/file-io";
 import { resolveLaunch } from "./services/launch-behavior";
+import { openFolderDialog, saveAsDialog } from "./services/open-commands";
 import { loadSettings } from "./services/settings";
 import { registerAppShortcuts } from "./services/app-shortcuts";
-import { saveAsDialog } from "./services/open-commands";
 import { RecentFiles } from "./services/recent-files";
 
 /** 编辑器初始文档（随会话事件更新；docKey 强制重建编辑器实例） */
@@ -51,6 +57,69 @@ const drafts = new DraftRecovery(session);
 const quickOpenVisible = ref(false);
 /** 面板候选（打开时构建） */
 const quickOpenItems = ref<QuickItem[]>([]);
+
+/** 文件树侧栏状态（03：可见性/面板/树数据/展开集合，Pinia 单例） */
+const fileTree = useFileTreeStore();
+
+/** 右键菜单状态（fixed 定位坐标与目标路径；FileTreeMenu 浮层消费） */
+const menu = ref({ visible: false, x: 0, y: 0, targetPath: "" });
+
+/** 侧栏快捷键（03：Ctrl+Shift+L 侧栏开关、Ctrl+Shift+1/2/3 面板切换、Ctrl+Shift+F 搜索；12 可接管） */
+const cleanupFileTreeShortcuts = registerFileTreeShortcuts({
+  toggleSidebar: () => fileTree.toggleSidebar(),
+  switchPanel: (key) => fileTree.switchPanel(key),
+  showSearch: () => fileTree.showSearch(),
+});
+
+/**
+ * 打开文件夹（AC-F9-1）：空串走系统对话框选目录；随后 session.openFolder 切换
+ * 文档目录 + fileTree.loadDir 拉取侧栏数据 + RecentLocations 记录最近位置。
+ * 最近位置记录失败不阻断主流程（store 持久化异常静默吞掉）。
+ */
+async function handleOpenFolder(path: string): Promise<void> {
+  if (!path) {
+    const picked = await openFolderDialog();
+    if (!picked) return;
+    path = picked;
+  }
+  await session.openFolder(path);
+  await fileTree.loadDir(path);
+  await new RecentLocations().record(path).catch(() => undefined);
+}
+
+/**
+ * 打开文件（F1-2 父目录加载）：session.openFile 走 02 文档链路；
+ * 随后以 session.currentDir 为基准同步侧栏数据源（打开文件所在目录进入侧栏）。
+ */
+async function handleOpenFile(path: string): Promise<void> {
+  await session.openFile(path);
+  if (session.currentDir) await fileTree.loadDir(session.currentDir);
+}
+
+/**
+ * 路径分隔符归一：反斜杠 → 正斜杠。
+ * entries.path 为 Rust 反斜杠形态，菜单 targetPath 来自树节点（正斜杠），
+ * 比较前必须归一（与 FileTreeMenu 的 C-2 教训同款），否则 Windows 下目录
+ * 「打开」动作恒落入文件分支。
+ */
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
+/**
+ * 右键菜单「打开」动作（F4）：文件 → handleOpenFile；目录 → 展开/折叠。
+ * 展开键取 entry.name——Rust 侧 name 即根相对 / 分隔路径（= 树节点 relPath），
+ * 与 store.toggleExpand/expandedPaths 的 relPath 契约一致；03 阶段目录打开
+ * 简化为展开语义（12 窗口外壳可扩展为进入目录）。
+ */
+function handleMenuOpen(path: string): void {
+  const entry = fileTree.entries.find((e) => normalizePath(e.path) === path);
+  if (entry?.isDir) {
+    fileTree.toggleExpand(entry.name);
+  } else if (path) {
+    void handleOpenFile(path);
+  }
+}
 
 /**
  * 编辑器宿主容器 drop：文件树拖入插链接（F7，AC-F7-1/2/3 文件与文件夹均支持）
@@ -115,7 +184,6 @@ onMounted(async () => {
   // 启动决策落地后（open-folder/open-file 分支），同步 fileTreeStore.loadDir(session.currentDir)
   // ——侧栏数据源与文档目录一致（session.openFolder/openFile 只登记 currentDir，
   // 树数据由 store 独立拉取并订阅 watchDir 自动刷新；12 窗口外壳可替换此接线）
-  const fileTree = useFileTreeStore();
   if (session.currentDir) await fileTree.loadDir(session.currentDir);
   autoSave.start();
   drafts.start((cb) => editorManager.subscribeMarkdownUpdated(cb));
@@ -131,6 +199,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   cleanupShortcuts();
+  cleanupFileTreeShortcuts();
   autoSave.stop();
   drafts.stop();
   editorManager.destroy();
@@ -138,10 +207,30 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <!-- 编辑器宿主容器：dragover 阻止默认允许 drop，drop 消费文件树拖拽插链接（F7） -->
-  <div class="editor-host" @dragover.prevent @drop="onEditorDrop">
-    <EditorPage :initial-doc="initialDoc" :key="docKey" />
+  <!-- 03 阶段临时布局：左侧栏 + 编辑器并排（12 窗口外壳替换为完整窗口装配） -->
+  <div class="app-shell">
+    <SidebarPanel
+      @open-file="handleOpenFile"
+      @open-folder="handleOpenFolder"
+      @request-menu="(p) => (menu = { visible: true, x: p.x, y: p.y, targetPath: p.path })"
+      @create-file="menu = { visible: true, x: 0, y: 0, targetPath: session.currentDir ?? '' }"
+    />
+    <!-- 编辑器宿主容器：dragover 阻止默认允许 drop，drop 消费文件树拖拽插链接（F7） -->
+    <div class="editor-host" @dragover.prevent @drop="onEditorDrop">
+      <EditorPage :initial-doc="initialDoc" :key="docKey" />
+    </div>
   </div>
+  <!-- 文件树右键菜单浮层（fixed 定位；状态由 App 层 menu ref 持有，v-if 控制渲染） -->
+  <FileTreeMenu
+    v-if="menu.visible"
+    :visible="menu.visible"
+    :x="menu.x"
+    :y="menu.y"
+    :target-path="menu.targetPath"
+    @close="menu.visible = false"
+    @refresh="fileTree.refresh"
+    @open="handleMenuOpen"
+  />
   <OpenQuicklyPanel
     v-if="quickOpenVisible"
     :items="quickOpenItems"
@@ -154,3 +243,16 @@ onBeforeUnmount(() => {
     @close="quickOpenVisible = false"
   />
 </template>
+
+<style scoped>
+/* 03 阶段临时布局：侧栏（左 260px）+ 编辑器（右弹性填充）并排（12 窗口外壳替换） */
+.app-shell {
+  display: flex;
+  height: 100vh;
+}
+
+.editor-host {
+  flex: 1;
+  min-width: 0;
+}
+</style>
