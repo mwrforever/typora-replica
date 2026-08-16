@@ -52,3 +52,15 @@ e2e/run-smoke-app.cmd
 
 # 02 E2E 运行时预置的启动 fixture（wdio.conf 加载时生成）
 e2e/.fixtures/
+
+# 非代码与宪法文档（2026-08-16 用户裁决：不进版本库、不参与 CI/格式化门禁；
+# prettier 尊重 gitignore 自动跳过，CI 的 prettier --check . 不再扫描）
+AGENTS.md
+README.md
+docs/
+design-system/
+.superpowers/
+skills/
+
+# tauri-build 生成的命令权限（DO NOT EDIT，构建产物）
+src-tauri/permissions/
