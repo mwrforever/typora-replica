@@ -84,9 +84,9 @@ describe("fileTreeStore", () => {
     expect(store.groupFolderFirst).toBe(false);
   });
 
-  // 补充用例（简报 3 例之外）：覆盖展开/选中/搜索框与 setSort 无方向分支，
+  // 补充用例（简报 3 例之外）：覆盖展开/选中/搜索框/recent 面板与 setSort 无方向分支，
   // 满足 vite.config.ts 阈值组对 file-tree-store.ts 的 100% 要求（Task 4 报告记录）
-  it("toggleExpand/select/showSearch/hideSearch 与 setSort 无方向参数的状态变更", () => {
+  it("toggleExpand/select/showSearch/hideSearch、recent 面板与 setSort 无方向参数的状态变更", () => {
     const store = useFileTreeStore();
     store.toggleExpand("sub");
     expect(store.expandedPaths.has("sub")).toBe(true);
@@ -94,6 +94,8 @@ describe("fileTreeStore", () => {
     expect(store.expandedPaths.has("sub")).toBe(false);
     store.select("C:/d/a.md");
     expect(store.selectedPath).toBe("C:/d/a.md");
+    store.switchPanel("recent"); // F9 最近位置面板（Task 10/11 消费契约，计划 Interfaces 四值）
+    expect(store.activePanel).toBe("recent");
     store.showSearch();
     expect(store.sidebarVisible).toBe(true);
     expect(store.activePanel).toBe("tree");
@@ -103,5 +105,21 @@ describe("fileTreeStore", () => {
     store.setSort("alpha"); // 无方向参数：保留当前方向不变
     expect(store.sortBy).toBe("alpha");
     expect(store.direction).toBe("asc");
+  });
+
+  // 补充用例：loadDir 失败路径——保持旧目录/旧树一致、不切换监视（Task 4 审查修复 2）
+  it("loadDir 失败时保持旧目录/旧树一致且不建立新目录监视", async () => {
+    vi.mocked(listDirDetailed)
+      .mockResolvedValueOnce([{ path: "C:/d/a.md", name: "a.md", isDir: false, ext: "md" }])
+      .mockRejectedValueOnce(new Error("目录不存在或不可访问"));
+    const store = useFileTreeStore();
+    await store.loadDir("C:/d");
+    expect(store.currentDir).toBe("C:/d");
+    // 切换失败：拒绝向上抛出，currentDir/树保持旧值
+    await expect(store.loadDir("C:/bad")).rejects.toThrow("目录不存在或不可访问");
+    expect(store.currentDir).toBe("C:/d"); // 失败不登记新目录
+    expect(store.tree).toHaveLength(1); // 树保持旧数据
+    expect(store.loading).toBe(false); // loading 恢复
+    expect(watchDir).toHaveBeenCalledTimes(1); // 失败目录不建立监视
   });
 });

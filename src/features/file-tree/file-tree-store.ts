@@ -9,7 +9,7 @@ import { defineStore } from "pinia";
 import { listDirDetailed, watchDir, type DirEntry } from "../../services/file-io";
 import { SUPPORTED_TEXT_EXTENSIONS, buildTree, type TreeNode } from "./tree-utils";
 
-export type PanelKey = "outline" | "list" | "tree";
+export type PanelKey = "outline" | "list" | "tree" | "recent";
 export type SortBy = "alpha" | "natural" | "mtime" | "ctime";
 
 /** 防抖窗口（spec §3：目录变更事件防抖如 300ms） */
@@ -35,7 +35,7 @@ export const useFileTreeStore = defineStore("fileTree", {
     groupFolderFirst: true,
     /** 侧栏可见（默认展开） */
     sidebarVisible: true,
-    /** 当前面板：大纲占位/文件列表/文件树 */
+    /** 当前面板：大纲占位/文件列表/文件树/最近位置（F9 菜单进入，非快捷键面板） */
     activePanel: "tree" as PanelKey,
     /** 全局搜索框可见（F12 入口，搜索逻辑归 06） */
     searchVisible: false,
@@ -50,7 +50,6 @@ export const useFileTreeStore = defineStore("fileTree", {
   actions: {
     /** 加载目录（F1-1/2：选择文件夹/打开文件父目录进入侧栏） */
     async loadDir(dir: string): Promise<void> {
-      this.currentDir = dir;
       this.loading = true;
       try {
         const entries = await listDirDetailed(dir, {
@@ -60,15 +59,19 @@ export const useFileTreeStore = defineStore("fileTree", {
           direction: this.direction,
           groupFolderFirst: this.groupFolderFirst,
         });
+        // 拉取成功后才登记目录并更新数据：失败时保持旧目录/旧树一致，
+        // 避免 currentDir 已指向新目录而 tree/entries 仍是旧数据的漂移态
+        this.currentDir = dir;
         this.entries = entries;
         this.tree = buildTree(entries, dir);
+        // 目录切换后重新订阅监视（Rust 侧替换旧监视）；仅成功路径切换，
+        // 失败不破坏旧目录的既有监视
+        if (this.watchedDir !== dir) {
+          this.watchedDir = dir;
+          void watchDir(dir, () => this.scheduleRefresh());
+        }
       } finally {
         this.loading = false;
-      }
-      // 目录切换后重新订阅监视（Rust 侧替换旧监视）
-      if (this.watchedDir !== dir) {
-        this.watchedDir = dir;
-        void watchDir(dir, () => this.scheduleRefresh());
       }
     },
 
