@@ -7,5 +7,6 @@ pub mod atomic;
 pub mod commands;
 pub mod drafts;
 pub mod encoding;
+pub mod file_ops;
 pub mod fs;
 pub mod watch;

@@ -168,6 +168,36 @@ pub fn list_dir(
     )
 }
 
+/// 新建文件命令（03 文件树 F4：父目录须存在，文件已存在报错）
+#[tauri::command]
+pub fn create_file(path: String) -> Result<(), String> {
+    crate::io::file_ops::create_file(std::path::Path::new(&path))
+}
+
+/// 新建文件夹命令（03 文件树 F4：父目录须存在，已存在报错）
+#[tauri::command]
+pub fn create_dir(path: String) -> Result<(), String> {
+    crate::io::file_ops::create_dir(std::path::Path::new(&path))
+}
+
+/// 重命名命令（03 文件树 F4：同目录移动，目标已存在报错）
+#[tauri::command]
+pub fn rename_path(from: String, to: String) -> Result<(), String> {
+    crate::io::file_ops::rename_path(std::path::Path::new(&from), std::path::Path::new(&to))
+}
+
+/// 复制命令（03 文件树 F4：文件 fs::copy；目录 walkdir 递归复制；目标已存在报错）
+#[tauri::command]
+pub fn duplicate_path(from: String, to: String) -> Result<(), String> {
+    crate::io::file_ops::duplicate_path(std::path::Path::new(&from), std::path::Path::new(&to))
+}
+
+/// 删除到回收站命令（03 文件树 F4：trash crate，文件与目录均支持，非永久删除）
+#[tauri::command]
+pub fn delete_to_trash(path: String) -> Result<(), String> {
+    crate::io::file_ops::delete_to_trash(std::path::Path::new(&path))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
