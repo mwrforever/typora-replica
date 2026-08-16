@@ -1,11 +1,12 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { useFileTreeStore } from "./file-tree-store";
-import { listDirDetailed, watchDir } from "../../services/file-io";
+import { listDirDetailed, watchDir, unwatchDir } from "../../services/file-io";
 
 vi.mock("../../services/file-io", () => ({
   listDirDetailed: vi.fn(),
   watchDir: vi.fn().mockResolvedValue(undefined),
+  unwatchDir: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe("fileTreeStore", () => {
@@ -168,6 +169,26 @@ describe("fileTreeStore", () => {
     expect(store.tree.map((n) => n.path)).toEqual(["C:/b/x.md"]);
     expect(store.loading).toBe(false);
     expect(watchDir).toHaveBeenCalledTimes(1); // 仅胜出目录订阅一次
+    expect(watchDir).toHaveBeenCalledWith("C:/b", expect.any(Function));
+  });
+
+  // D2 多槽语义：目录切换须先 unwatch 旧目录再订阅新目录（Rust 侧按路径多槽，
+  // 不再自动替换——旧槽不显式停止会残留）；unwatch 失败不阻断主链路（P3-3 语义保持）
+  it("切换目录先 unwatch 旧目录，unwatch 失败不阻断订阅", async () => {
+    vi.mocked(listDirDetailed).mockResolvedValue([]);
+    // 首次 unwatch 失败（如 invoke 拒绝）：仍须完成新目录订阅与登记
+    vi.mocked(unwatchDir).mockRejectedValueOnce(new Error("停止监视失败"));
+    const store = useFileTreeStore();
+    await store.loadDir("C:/a");
+    expect(store.watchedDir).toBe("C:/a");
+    await store.loadDir("C:/b");
+    // unwatch 旧目录先于订阅新目录
+    expect(unwatchDir).toHaveBeenCalledWith("C:/a");
+    const unwatchOrder = vi.mocked(unwatchDir).mock.invocationCallOrder[0];
+    const watchOrder = vi.mocked(watchDir).mock.invocationCallOrder[1];
+    expect(unwatchOrder).toBeLessThan(watchOrder);
+    // unwatch 失败不阻断：新目录照常订阅并登记
+    expect(store.watchedDir).toBe("C:/b");
     expect(watchDir).toHaveBeenCalledWith("C:/b", expect.any(Function));
   });
 

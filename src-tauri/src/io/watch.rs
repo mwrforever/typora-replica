@@ -89,13 +89,15 @@ fn flush_loop(rx: std::sync::mpsc::Receiver<WatchEvent>, send: impl Fn(Vec<Watch
     }
 }
 
-/// 命令：目录监视（Channel 批量事件流，句柄入 AppState 持活）
+/// 命令：目录监视（Channel 批量事件流，句柄按路径入 AppState 多槽 Map 持活）
 ///
 /// @param path 监视根目录
-/// @param channel 前端 Channel（事件按 100ms 合并窗口批量投递；再次调用替换旧监视）
+/// @param channel 前端 Channel（事件按 100ms 合并窗口批量投递；再次调用替换同路径旧监视）
+/// 注：app 参数按 tauri 官方可测性模式声明为 AppHandle<R>（R: Runtime）——
+/// 测试经 mock 运行时直呼命令；wire 契约（命令名/参数/返回）与固定运行时写法完全一致
 #[tauri::command]
-pub fn watch_dir(
-    app: tauri::AppHandle,
+pub fn watch_dir<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     path: String,
     channel: tauri::ipc::Channel<Vec<WatchEvent>>,
 ) -> Result<(), String> {
@@ -118,7 +120,31 @@ pub fn watch_dir(
         .watcher
         .lock()
         .map_err(|_| "监视器状态锁损坏".to_string())?;
-    *guard = Some(watcher);
+    // 同路径重复调用：insert 替换旧 watcher，旧句柄 drop 即停止旧监视（02 既定语义）；
+    // 不同路径并存互不影响（多槽）
+    guard.insert(path.clone(), watcher);
+    Ok(())
+}
+
+/// 命令：停止目录监视（按路径移除槽位，watcher drop 即停止）
+///
+/// @param path 待停止监视的根目录路径
+/// @returns Ok（含路径不存在的情形——幂等，重复 unwatch 不报错）
+/// 注：app 参数按 tauri 官方可测性模式声明为 AppHandle<R>（R: Runtime）——
+/// 测试经 mock 运行时直呼命令；wire 契约（命令名/参数/返回）与固定运行时写法完全一致
+#[tauri::command]
+pub fn unwatch_dir<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    path: String,
+) -> Result<(), String> {
+    // State 为临时值，须先 let 绑定再取锁，否则锁借用随临时值析构而失效（E0716）
+    let state = app.state::<crate::AppState>();
+    let mut guard = state
+        .watcher
+        .lock()
+        .map_err(|_| "监视器状态锁损坏".to_string())?;
+    // remove 返回 None 即路径未在监视中：仍返回 Ok（幂等，调用方无需感知）
+    guard.remove(&path);
     Ok(())
 }
 
@@ -226,5 +252,83 @@ mod tests {
         .join()
         .unwrap();
         assert_eq!(sends.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    /// 多槽并存（纯函数层）：两个不同目录各自建立监视，事件只到达各自回调
+    ///
+    /// notify 各自独立监视 + 根内路径过滤，互不串扰；drop 其一不影响另一路继续投递
+    ///（多槽 Map 替换/移除语义在纯函数层的保证）。
+    #[test]
+    fn multi_slot_watchers_isolated_events() {
+        let dir_a = temp_dir();
+        let dir_b = temp_dir();
+        let (tx_a, rx_a) = mpsc::channel();
+        let (tx_b, rx_b) = mpsc::channel();
+        let watcher_a = watch_dir_inner(&dir_a, move |ev| {
+            let _ = tx_a.send(ev);
+        })
+        .unwrap();
+        let watcher_b = watch_dir_inner(&dir_b, move |ev| {
+            let _ = tx_b.send(ev);
+        })
+        .unwrap();
+        // 两目录各写一个文件：事件须只到达各自监视的回调（通道互不串扰）
+        fs::write(dir_a.join("a.md"), "x").unwrap();
+        fs::write(dir_b.join("b.md"), "x").unwrap();
+        let ev_a = wait_event_kind(&rx_a, "create");
+        assert!(ev_a.path.contains("a.md"));
+        assert!(!ev_a.path.contains(&dir_b.to_string_lossy().to_string()));
+        let ev_b = wait_event_kind(&rx_b, "create");
+        assert!(ev_b.path.contains("b.md"));
+        assert!(!ev_b.path.contains(&dir_a.to_string_lossy().to_string()));
+        // drop 一路监视：另一路不受影响，继续投递事件（移除一路不波及他路）
+        drop(watcher_a);
+        fs::write(dir_b.join("b2.md"), "x").unwrap();
+        let ev_b2 = wait_event_kind(&rx_b, "create");
+        assert!(ev_b2.path.contains("b2.md"));
+        drop(watcher_b);
+        let _ = fs::remove_dir_all(&dir_a);
+        let _ = fs::remove_dir_all(&dir_b);
+    }
+
+    /// 命令层多槽 + unwatch（AppState 按路径 Map）：
+    ///
+    /// ①两个目录 watch 后 map 双槽并存；②unwatch 只移除指定槽位、其余不受影响；
+    /// ③unwatch 不存在的路径返回 Ok（幂等）；④同一路径重复 watch 替换旧槽位而非新增
+    ///（02 既定语义）。
+    #[test]
+    fn watch_and_unwatch_commands_manage_multi_slots() {
+        let app = tauri::test::mock_app();
+        app.manage(crate::AppState {
+            watcher: std::sync::Mutex::new(std::collections::HashMap::new()),
+        });
+        let handle = app.handle().clone();
+        let dir_a = temp_dir().to_string_lossy().into_owned();
+        let dir_b = temp_dir().to_string_lossy().into_owned();
+        // 占位通道：事件不实际投递，仅满足 watch_dir 参数契约（处理器返回 Result 契约）
+        let noop_channel = || tauri::ipc::Channel::<Vec<WatchEvent>>::new(|_| Ok(()));
+        watch_dir(handle.clone(), dir_a.clone(), noop_channel()).unwrap();
+        watch_dir(handle.clone(), dir_b.clone(), noop_channel()).unwrap();
+        // 多槽并存：两个目录的监视句柄各自占槽
+        let state = app.state::<crate::AppState>();
+        let guard = state.watcher.lock().unwrap();
+        assert_eq!(guard.len(), 2);
+        assert!(guard.contains_key(&dir_a) && guard.contains_key(&dir_b));
+        drop(guard);
+        // unwatch：移除 dir_a 槽位（句柄 drop 停止监视），dir_b 槽位保留
+        unwatch_dir(handle.clone(), dir_a.clone()).unwrap();
+        let guard = state.watcher.lock().unwrap();
+        assert_eq!(guard.len(), 1);
+        assert!(guard.contains_key(&dir_b));
+        drop(guard);
+        // unwatch 不存在的路径：返回 Ok（幂等，不报错）
+        unwatch_dir(handle.clone(), "Z:/no-such-dir-xyz".to_string()).unwrap();
+        // 同一路径重复 watch：替换旧槽位而非新增
+        watch_dir(handle.clone(), dir_b.clone(), noop_channel()).unwrap();
+        let guard = state.watcher.lock().unwrap();
+        assert_eq!(guard.len(), 1);
+        drop(guard);
+        let _ = fs::remove_dir_all(&dir_a);
+        let _ = fs::remove_dir_all(&dir_b);
     }
 }

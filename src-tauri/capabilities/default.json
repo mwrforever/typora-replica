@@ -18,6 +18,7 @@
     "allow-duplicate-path",
     "allow-delete-to-trash",
     "allow-watch-dir",
+    "allow-unwatch-dir",
     "allow-save-draft",
     "allow-list-drafts",
     "allow-recover-draft"

@@ -180,6 +180,11 @@ export function watchDir(path: string, onEvent: (evs: WatchEvent[]) => void): Pr
   return invokeOrThrow<void>("watch_dir", { path, channel });
 }
 
+/** 停止目录监视（按路径移除槽位；Rust 侧幂等——未监视的路径也返回成功，调用方无需感知） */
+export function unwatchDir(dir: string): Promise<void> {
+  return invokeOrThrow<void>("unwatch_dir", { path: dir });
+}
+
 /** 新建文件（空内容） */
 export function createFile(path: string): Promise<void> {
   return invokeOrThrow<void>("create_file", { path });
