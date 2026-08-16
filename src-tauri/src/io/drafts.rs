@@ -5,11 +5,12 @@
 // 恢复语义：读取内容后删除原草稿（恢复即清理，防堆积）。
 // 已知取舍：日期用 UTC（无 chrono 依赖；Windows 本地时区 ±1 天边缘，12 可换）。
 // 线程安全：无共享状态。
-use crate::io::atomic::assert_safe_path;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
+
+use crate::io::atomic::assert_safe_path;
 
 /// 草稿根目录（app 数据目录下 drafts/）
 pub fn drafts_root(app_data_dir: &Path) -> PathBuf {

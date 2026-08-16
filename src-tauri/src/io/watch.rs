@@ -1,13 +1,15 @@
 // 目录监视（02 文档管理，供 03 文件树刷新）
 //
 // notify 8.2.0 recommended_watcher（Windows 走 ReadDirectoryChangesW），
-// 递归监视 + 事件种类映射（create/remove/modify/rename/other）。
+// 递归监视 + 事件种类映射（create/remove/modify/other）。
 // 线程安全：回调经 mpsc/Channel 跨线程投递；watcher 句柄须持有防 drop 停止。
+use std::path::Path;
+
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use tauri::Manager;
+
 use crate::io::atomic::assert_safe_path;
 use crate::io::commands::WatchEvent;
-use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use std::path::Path;
-use tauri::Manager;
 
 /// 建立递归目录监视（纯函数，事件经回调投递）
 ///

@@ -2,9 +2,10 @@
 //
 // 全部命令为薄封装：入参校验（路径安全）→ 纯函数实现 → DTO 序列化。
 // DTO 统一 camelCase（serde rename_all），供前端 invoke 消费。
+use serde::{Deserialize, Serialize};
+
 use crate::io::atomic::{assert_safe_path, atomic_write};
 use crate::io::encoding::{encoding_name, line_ending_name, normalize_line_ending, LineEnding};
-use serde::{Deserialize, Serialize};
 
 /// 目录遍历结果项
 #[derive(Debug, Clone, Serialize)]
@@ -56,7 +57,7 @@ pub struct DraftEntry {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WatchEvent {
-    /// create / remove / modify / rename
+    /// create / remove / modify / other（rename 事件由 notify 以 modify 形态到达）
     pub kind: String,
     /// 变更条目的完整路径
     pub path: String,
