@@ -82,6 +82,10 @@ class EditorManager {
    * @param frontMatter 工厂解析出的 FM 内文；无 FM 或未知时传 null（默认）
    */
   adopt(crepe: Crepe, frontMatter: string | null = null): void {
+    // 04 多标签：门面切换（activate 新标签）时先解绑前一实例的事件桥，
+    // 避免旧实例残留监听继续向订阅集合投递（单文档路径 mount 一次 adopt 一次，
+    // 此分支不命中，行为不变）
+    if (this.crepe && this.crepe !== crepe) destroyEditorEvents(this.crepe);
     this.crepe = crepe;
     this.editor = crepe.editor;
     this.currentFrontMatter = frontMatter;
@@ -130,18 +134,28 @@ class EditorManager {
   }
 
   /**
+   * 序列化指定实例的当前内容（04 多标签：后台标签保存/LRU 快照需按实例取内容，
+   * 门面 getMarkdown 只能取激活实例）
+   *
+   * 与 getMarkdown 同构：剥全部尾随换行 → transformers.serialize → FM 回写。
+   * @param crepe 目标 Crepe 实例
+   * @param frontMatter 该实例的 Front Matter 内文（null 表示无 FM）
+   */
+  getMarkdownFor(crepe: Crepe, frontMatter: string | null): string {
+    // Crepe 序列化器恒在文末追加换行；剥离全部尾随换行后再交给转换器，保证精确断言（E11 Front Matter 往返）
+    const body = crepe.getMarkdown().replace(/\n+$/, "");
+    const serialized = (this.transformers.serialize ?? ((b: string) => b))(body);
+    // 内建 FM 回写最后执行：外部转换器不触碰 front matter，保证原样保留（AC-E11-2）
+    return frontMatter === null ? serialized : reinsertFrontMatter(frontMatter, serialized);
+  }
+
+  /**
    * 全量序列化当前文档（O(n)）
    * 未创建返回空串；经 transformers.serialize 后由内建 FM 逻辑回写，返回落盘内容
    */
   getMarkdown(): string {
     if (!this.crepe) return "";
-    // Crepe 序列化器恒在文末追加换行；剥离全部尾随换行后再交给转换器，保证精确断言（E11 Front Matter 往返）
-    const body = this.crepe.getMarkdown().replace(/\n+$/, "");
-    const serialized = (this.transformers.serialize ?? ((b: string) => b))(body);
-    // 内建 FM 回写最后执行：外部转换器不触碰 front matter，保证原样保留（AC-E11-2）
-    return this.currentFrontMatter === null
-      ? serialized
-      : reinsertFrontMatter(this.currentFrontMatter, serialized);
+    return this.getMarkdownFor(this.crepe, this.currentFrontMatter);
   }
 
   /**
