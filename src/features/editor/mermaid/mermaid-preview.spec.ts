@@ -124,6 +124,33 @@ describe("mermaid 预览钩子", () => {
     expect(applyPreview).toHaveBeenCalledTimes(1);
   });
 
+  it("多实例：各自代次独立，互不使对方预览过期（04 P0）", async () => {
+    // 04 多标签：每个编辑器实例独立创建预览处理器。旧实现共享模块级 previewGen——
+    // 实例 B 触发渲染后实例 A 的未完成代次即被判过期，A 的结果被永久丢弃；
+    // 新实现代次 per 实例，两实例的异步渲染各自落地。
+    const pendingResolvers: Array<(v: { svg: string }) => void> = [];
+    setRenderBehavior((code) => {
+      if (code.includes("graph A")) {
+        // 实例 A 的渲染挂起（慢），由用例手动放行
+        return new Promise<{ svg: string }>((resolve) => pendingResolvers.push(resolve));
+      }
+      return Promise.resolve({ svg: "<svg>instance-B</svg>" });
+    });
+    const mkPrev = () => createMermaidRenderPreview((_l, _c, apply) => apply(null));
+    const hookA = mkPrev(); // 编辑器实例 A 的预览处理器
+    const hookB = mkPrev(); // 编辑器实例 B 的预览处理器
+    const applyA = vi.fn();
+    const applyB = vi.fn();
+    hookA("mermaid", "graph A", applyA); // 实例 A：渲染挂起（慢）
+    await new Promise((r) => setTimeout(r, 10)); // 让动态 import 链闭合后再触发实例 B
+    hookB("mermaid", "graph B", applyB); // 实例 B：立即完成
+    await vi.waitFor(() => expect(applyB).toHaveBeenCalled());
+    // 实例 A 的旧代次此刻才完成——per 实例代次下仍落地（旧共享实现下此处恒被丢弃）
+    pendingResolvers[0]?.({ svg: "<svg>instance-A</svg>" });
+    await vi.waitFor(() => expect(applyA).toHaveBeenCalled());
+    expect(applyA).toHaveBeenCalledWith(expect.stringContaining("instance-A"));
+  });
+
   it("FIX-7 重叠渲染：旧代次失败同样不覆盖新代次（错误提示受代次守卫）", async () => {
     // 旧代次（old）渲染挂起、新代次先完成——旧代次随后失败时，错误提示
     // 同样须被代次守卫丢弃（不得用「解析错误」占位覆盖新预览）
