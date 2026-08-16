@@ -29,3 +29,12 @@ notify = "8.2.0"
 trash = "5.2"
 tauri-plugin-dialog = "2"
 tauri-plugin-store = "2"
+
+[dev-dependencies]
+# 命令层测试（unwatch_dir 幂等/多槽并存）经 tauri::test mock 运行时直呼命令——
+# tauri 的 test feature（空 feature，仅编译 mock 模块）只对测试构建生效。
+# 注：default-features=false 无法把 wry 挡在测试构建外——feature 按依赖边求并集，
+# 正常依赖（tauri features=[] 即带 default）与插件均已启用 default→wry；
+# 测试二进制带 wry 代码在 Windows 启动需 Common-Controls v6 manifest
+# （TaskDialogIndirect 入口），已由 build.rs 对全部目标统一嵌入（D2）。
+tauri = { version = "2", features = ["test"] }

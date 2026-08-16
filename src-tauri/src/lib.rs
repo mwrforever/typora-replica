@@ -1,9 +1,11 @@
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 /// 应用级共享状态（02：目录监视句柄持有）
 pub struct AppState {
-    /// 当前监视句柄（watch_dir 持活，防 drop 停止监视；03 可扩展为多路）
-    pub watcher: Mutex<Option<notify::RecommendedWatcher>>,
+    /// 按路径的多槽监视句柄 Map（watch_dir 持活，防 drop 停止监视；
+    /// key = 监视根目录路径；unwatch_dir 移除槽位即停止对应目录监视）
+    pub watcher: Mutex<HashMap<String, notify::RecommendedWatcher>>,
 }
 
 pub mod io;
@@ -17,11 +19,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(AppState {
-            watcher: Mutex::new(None),
+            watcher: Mutex::new(HashMap::new()),
         })
         // 命令随实现任务注册：Task 5 read_file/write_file/list_dir；
-        // Task 6 save_draft/list_drafts/recover_draft（drafts.rs）；Task 7 watch_dir；Task 13 get_cli_args；
-        // 03 Task 2 create_file/create_dir/rename_path/duplicate_path/delete_to_trash（file_ops.rs）
+        // Task 6 save_draft/list_drafts/recover_draft（drafts.rs）；Task 7 watch_dir；
+        // Task 13 get_cli_args；
+        // 03 Task 2 create_file/create_dir/rename_path/duplicate_path/delete_to_trash（file_ops.rs）；
+        // D2 前置 unwatch_dir（watch.rs，与 watch_dir 同模块）
         .invoke_handler(tauri::generate_handler![
             io::commands::get_cli_args,
             io::commands::read_file,
@@ -35,7 +39,8 @@ pub fn run() {
             io::drafts::save_draft_cmd,
             io::drafts::list_drafts_cmd,
             io::drafts::recover_draft_cmd,
-            io::watch::watch_dir
+            io::watch::watch_dir,
+            io::watch::unwatch_dir
         ])
         .run(tauri::generate_context!())
     {
