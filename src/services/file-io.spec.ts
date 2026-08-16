@@ -33,6 +33,7 @@ import {
   deleteToTrash,
   listDirDetailed,
   watchDir,
+  unwatchDir,
   FileIoError,
 } from "./file-io";
 
@@ -200,6 +201,12 @@ describe("03 文件树封装", () => {
       { kind: "modify", path: "C:/dir/y.md" },
     ]);
     expect(events).toEqual(["create", "modify"]);
+  });
+
+  it("unwatchDir 透传路径调用 unwatch_dir（停止旧目录监视）", async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    await unwatchDir("C:/dir");
+    expect(mockInvoke).toHaveBeenCalledWith("unwatch_dir", { path: "C:/dir" });
   });
 
   it("五命令封装调用对应 command", async () => {

@@ -6,7 +6,7 @@
 // 自动刷新：watchDir 事件流 + 300ms 防抖（spec §3），手动 refresh 强制重扫。
 // 线程安全：Pinia store 单实例，全部状态变更走 action（Vue 响应式）。
 import { defineStore } from "pinia";
-import { listDirDetailed, watchDir, type DirEntry } from "../../services/file-io";
+import { listDirDetailed, unwatchDir, watchDir, type DirEntry } from "../../services/file-io";
 import { SUPPORTED_TEXT_EXTENSIONS, buildTree, type TreeNode } from "./tree-utils";
 
 export type PanelKey = "outline" | "list" | "tree" | "recent";
@@ -71,9 +71,15 @@ export const useFileTreeStore = defineStore("fileTree", {
         this.currentDir = dir;
         this.entries = entries;
         this.tree = buildTree(entries, dir);
-        // 目录切换后重新订阅监视（Rust 侧替换旧监视）；仅成功路径切换，
+        // 目录切换后重新订阅监视：先停旧目录监视再订阅新目录（Rust 侧按路径多槽，
+        // 不再同路径自动替换——旧槽不显式停止会残留，D2）；仅成功路径切换，
         // 失败不破坏旧目录的既有监视
         if (this.watchedDir !== dir) {
+          // 旧目录存在监视时先停止；unwatch 失败（invoke 拒绝）不阻断主链路——
+          // 残留旧槽由后续切换/自愈兜底（P3-3 语义保持）
+          if (this.watchedDir !== undefined) {
+            await unwatchDir(this.watchedDir).catch(() => undefined);
+          }
           try {
             await watchDir(dir, () => this.scheduleRefresh());
             // 订阅成功才登记 watchedDir；订阅期间被更新的 loadDir 取代
