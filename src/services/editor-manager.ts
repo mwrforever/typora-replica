@@ -138,6 +138,20 @@ class EditorManager {
       : reinsertFrontMatter(this.currentFrontMatter, serialized);
   }
 
+  /**
+   * 插入 markdown 文本到光标处（03 文件树拖入插链接消费，F7 增量接口）
+   *
+   * 实现：经 editorView dispatch 插入（tr.insertText），与输入法/选区语义一致；
+   * 未创建实例（编辑器未就绪）时静默跳过——拖拽时机早于编辑器挂载属边缘场景。
+   * @param text 待插入文本（如 `[x](sub/x.md)`）
+   */
+  insertMarkdown(text: string): void {
+    const view = this.getView();
+    if (!view) return;
+    view.dispatch(view.state.tr.insertText(text));
+    view.focus();
+  }
+
   /** 切换编辑器只读状态 */
   setReadonly(value: boolean): void {
     this.crepe?.setReadonly(value);

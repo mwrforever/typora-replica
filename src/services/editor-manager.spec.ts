@@ -1,5 +1,5 @@
 // 编辑器实例管理服务：单例生命周期 + 文档存取 + 只读切换（跨模块接口，100% 覆盖）
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeTestEditor } from "../test/editor-test-utils";
 import { showMermaidMenu } from "../features/editor/mermaid/mermaid-menu";
 import { editorManager } from "./editor-manager";
@@ -225,5 +225,21 @@ describe("编辑器实例管理", () => {
     expect(received.length).toBeGreaterThan(0);
     unsubscribe();
     await editorManager.destroy();
+  });
+
+  it("insertMarkdown 向编辑器视图 dispatch 插入文本（F7 插入链路）", async () => {
+    await editorManager.create("初始内容");
+    // 复用既有 view 实例：dispatch 加 spy，断言载荷事务携带 insertText 方法
+    const view = editorManager.getView();
+    const dispatch = vi.spyOn(view!, "dispatch");
+    editorManager.insertMarkdown("[readme.md](readme.md)");
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    const tr = dispatch.mock.calls[0][0] as { insertText?: (t: string) => unknown };
+    expect(typeof tr.insertText).toBe("function");
+  });
+
+  it("insertMarkdown 未创建实例时静默 no-op", () => {
+    editorManager.destroy();
+    expect(() => editorManager.insertMarkdown("x")).not.toThrow();
   });
 });

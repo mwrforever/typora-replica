@@ -5,6 +5,7 @@ import { onBeforeUnmount, onMounted, ref } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import EditorPage from "./components/editor/EditorPage.vue";
 import { useFileTreeStore } from "./features/file-tree/file-tree-store";
+import { relativeLinkPath } from "./features/file-tree/tree-utils";
 import OpenQuicklyPanel from "./features/open-quickly/OpenQuicklyPanel.vue";
 import { buildQuickItems } from "./features/open-quickly/open-quickly";
 import type { QuickItem } from "./features/open-quickly/fuzzy";
@@ -50,6 +51,22 @@ const drafts = new DraftRecovery(session);
 const quickOpenVisible = ref(false);
 /** 面板候选（打开时构建） */
 const quickOpenItems = ref<QuickItem[]>([]);
+
+/**
+ * 编辑器宿主容器 drop：文件树拖入插链接（F7，AC-F7-1/2/3 文件与文件夹均支持）
+ *
+ * 仅接受树内条目（application/x-markwell-path 由 FileTreeItem dragstart 写入，
+ * 携带完整路径）；名称取末级，相对路径含扩展名经 relativeLinkPath 计算，
+ * 插入 `[名称](相对路径)` 到光标处。dragover 阻止默认行为以允许 drop。
+ */
+function onEditorDrop(event: DragEvent): void {
+  const path = event.dataTransfer?.getData("application/x-markwell-path");
+  if (!path || !session.currentDir) return;
+  event.preventDefault();
+  const name = path.split(/[/\\]/).pop() ?? path;
+  const rel = relativeLinkPath(path, session.currentDir);
+  editorManager.insertMarkdown(`[${name}](${rel})`);
+}
 
 /** 窗口级快捷键（12 窗口外壳可接管）：Ctrl+S 保存/另存、Ctrl+P 快速打开 */
 const cleanupShortcuts = registerAppShortcuts({
@@ -121,7 +138,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <EditorPage :initial-doc="initialDoc" :key="docKey" />
+  <!-- 编辑器宿主容器：dragover 阻止默认允许 drop，drop 消费文件树拖拽插链接（F7） -->
+  <div class="editor-host" @dragover.prevent @drop="onEditorDrop">
+    <EditorPage :initial-doc="initialDoc" :key="docKey" />
+  </div>
   <OpenQuicklyPanel
     v-if="quickOpenVisible"
     :items="quickOpenItems"
