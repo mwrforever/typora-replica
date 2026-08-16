@@ -10,7 +10,7 @@ import { Milkdown, MilkdownProvider, useEditor } from "@milkdown/vue";
 import { defineComponent, onBeforeUnmount } from "vue";
 import { createMarkwellEditor } from "../../features/editor/create-editor";
 import { parseFrontMatter } from "../../features/editor/frontmatter/frontmatter";
-import { editorManager } from "../../services/editor-manager";
+import { editorManager } from "../../features/editor/editor-manager";
 
 /** 组件属性 */
 const props = withDefaults(

@@ -65,10 +65,11 @@ repos:
         files: ^src-tauri/.*\.rs$
         stages: [pre-push]
         pass_filenames: false
-      # 前端全量单元测试（Vitest）
+      # 前端全量单元测试 + 覆盖率阈值（AGENTS.md §6.5：核心 100%/非核心 ≥80%；
+      # P1-6：thresholds 仅在 --coverage 下生效，此前门禁跑 npm test 覆盖率从未被校验）
       - id: vitest
-        name: vitest（前端全量测试）
-        entry: bash -c 'npm test'
+        name: vitest（前端全量测试 + 覆盖率阈值）
+        entry: bash -c 'npm run test:coverage'
         language: system
         types_or: [javascript, ts, vue]
         stages: [pre-push]

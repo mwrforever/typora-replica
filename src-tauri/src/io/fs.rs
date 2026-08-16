@@ -1,41 +1,145 @@
-// 目录遍历与自然序（02 文档管理，F1/F11 数据源）
+// 目录遍历与自然序（02 文档管理 F1/F11 数据源；03 文件树 F3/F6 数据源）
 //
-// list_dir 递归返回目录与文件（扩展名过滤仅作用于文件）；排序为目录优先 +
-// 名称自然序（数字段按数值比较，a2 < a10）。路径统一 / 分隔相对名。
+// list_dir 递归返回目录与文件（扩展名白名单/隐藏过滤仅作用于文件）；排序支持
+// 字母/自然序/修改时间/创建时间四种键（各可升降序）+ Group by Folder 开关；
+// 不传 opts 时回落 02 原语义（目录优先 + 自然序）。路径统一 / 分隔相对名。
 // 线程安全：无共享状态；walkdir 遍历为只读。
 use std::cmp::Ordering;
 use std::path::Path;
+
+use serde::Deserialize;
 use walkdir::WalkDir;
 
 use crate::io::atomic::assert_safe_path;
 use crate::io::commands::DirEntry;
 
-/// 递归遍历目录（含子目录，目录优先 + 自然序）
+/// 受支持文本扩展名白名单（spec §3：与 C3 编码探测共用一份常量；
+/// 前端 tree-utils.ts 有同值常量，修改须同步两处）
+pub const SUPPORTED_TEXT_EXTENSIONS: [&str; 14] = [
+    "md",
+    "markdown",
+    "mdown",
+    "mmd",
+    "text",
+    "txt",
+    "rmarkdown",
+    "mkd",
+    "mdwn",
+    "mdtxt",
+    "rmd",
+    "qmd",
+    "mdtext",
+    "mdx",
+];
+
+/// 目录遍历选项（03 文件树消费；字段缺省回落旧行为）
+///
+/// serde(default)：前端 ListDirOptions 全字段可选（TS 侧），任一字段缺省时
+/// 回落 Default 实现（目录优先 + 自然序 + 升序 + 不隐藏过滤）——缺标注会令
+/// 缺省字段在反序列化时被 missing field 拒绝，整树加载失败（BUG-4/P3-4）。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ListDirOptions {
+    /// 扩展名白名单（多值；None=不过滤，优先级高于命令层 ext_filter）
+    pub ext_filters: Option<Vec<String>>,
+    /// 隐藏条目（. 开头）过滤（目录不进入遍历剪枝）
+    pub hide_hidden: bool,
+    /// 排序键：alpha/natural/mtime/ctime（None 回落 natural）
+    pub sort_by: Option<String>,
+    /// 排序方向：asc/desc（None 回落 asc）
+    pub direction: Option<String>,
+    /// Group by Folder：目录优先（默认 true）
+    pub group_folder_first: bool,
+}
+
+/// 缺省选项：与 02 原语义一致（目录优先 + 自然序 + 升序 + 不隐藏过滤）
+impl Default for ListDirOptions {
+    fn default() -> Self {
+        Self {
+            ext_filters: None,
+            hide_hidden: false,
+            sort_by: None,
+            direction: None,
+            group_folder_first: true,
+        }
+    }
+}
+
+/// 递归遍历目录（含子目录；白名单/隐藏过滤 + 四键排序 + Group by Folder）
 ///
 /// @param root 遍历根目录（必须存在）
-/// @param ext_filter 扩展名过滤（大小写不敏感，仅作用于文件；None 返回全部）
-/// @returns 排序后的条目列表（path 为完整路径，name 为相对根路径 / 分隔）
-pub fn list_dir(root: &Path, ext_filter: Option<&str>) -> Result<Vec<DirEntry>, String> {
+/// @param ext_filter 命令层单扩展名过滤（大小写不敏感，仅文件；None 不过滤）
+/// @param opts 过滤/排序选项（None 回落 02 语义：目录优先 + 自然序 + 升序）
+/// @returns 排序后的条目列表（path 完整路径、name 相对根路径 / 分隔、mtime/ctime epoch 毫秒）
+pub fn list_dir(
+    root: &Path,
+    ext_filter: Option<&str>,
+    opts: Option<&ListDirOptions>,
+) -> Result<Vec<DirEntry>, String> {
     assert_safe_path(root)?;
     let root_abs = root
         .canonicalize()
         .map_err(|e| format!("目录不存在或不可访问: {e}"))?;
+    let opts = opts.cloned().unwrap_or_default();
     let mut entries: Vec<DirEntry> = Vec::new();
-    for entry in WalkDir::new(&root_abs).follow_links(false) {
-        let entry = entry.map_err(|e| format!("遍历目录失败: {e}"))?;
+    let walker = WalkDir::new(&root_abs).follow_links(false).into_iter();
+    // 隐藏目录剪枝（. 开头不进入遍历），隐藏文件由条目级判断；
+    // hide_hidden=false 时谓词恒真，等价不过滤（walkdir 2.5.0 起
+    // filter_entry 位于 IntoIter 上，须先 into_iter）
+    let hide_hidden = opts.hide_hidden;
+    let walker = walker.filter_entry(move |e| {
+        if !hide_hidden {
+            return true;
+        }
+        let name = e.file_name().to_string_lossy();
+        !(e.depth() > 0 && name.starts_with('.') && e.file_type().is_dir())
+    });
+    for entry in walker {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                // 子目录不可读（ACL 受限）或条目在遍历期间被并发删除：跳过该分支
+                // 继续遍历，整体降级而非失败（BUG-17/P3-5——驱动器根/系统目录存在
+                // System Volume Information 等不可读目录，首错即中止会令整树加载失败）。
+                // 深度 0 的错误（根目录自身不可读）是根问题，不能静默跳过
+                if e.depth() == 0 {
+                    return Err(format!("遍历目录失败: {e}"));
+                }
+                continue;
+            }
+        };
         let path = entry.path();
         // 根自身不返回（调用方已有根引用）
         if path == root_abs {
             continue;
         }
         let is_dir = entry.file_type().is_dir();
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_string();
+        // 隐藏文件过滤（隐藏目录已在遍历剪枝处理）
+        if opts.hide_hidden {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            if name.starts_with('.') {
+                continue;
+            }
+        }
         if !is_dir {
-            // 扩展名过滤：不匹配的普通文件跳过（目录恒保留）
-            if let Some(filter) = ext_filter {
-                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                if !ext.eq_ignore_ascii_case(filter) {
-                    continue;
-                }
+            // 白名单优先，其次命令层单扩展名
+            let matched = if let Some(filters) = &opts.ext_filters {
+                filters.iter().any(|f| ext.eq_ignore_ascii_case(f))
+            } else if let Some(filter) = ext_filter {
+                ext.eq_ignore_ascii_case(filter)
+            } else {
+                true
+            };
+            if !matched {
+                continue;
             }
         }
         let rel = path
@@ -43,26 +147,67 @@ pub fn list_dir(root: &Path, ext_filter: Option<&str>) -> Result<Vec<DirEntry>, 
             .unwrap_or(path)
             .to_string_lossy()
             .replace('\\', "/");
+        // 元数据（排序需要；目录与文件均填充）
+        let (mtime, ctime) = entry
+            .metadata()
+            .ok()
+            .map(|m| {
+                let mt = m
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_millis() as u64);
+                let ct = m
+                    .created()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_millis() as u64);
+                (mt, ct)
+            })
+            .unwrap_or((None, None));
         entries.push(DirEntry {
             path: path.to_string_lossy().into_owned(),
             name: rel,
             is_dir,
-            ext: path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_string(),
+            ext,
+            mtime,
+            ctime,
         });
     }
-    entries.sort_by(compare_entries);
+    entries.sort_by(|a, b| compare_with_options(a, b, &opts));
     Ok(entries)
 }
 
-/// 条目排序：目录优先，同级按名称自然序
-fn compare_entries(a: &DirEntry, b: &DirEntry) -> Ordering {
-    match (a.is_dir, b.is_dir) {
-        (true, false) => Ordering::Less,
-        (false, true) => Ordering::Greater,
+/// 带选项排序：Group by Folder 开关 + 四种排序键 + 方向
+fn compare_with_options(a: &DirEntry, b: &DirEntry, opts: &ListDirOptions) -> Ordering {
+    // Group by Folder（默认开）：目录恒置前；关闭时按排序键统一比较
+    let dir_cmp = match (a.is_dir, b.is_dir) {
+        (true, false) => Some(Ordering::Less),
+        (false, true) => Some(Ordering::Greater),
+        _ => None,
+    };
+    let order = if opts.group_folder_first {
+        if let Some(c) = dir_cmp {
+            return c;
+        }
+        key_cmp(a, b, opts)
+    } else {
+        key_cmp(a, b, opts)
+    };
+    // 方向：desc 反转
+    if opts.direction.as_deref() == Some("desc") {
+        order.reverse()
+    } else {
+        order
+    }
+}
+
+/// 排序键比较（字母/自然序/修改时间/创建时间）
+fn key_cmp(a: &DirEntry, b: &DirEntry, opts: &ListDirOptions) -> Ordering {
+    match opts.sort_by.as_deref() {
+        Some("alpha") => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        Some("mtime") => a.mtime.cmp(&b.mtime),
+        Some("ctime") => a.ctime.cmp(&b.ctime),
         _ => natural_cmp(&a.name, &b.name),
     }
 }
@@ -147,7 +292,7 @@ mod tests {
     #[test]
     fn natural_order_files_and_dirs_first() {
         let dir = sample_tree();
-        let entries = list_dir(&dir, None).unwrap();
+        let entries = list_dir(&dir, None, None).unwrap();
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
         // 目录优先，文件按自然序（a1 < a2 < a10 < b），子目录条目递归返回（sub/c.md）
         assert_eq!(
@@ -160,7 +305,7 @@ mod tests {
     #[test]
     fn ext_filter_applies_case_insensitive() {
         let dir = sample_tree();
-        let entries = list_dir(&dir, Some("md")).unwrap();
+        let entries = list_dir(&dir, Some("md"), None).unwrap();
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
         // 子目录内文件同样受过滤，name 为相对根路径（sub/c.md）
         assert_eq!(
@@ -172,12 +317,12 @@ mod tests {
 
     #[test]
     fn missing_root_rejected() {
-        assert!(list_dir(std::path::Path::new("Z:/no-such-dir-xyz"), None).is_err());
+        assert!(list_dir(std::path::Path::new("Z:/no-such-dir-xyz"), None, None).is_err());
     }
 
     #[test]
     fn dotdot_root_rejected() {
-        assert!(list_dir(std::path::Path::new("a/../b"), None).is_err());
+        assert!(list_dir(std::path::Path::new("a/../b"), None, None).is_err());
     }
 
     #[test]
@@ -195,5 +340,132 @@ mod tests {
         use std::cmp::Ordering;
         assert_eq!(natural_cmp("README.md", "readme.md"), Ordering::Equal);
         assert_eq!(natural_cmp("Alpha.md", "beta.md"), Ordering::Less);
+    }
+
+    #[test]
+    fn hidden_entries_filtered_out() {
+        let dir = temp_dir();
+        fs::write(dir.join(".hidden.md"), "").unwrap();
+        fs::write(dir.join(".gitkeep"), "").unwrap();
+        fs::write(dir.join("ok.md"), "").unwrap();
+        let opts = ListDirOptions {
+            ext_filters: Some(vec!["md".into()]),
+            hide_hidden: true,
+            sort_by: None,
+            direction: None,
+            group_folder_first: true,
+        };
+        let entries = list_dir(&dir, None, Some(&opts)).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "ok.md");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sort_by_alpha_desc_mixed_without_group() {
+        let dir = temp_dir();
+        fs::write(dir.join("b.md"), "").unwrap();
+        fs::create_dir_all(dir.join("adir")).unwrap();
+        fs::write(dir.join("a.md"), "").unwrap();
+        let opts = ListDirOptions {
+            ext_filters: None,
+            hide_hidden: false,
+            sort_by: Some("alpha".into()),
+            direction: Some("desc".into()),
+            group_folder_first: false,
+        };
+        let entries = list_dir(&dir, None, Some(&opts)).unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        // 关闭 Group by Folder：目录与文件混排，全部按字母降序
+        assert_eq!(names, vec!["b.md", "adir", "a.md"]);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sort_by_mtime_desc_and_metadata_present() {
+        let dir = temp_dir();
+        fs::write(dir.join("old.md"), "").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        fs::write(dir.join("new.md"), "").unwrap();
+        let opts = ListDirOptions {
+            ext_filters: Some(vec!["md".into()]),
+            hide_hidden: false,
+            sort_by: Some("mtime".into()),
+            direction: Some("desc".into()),
+            group_folder_first: true,
+        };
+        let entries = list_dir(&dir, None, Some(&opts)).unwrap();
+        assert_eq!(entries[0].name, "new.md"); // 最近修改在前
+        assert!(entries[0].mtime.is_some()); // 元数据已填充
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn list_dir_options_serde_missing_fields_fall_back_to_default() {
+        // BUG-4/P3-4：前端 opts 全可选，缺省字段必须回落 Default（missing field 拒绝即整树加载失败）
+        let opts: ListDirOptions = serde_json::from_str("{}").unwrap();
+        assert!(!opts.hide_hidden);
+        assert!(opts.group_folder_first); // 目录优先默认开（02 原语义）
+        assert_eq!(opts.sort_by, None);
+        assert_eq!(opts.direction, None);
+        // 部分字段传值 + 其余缺省：camelCase 映射与缺省回落共存
+        let partial: ListDirOptions =
+            serde_json::from_str(r#"{"groupFolderFirst": false}"#).unwrap();
+        assert!(!partial.group_folder_first);
+        assert!(!partial.hide_hidden);
+    }
+
+    #[test]
+    fn default_options_match_old_behavior() {
+        // 不传 opts：目录优先 + 自然序 + 不隐藏过滤（02 原语义）
+        let dir = sample_tree();
+        let entries = list_dir(&dir, None, None).unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["sub", "a1.md", "a2.md", "a10.md", "b.md", "note.txt", "sub/c.md"]
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sort_by_ctime_asc_and_metadata_present() {
+        let dir = temp_dir();
+        fs::write(dir.join("old.md"), "").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        fs::write(dir.join("new.md"), "").unwrap();
+        let opts = ListDirOptions {
+            ext_filters: None,
+            hide_hidden: false,
+            sort_by: Some("ctime".into()),
+            direction: Some("asc".into()),
+            group_folder_first: true,
+        };
+        let entries = list_dir(&dir, None, Some(&opts)).unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        // 创建时间升序：先创建者在前
+        assert_eq!(names, vec!["old.md", "new.md"]);
+        assert!(entries[0].ctime.is_some()); // 创建时间元数据已填充
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hidden_dir_pruned_from_traversal() {
+        let dir = temp_dir();
+        fs::create_dir_all(dir.join(".hdir")).unwrap();
+        fs::write(dir.join(".hdir").join("ok.md"), "").unwrap();
+        fs::write(dir.join("ok.md"), "").unwrap();
+        let opts = ListDirOptions {
+            ext_filters: Some(vec!["md".into()]),
+            hide_hidden: true,
+            sort_by: None,
+            direction: None,
+            group_folder_first: true,
+        };
+        let entries = list_dir(&dir, None, Some(&opts)).unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        // 隐藏目录在遍历层剪枝：.hdir 及其内部 ok.md 均不出现，普通 ok.md 正常
+        assert_eq!(names, vec!["ok.md"]);
+        let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -16,6 +16,7 @@ import { setupHtmlNodeView } from "./html/html-node-view";
 import { getUploadHandler } from "./image-upload";
 import { registerEditorInputRules } from "./input-rules";
 import { applyEditorKeymaps } from "./keymaps";
+import { latexEscapePlugin } from "./latex-escape";
 import { openLinkPlugin } from "./link/open-link";
 import { handleMermaidContextMenu } from "./mermaid/mermaid-menu";
 import { createMermaidRenderPreview } from "./mermaid/mermaid-preview";
@@ -41,6 +42,9 @@ const isUnicodeWhitespace = (ch: string | undefined): boolean =>
 const UNDERSCORE_SENTINEL = "\uE000";
 /** 字面 U+E000 的临时占位（与下划线哨兵区分：若原样混入，还原阶段会被统一替换为 `_`） */
 const LITERAL_E000_SENTINEL = "\uE001";
+/** 字面 U+E001 的临时占位（P1-4：与字面 E000 占位区分——若原样混入，
+ *  还原阶段会被统一替换为 U+E000，字面 PUA 字符静默变异且永不复原） */
+const LITERAL_E001_SENTINEL = "\uE002";
 
 /**
  * Typora 式 text 序列化处理器：GFM 单词内下划线不转义 + 硬换行尾随空白保护
@@ -65,8 +69,14 @@ const gfmUnderscoreTextHandler: Handlers["text"] = (node, parent, state, info) =
   for (let i = 0; i < chars.length; i++) {
     if (chars[i] !== "_") {
       // 字面 U+E000 先映射为第二私有区占位：该字符与下划线哨兵同值，
-      // 若不经区分原样通过，还原阶段会被 split(哨兵).join("_") 一并替换为 `_`（数据损坏）
-      protectedValue += chars[i] === UNDERSCORE_SENTINEL ? LITERAL_E000_SENTINEL : chars[i];
+      // 若不经区分原样通过，还原阶段会被 split(哨兵).join("_") 一并替换为 `_`（数据损坏）。
+      // 字面 U+E001 同理映射为第三占位（P1-4：否则还原阶段被替换为 U+E000 且永不复原）
+      protectedValue +=
+        chars[i] === UNDERSCORE_SENTINEL
+          ? LITERAL_E000_SENTINEL
+          : chars[i] === LITERAL_E000_SENTINEL
+            ? LITERAL_E001_SENTINEL
+            : chars[i];
       continue;
     }
     // 节点边缘借用序列化上下文（containerPhrasing 传入）还原相邻字符；
@@ -113,13 +123,16 @@ const gfmUnderscoreTextHandler: Handlers["text"] = (node, parent, state, info) =
     // 还原被编码的最后一个空白为原始空白字符（空格还原空格、制表符还原制表符）
     hardBreakPreserved = out.replace(/&(?:#x20|#x9);$/, protectedValue.slice(-1));
   }
-  // 逆序还原：先字面占位 → 下划线哨兵 → `_`，再把字面 U+E000 占位还原为原字符。
-  // 顺序不可颠倒——若先还原字面占位，产物中的 U+E000 会再次被哨兵替换误伤
+  // 逆序还原：先下划线哨兵 → `_`，再字面 U+E000 占位 → U+E000，最后字面 U+E001
+  // 占位 → U+E001。顺序不可颠倒——若先还原字面占位，产物中的 U+E000/U+E001
+  // 会再次被下层哨兵替换误伤（P1-4：字面 E001 恒被还原为 E000）
   return hardBreakPreserved
     .split(UNDERSCORE_SENTINEL)
     .join("_")
     .split(LITERAL_E000_SENTINEL)
-    .join(UNDERSCORE_SENTINEL);
+    .join(UNDERSCORE_SENTINEL)
+    .split(LITERAL_E001_SENTINEL)
+    .join(LITERAL_E000_SENTINEL);
 };
 
 /** Typora 式序列化 handlers 增量（覆盖内置 text 处理器） */
@@ -231,6 +244,9 @@ export function createMarkwellEditor(
   crepe.editor.use(tocInputRule);
   // E14 链接：Ctrl+点击在系统浏览器打开（普通点击仍走内置 LinkTooltip）
   crepe.editor.use(openLinkPlugin);
+  // E19 AC-E19-5：行内公式编辑浮层内按 ESC 取消编辑回预览态（document 级监听，
+  // PluginView 生命周期随编辑器销毁清理）
+  crepe.editor.use(latexEscapePlugin);
   // E21 图表右键菜单：contextmenu 落在 mermaid 预览容器时弹出另存/复制菜单
   //（非图表区域返回 false 放行浏览器默认菜单；handleDOMEvents 由 ProseMirror
   // 在编辑器 DOM 上统一监听，预览面板位于编辑器内容 DOM 内故可命中）

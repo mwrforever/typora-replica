@@ -126,6 +126,29 @@ describe("markwellRemarkHandlers.text（GFM 单词内下划线不转义）", () 
     expect(runTextHandler("\uE000x\uE000", " ", " ").out).toBe("\uE000x\uE000");
   });
 
+  it("P1-4 字面 U+E001 不被还原链误替换为 U+E000（字面 PUA 字符静默变异防护）", () => {
+    // 修复前：字面 U+E001 与「字面 U+E000 占位」同值，还原阶段被无条件替换为
+    // U+E000 且每次保存交替、永不复原（静默数据损坏）
+    expect(runTextHandler("a\uE001b", " ", " ").out).toBe("a\uE001b");
+    // 与字面 U+E000、单词内下划线混合：三者各自原样保留、互不误伤
+    expect(runTextHandler("wow_great\uE000x\uE001y", " ", " ").out).toBe("wow_great\uE000x\uE001y");
+    // 行内多处字面 U+E001 均按原字符还原
+    expect(runTextHandler("\uE001a\uE001", " ", " ").out).toBe("\uE001a\uE001");
+  });
+
+  it("P1-4 字面 U+E001 落盘往返一致（getMarkdown 后原字符保留）", async () => {
+    const te = await makeTestEditor();
+    // 字面 U+E001 与「字面 U+E000 占位」同值，若被还原链误伤会静默变为 U+E000
+    te.view.dispatch(
+      te.view.state.tr.insertText("wow_great\uE000x\uE001y", te.view.state.selection.from),
+    );
+    const md = te.getMarkdown();
+    expect(md).toBe("wow_great\uE000x\uE001y");
+    // 重新解析再落盘为定点（U+E001 不再被改写）
+    const reparsed = await makeTestEditor(md);
+    expect(reparsed.getMarkdown()).toBe(md);
+  });
+
   it("行首 `_` 前为空白或标点时保留默认转义（可开启强调）", () => {
     // 前为空白：左 flanking 成立，`_` 必须转义
     expect(runTextHandler("_x", " ", " ").captured).not.toContain(SENTINEL);

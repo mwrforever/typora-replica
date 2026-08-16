@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::io::atomic::{assert_safe_path, atomic_write};
 use crate::io::encoding::{encoding_name, line_ending_name, normalize_line_ending, LineEnding};
+use crate::io::fs::ListDirOptions;
 
 /// 目录遍历结果项
 #[derive(Debug, Clone, Serialize)]
@@ -19,6 +20,10 @@ pub struct DirEntry {
     pub is_dir: bool,
     /// 扩展名（不含点，目录为空串）
     pub ext: String,
+    /// 修改时间（epoch 毫秒；元数据不可用时为 None）
+    pub mtime: Option<u64>,
+    /// 创建时间（epoch 毫秒；元数据不可用时为 None）
+    pub ctime: Option<u64>,
 }
 
 /// 读文件结果（内容统一 UTF-8，编码/行尾探测结果）
@@ -145,13 +150,52 @@ pub fn write_file(path: String, content: String, opts: WriteOptions) -> Result<(
     atomic_write(p, &normalized)
 }
 
-/// 目录遍历命令：递归列出根下全部条目（扩展名过滤 + 自然序）
+/// 目录遍历命令：递归列出根下全部条目（过滤 + 排序，03 扩展）
 ///
 /// @param path 遍历根目录（必须存在）
 /// @param ext_filter 扩展名过滤（仅文件；None/null 不过滤）
+/// @param opts 过滤/排序选项（None/null 回落 02 语义：目录优先 + 自然序 + 升序）
 #[tauri::command]
-pub fn list_dir(path: String, ext_filter: Option<String>) -> Result<Vec<DirEntry>, String> {
-    crate::io::fs::list_dir(std::path::Path::new(&path), ext_filter.as_deref())
+pub fn list_dir(
+    path: String,
+    ext_filter: Option<String>,
+    opts: Option<ListDirOptions>,
+) -> Result<Vec<DirEntry>, String> {
+    crate::io::fs::list_dir(
+        std::path::Path::new(&path),
+        ext_filter.as_deref(),
+        opts.as_ref(),
+    )
+}
+
+/// 新建文件命令（03 文件树 F4：父目录须存在，文件已存在报错）
+#[tauri::command]
+pub fn create_file(path: String) -> Result<(), String> {
+    crate::io::file_ops::create_file(std::path::Path::new(&path))
+}
+
+/// 新建文件夹命令（03 文件树 F4：父目录须存在，已存在报错）
+#[tauri::command]
+pub fn create_dir(path: String) -> Result<(), String> {
+    crate::io::file_ops::create_dir(std::path::Path::new(&path))
+}
+
+/// 重命名命令（03 文件树 F4：同目录移动，目标已存在报错）
+#[tauri::command]
+pub fn rename_path(from: String, to: String) -> Result<(), String> {
+    crate::io::file_ops::rename_path(std::path::Path::new(&from), std::path::Path::new(&to))
+}
+
+/// 复制命令（03 文件树 F4：文件 fs::copy；目录 walkdir 递归复制；目标已存在报错）
+#[tauri::command]
+pub fn duplicate_path(from: String, to: String) -> Result<(), String> {
+    crate::io::file_ops::duplicate_path(std::path::Path::new(&from), std::path::Path::new(&to))
+}
+
+/// 删除到回收站命令（03 文件树 F4：trash crate，文件与目录均支持，非永久删除）
+#[tauri::command]
+pub fn delete_to_trash(path: String) -> Result<(), String> {
+    crate::io::file_ops::delete_to_trash(std::path::Path::new(&path))
 }
 
 #[cfg(test)]
@@ -246,7 +290,7 @@ mod tests {
         let dir = temp_dir();
         fs::write(dir.join("x.md"), "").unwrap();
         fs::write(dir.join("y.txt"), "").unwrap();
-        let out = list_dir(dir.to_string_lossy().into_owned(), Some("md".into())).unwrap();
+        let out = list_dir(dir.to_string_lossy().into_owned(), Some("md".into()), None).unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].name, "x.md");
         assert!(!out[0].is_dir);

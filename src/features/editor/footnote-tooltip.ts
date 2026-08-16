@@ -54,6 +54,9 @@ export function createFootnoteHoverHandlers(getView: () => FootnoteTooltipHandle
   mouseover: (view: EditorView, event: Event) => void;
   mouseleave: () => void;
 } {
+  /** 当前悬停引用 label（P1-2 高频路径短路：同 label 连续移动不重复扫描/重建浮层） */
+  let hoveredLabel: string | null = null;
+
   /** 指针在引用上进入/移动：命中即显示定义内容，否则隐藏 */
   const onPointerMove = (view: EditorView, event: Event): void => {
     const tooltipView = getView();
@@ -62,21 +65,30 @@ export function createFootnoteHoverHandlers(getView: () => FootnoteTooltipHandle
     const sup = findFootnoteReferenceElement(event.target);
     // 指针不在脚注引用上：隐藏浮层
     if (!sup) {
+      hoveredLabel = null;
       tooltipView.hide();
       return;
     }
     const label = sup.getAttribute("data-label");
     // 引用元素缺 label（内置 schema 恒渲染，防御非法 DOM）：隐藏浮层
     if (!label) {
+      hoveredLabel = null;
       tooltipView.hide();
       return;
     }
+    // P1-2：悬停同一引用期间 mousemove 以 60-120Hz 到达，每次都会触发
+    // findFootnoteDefinition 全文档扫描 + textContent 重写 + provider.show
+    // （内部重建 autoUpdate）——万行级文档（spec C5）会卡顿。同 label 移动
+    // 直接短路（定义内容不变，浮层位置由 update/滚动路径维护）
+    if (label === hoveredLabel) return;
+    hoveredLabel = label;
     // 以引用元素真实矩形定位浮层（jsdom 无布局时为零矩形，仅影响视觉落位）
     tooltipView.show(view, label, () => sup.getBoundingClientRect());
   };
 
   /** 指针移出编辑器：隐藏浮层 */
   const onPointerLeave = (): void => {
+    hoveredLabel = null;
     const tooltipView = getView();
     if (!tooltipView) return;
     tooltipView.hide();

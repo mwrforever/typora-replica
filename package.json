@@ -28,6 +28,7 @@
     "@tauri-apps/plugin-store": "^2.4.4",
     "katex": "^0.18.4",
     "mermaid": "^11.16.1",
+    "pinia": "^4.0.3",
     "vue": "^3.5.13"
   },
   "devDependencies": {

@@ -37,8 +37,10 @@ jobs:
         run: npx prettier --check .
       - name: vue-tsc 类型检查
         run: npx vue-tsc --noEmit
-      - name: Vitest 单元测试
-        run: npm test
+      - name: Vitest 单元测试 + 覆盖率阈值
+        # P1-6：thresholds 仅在 --coverage 下生效（coverage.enabled 默认 false），
+        # 无 --coverage 时覆盖率滑坡不被捕获——门禁必须跑 test:coverage
+        run: npm run test:coverage
 
   # ── Rust 质量检查（windows runner：Tauri 在 Linux 需额外系统库）──
   rust:

@@ -16,6 +16,7 @@ import { configureHtmlMerge } from "../features/editor/html/html-merge";
 import { setupHtmlNodeView } from "../features/editor/html/html-node-view";
 import { registerEditorInputRules } from "../features/editor/input-rules";
 import { applyEditorKeymaps } from "../features/editor/keymaps";
+import { latexEscapePlugin } from "../features/editor/latex-escape";
 import { openLinkPlugin } from "../features/editor/link/open-link";
 import {
   configureToc,
@@ -106,6 +107,8 @@ export async function makeTestEditor(
   crepe.editor.use(tocInputRule);
   // E14 链接：Ctrl+点击在系统浏览器打开，与产品工厂同源插件
   crepe.editor.use(openLinkPlugin);
+  // E19 AC-E19-5：行内公式编辑浮层 ESC 退出编辑态，与产品工厂同源插件
+  crepe.editor.use(latexEscapePlugin);
   crepe.editor.config((ctx) => {
     registerEditorInputRules(ctx);
     applyEditorKeymaps(ctx);

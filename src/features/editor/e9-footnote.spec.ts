@@ -141,4 +141,40 @@ describe("E9 脚注", () => {
     expect(hide).toHaveBeenCalledOnce();
     expect(show).not.toHaveBeenCalled();
   });
+
+  it("P1-2 同 label 悬停移动不重复扫描重建浮层（高频路径短路）", () => {
+    const show = vi.fn();
+    const hide = vi.fn();
+    const handle: FootnoteTooltipHandle = { hide, show };
+    const handlers = createFootnoteHoverHandlers(() => handle);
+    // 构造两个同 label 引用与一个异 label 引用（桩句柄：不做真实扫描，观察 show 调用次数）
+    const makeSup = (label: string): HTMLSpanElement => {
+      const sup = document.createElement("sup");
+      sup.setAttribute("data-type", "footnote_reference");
+      sup.setAttribute("data-label", label);
+      return sup;
+    };
+    const supA = makeSup("fn1");
+    const event = (target: Element): Event => ({ type: "mousemove", target }) as unknown as Event;
+    // 首次命中：扫描并显示
+    handlers.mousemove(null as never, event(supA));
+    expect(show).toHaveBeenCalledTimes(1);
+    // 同 label 连续移动（悬停期间 mousemove ~60-120Hz）：短路不再扫描/重建
+    handlers.mousemove(null as never, event(supA));
+    handlers.mousemove(null as never, event(supA));
+    expect(show).toHaveBeenCalledTimes(1);
+    // 切到另一 label 的引用：重新扫描显示
+    const supB = makeSup("fn2");
+    handlers.mousemove(null as never, event(supB));
+    expect(show).toHaveBeenCalledTimes(2);
+    // 移出后再次悬停同 label：缓存已清，重新扫描
+    handlers.mouseleave();
+    handlers.mousemove(null as never, event(supA));
+    expect(show).toHaveBeenCalledTimes(3);
+    // 移出/移入普通元素：隐藏并清缓存
+    handlers.mousemove(null as never, event(document.createElement("p")));
+    expect(hide).toHaveBeenCalled();
+    handlers.mousemove(null as never, event(supA));
+    expect(show).toHaveBeenCalledTimes(4);
+  });
 });

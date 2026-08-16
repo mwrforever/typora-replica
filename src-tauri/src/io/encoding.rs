@@ -45,9 +45,19 @@ const UTF8_BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
 /// @returns 解码文本与编码/行尾元信息；无法识别或疑似二进制返回错误
 pub fn decode_text(bytes: &[u8]) -> Result<DecodedText, String> {
     let (text, encoding) = if bytes.starts_with(UTF8_BOM) {
-        // BOM 剥离后按 UTF-8 解码（BOM 后内容视为 UTF-8，不再回退）
-        let (cow, _had_errors) = UTF_8.decode_without_bom_handling(&bytes[UTF8_BOM.len()..]);
-        (cow.into_owned(), TextEncoding::Utf8Bom)
+        // BOM 剥离后按 UTF-8 解码；校验失败（BOM + 非 UTF-8，如部分编辑器写出
+        // GBK 带 BOM）回退 GBK 解码，与非 BOM 分支行为一致——修复前丢弃 had_errors
+        // 静默输出 U+FFFD 替换字符（BUG-6：同文件两种解码路径行为不一致）
+        let (cow, had_errors) = UTF_8.decode_without_bom_handling(&bytes[UTF8_BOM.len()..]);
+        if !had_errors {
+            (cow.into_owned(), TextEncoding::Utf8Bom)
+        } else {
+            let (gbk_cow, _gbk_actual_encoding, gbk_errors) = GBK.decode(&bytes[UTF8_BOM.len()..]);
+            if gbk_errors {
+                return Err("无法识别的文本编码（非 UTF-8 且非 GBK）".to_string());
+            }
+            (gbk_cow.into_owned(), TextEncoding::Gbk)
+        }
     } else {
         let (cow, had_errors) = UTF_8.decode_without_bom_handling(bytes);
         if !had_errors {
@@ -150,6 +160,21 @@ mod tests {
         let out = decode_text(&gbk_bytes).unwrap();
         assert_eq!(out.encoding, TextEncoding::Gbk);
         assert_eq!(out.text, "中文测试");
+    }
+
+    #[test]
+    fn gbk_with_bom_falls_back_to_gbk() {
+        // BUG-6：BOM + GBK（部分编辑器写出形态）不得静默输出 U+FFFD，
+        // 须与非 BOM 分支一致回退 GBK（修复前 _had_errors 被丢弃）
+        let mut bytes = vec![0xEF, 0xBB, 0xBF];
+        bytes.extend_from_slice(&[0xD6, 0xD0, 0xCE, 0xC4]);
+        let out = decode_text(&bytes).unwrap();
+        assert_eq!(out.encoding, TextEncoding::Gbk);
+        assert_eq!(out.text, "中文");
+        // BOM + 双重无法识别：与非 BOM 分支一致拒绝读取
+        let mut bad = vec![0xEF, 0xBB, 0xBF];
+        bad.extend_from_slice(&[0x61, 0xFF, 0xFF]);
+        assert!(decode_text(&bad).is_err());
     }
 
     #[test]

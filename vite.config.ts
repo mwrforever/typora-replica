@@ -35,20 +35,9 @@ export default defineConfig(async () => ({
         statements: 80,
         functions: 80,
         branches: 80,
-        // 核心功能 100%：语法转换（keymap/输入规则）、E20 安全路径、事件桥、实例管理
+        // 核心功能 100%：语法转换（keymap/输入规则）、E20 安全路径、事件桥、
+        // 实例管理（editor-manager/editor-events 随 P1-8 重构收拢入 features/editor）
         "src/features/editor/**/*.ts": {
-          lines: 100,
-          statements: 100,
-          functions: 100,
-          branches: 100,
-        },
-        "src/services/editor-manager.ts": {
-          lines: 100,
-          statements: 100,
-          functions: 100,
-          branches: 100,
-        },
-        "src/services/editor-events.ts": {
           lines: 100,
           statements: 100,
           functions: 100,
@@ -74,8 +63,11 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
-        // 02 核心服务 100%：文档会话（打开/保存/另存/dirty 状态机 + 父目录加载 + lastFile 持久化）
-        "src/services/document-session.ts": {
+        // 02 核心服务 100%：文档会话（打开/保存/另存/dirty 状态机 + 父目录加载 + lastFile 持久化）、
+        // 自动保存（停笔防抖∪定时兜底/开关联动/dirty 协作）、草稿备份与恢复
+        // （P1-8 重构：02 三服务收拢入 features/document 域——依赖 01 门面 editorManager，
+        // 留在 services 层会构成 services→features 反向依赖）
+        "src/features/document/**/*.ts": {
           lines: 100,
           statements: 100,
           functions: 100,
@@ -102,20 +94,6 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
-        // 02 核心服务 100%：自动保存（停笔防抖 1s∪定时 5min 双条件/开关联动/dirty 协作，F30）
-        "src/services/auto-save.ts": {
-          lines: 100,
-          statements: 100,
-          functions: 100,
-          branches: 100,
-        },
-        // 02 核心服务 100%：草稿备份与恢复（5s 心跳防抖/退出备份/首标题命名/空内容防护，F31）
-        "src/services/draft-recovery.ts": {
-          lines: 100,
-          statements: 100,
-          functions: 100,
-          branches: 100,
-        },
         // 02 核心 100%：Open Quickly 模糊匹配与数据源组装（大小写不敏感包含/排序/去重，F11）
         "src/features/open-quickly/fuzzy.ts": {
           lines: 100,
@@ -124,6 +102,27 @@ export default defineConfig(async () => ({
           branches: 100,
         },
         "src/features/open-quickly/open-quickly.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        // 03 核心 100%：文件树状态（目录加载/防抖刷新/面板切换/排序状态，F2-F12 共享）
+        "src/features/file-tree/file-tree-store.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        // 03 核心 100%：树构建/白名单常量/Duplicate 命名/非法字符校验/相对路径（F3-F7 纯函数基座）
+        "src/features/file-tree/tree-utils.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        // 03 核心 100%：最近位置（去重置顶/上限 10/固定项保留/移除，F9）
+        "src/features/file-tree/recent-locations.ts": {
           lines: 100,
           statements: 100,
           functions: 100,
