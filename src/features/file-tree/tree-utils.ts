@@ -3,8 +3,6 @@
 // 职责：Rust list_dir 扁平条目 → 树结构组装；Duplicate/新建命名规则；
 // 拖入插链接的相对路径计算。白名单常量与 Rust 侧 SUPPORTED_TEXT_EXTENSIONS
 // 同步（spec §3 一致性——修改须两处同时更新）。
-// 注意：本任务（Task 4）仅交付 store 依赖的最小部分（白名单常量/树节点/树构建），
-// duplicateTargetName/isInvalidFileName/relativeLinkPath 由 Task 5 补全。
 import type { DirEntry } from "../../services/file-io";
 
 /** 受支持文本扩展名白名单（与 src-tauri/src/io/fs.rs 常量同步） */
@@ -75,4 +73,46 @@ export function buildTree(entries: DirEntry[], rootPath: string): TreeNode[] {
     });
   }
   return root;
+}
+
+/**
+ * Duplicate 目标名：`{原名} copy.{ext}`，冲突追加 `-1`（AC-F4-2/6）
+ * @param name 源名称（含扩展名或纯目录名）
+ * @param existingNames 同目录既有名称
+ * @returns 不冲突的目标名
+ */
+export function duplicateTargetName(name: string, existingNames: string[]): string {
+  const dot = name.lastIndexOf(".");
+  const base = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : "";
+  let candidate = `${base} copy${ext}`;
+  let n = 1;
+  while (existingNames.includes(candidate)) {
+    candidate = `${base} copy-${n}${ext}`;
+    n += 1;
+  }
+  return candidate;
+}
+
+/** Windows 非法文件名（AC-F4-5 前端预校验；Rust 命令侧双保险） */
+const INVALID_NAME_RE = /[\\/:*?"<>|]/;
+
+/** 文件名合法性：非空且不含非法字符 */
+export function isInvalidFileName(name: string): boolean {
+  return name.trim() === "" || INVALID_NAME_RE.test(name);
+}
+
+/**
+ * 拖入插链接的相对路径（F7：相对路径含扩展名）
+ * @param targetPath 目标完整路径（文件或文件夹）
+ * @param baseDir 基准目录（DocumentSession.currentDir）
+ * @returns / 分隔的相对路径（baseDir 之外回退完整路径）
+ */
+export function relativeLinkPath(targetPath: string, baseDir: string): string {
+  const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "");
+  const t = norm(targetPath);
+  const b = norm(baseDir);
+  if (t.startsWith(`${b}/`)) return t.slice(b.length + 1);
+  if (t === b) return "";
+  return t;
 }

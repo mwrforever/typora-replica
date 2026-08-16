@@ -136,6 +136,13 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 03 核心 100%：树构建/白名单常量/Duplicate 命名/非法字符校验/相对路径（F3-F7 纯函数基座）
+        "src/features/file-tree/tree-utils.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },
