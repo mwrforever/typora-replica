@@ -298,8 +298,8 @@ describe("文档会话（打开/保存/dirty）", () => {
     session.docVersion += 1;
     resolveLoad({ defaultLineEnding: "lf" });
     const out = await saving;
-    expect(out.saved).toBe(false);
-    expect(out.reason).toBe("doc-switched");
+    // 类型收窄断言：联合类型中 reason 仅存在于 saved=false 分支（vue-tsc 门禁）
+    expect(out).toEqual({ saved: false, reason: "doc-switched", message: expect.any(String) });
     // 不得把 A 的内容写入 B
     expect(mockWriteFile).not.toHaveBeenCalled();
   });

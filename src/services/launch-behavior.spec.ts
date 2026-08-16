@@ -74,7 +74,8 @@ describe("启动行为决策（F14）", () => {
     });
     const d = await resolveLaunch({ new: false, reopenFile: "C:/x.md" }, s, existsAll);
     expect(d).toEqual({ action: "open-file", path: "C:/x.md" });
-    expect(d.restoreFolder).toBeUndefined();
+    // 类型收窄断言：restoreFolder 仅存在于 open-file 分支（vue-tsc 门禁）
+    if (d.action === "open-file") expect(d.restoreFolder).toBeUndefined();
   });
 
   it("--reopen-file 目标不存在回退新建并提示（AC-F1-3 异常路径：提示不崩溃）", async () => {
