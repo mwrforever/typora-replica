@@ -1,5 +1,5 @@
 import { $, browser, expect } from "@wdio/globals";
-import { writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 /**
@@ -11,6 +11,19 @@ import path from "node:path";
  * E2E 断言删除后树中消失；回收站 GUI 操作不可自动化，人工验证）。
  */
 describe("文件树 E2E", () => {
+  // 幂等兜底：二次运行时清理上次测试残留（wdio.conf 每次加载只重建 opening.md，
+  // 不清理残留）。否则 Duplicate 目标名变 opening copy-1.md 使断言挂、
+  // e2e-new.md 残留使新建用例 createFile 失败仍假阳性通过。
+  before(async () => {
+    const fixtureDir = path.join(process.cwd(), "e2e/.fixtures");
+    for (const name of ["opening copy.md", "e2e-new.md", "external-watch.md"]) {
+      rmSync(path.join(fixtureDir, name), { force: true });
+    }
+    // 树中残留条目由 watch 事件触发刷新（300ms 防抖 + 重扫），等余量后再断言，
+    // 避免用例 1 取到排序在 opening.md 前的残留节点
+    await browser.pause(1200);
+  });
+
   it("侧栏文件树显示 fixture 目录内容", async () => {
     const tree = await $(".file-tree");
     await expect(tree).toBeDisplayed();
