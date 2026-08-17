@@ -19,6 +19,8 @@ import { DraftRecovery } from "./features/document/draft-recovery";
 import type { DocumentSession } from "./features/document/document-session";
 import { editorManager } from "./features/editor/editor-manager";
 import TabHost from "./features/tabs/TabHost.vue";
+import TabBar from "./features/tabs/TabBar.vue";
+import { registerTabsShortcuts } from "./features/tabs/tabs-shortcuts";
 import { useTabsController } from "./features/tabs/tabs-controller";
 import { getCliArgs, probePathExists } from "./services/file-io";
 import { resolveLaunch } from "./services/launch-behavior";
@@ -64,6 +66,20 @@ const cleanupFileTreeShortcuts = registerFileTreeShortcuts({
   toggleSidebar: () => fileTree.toggleSidebar(),
   switchPanel: (key) => fileTree.switchPanel(key),
   showSearch: () => fileTree.showSearch(),
+});
+
+/**
+ * 标签快捷键（04：Ctrl+N 新建 / Ctrl+W 关闭 / Ctrl+Tab 轮换 / Ctrl+Shift+T 重开；
+ * 12 窗口外壳可整体接管）。Ctrl+W 关闭激活标签（P1 直关，脏确认分支 Task 13 接）。
+ */
+const cleanupTabsShortcuts = registerTabsShortcuts({
+  onNewTab: () => tabs.createUntitled(),
+  onCloseTab: () => {
+    const active = tabs.store.activeTab;
+    if (active) tabs.closeTab(active.id);
+  },
+  onCycle: (dir) => tabs.cycle(dir),
+  onReopenClosed: () => tabs.reopenClosed(),
 });
 
 /**
@@ -199,6 +215,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   cleanupShortcuts();
   cleanupFileTreeShortcuts();
+  cleanupTabsShortcuts();
   drafts.stop();
   // 门面销毁由 04 集成层负责（被动挂载不自动 destroy；应用卸载即终态）
   editorManager.destroy();
@@ -230,7 +247,17 @@ function basenameOf(path: string): string {
     />
     <!-- 编辑器宿主容器：dragover 阻止默认允许 drop，drop 消费文件树拖拽插链接（F7） -->
     <div class="editor-host" @dragover.prevent @drop="onEditorDrop">
-      <TabHost />
+      <!-- 标签条（04）：渲染/激活/关闭/脏标记；close 直关（P1，脏分支 Task 13） -->
+      <TabBar
+        :tabs="tabs.store.tabs"
+        :active-tab-id="tabs.store.activeTabId"
+        @activate="tabs.activate"
+        @close="(id) => tabs.closeTab(id)"
+      />
+      <!-- 宿主主体：flex:1 占满剩余高度（TabBar 高度固定在上方） -->
+      <div class="editor-host__body">
+        <TabHost />
+      </div>
     </div>
   </div>
   <!-- 文件树右键菜单浮层（fixed 定位；状态由 App 层 menu ref 持有，v-if 控制渲染） -->
@@ -265,8 +292,16 @@ function basenameOf(path: string): string {
   height: 100vh;
 }
 
+/* 04：编辑器宿主改纵向 flex——标签条固定高度，宿主主体弹性占满剩余空间 */
 .editor-host {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-host__body {
+  flex: 1;
+  min-height: 0;
 }
 </style>
