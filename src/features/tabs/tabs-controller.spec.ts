@@ -291,6 +291,42 @@ describe("tabsController 编排控制器", () => {
     spy.mockRestore();
   });
 
+  it("openFile 去重命中已回收标签：解除回收标记触发重建（AC-F29-7 收口）", async () => {
+    vi.useFakeTimers();
+    const ids: string[] = [];
+    for (let i = 0; i < MAX_TABS; i++) {
+      mockReadFile.mockResolvedValueOnce({
+        content: `内容${i}`,
+        encoding: "utf8",
+        lineEnding: "lf",
+      });
+      expect(await controller.openFile(`C:/a/${i}.md`, `${i}.md`)).toBe(true);
+      ids.push(controller.store.activeTabId!);
+    }
+    // 依次挂载并推进时间：lastActivatedAt 递增 → 第 17 个标签触发回收最久未激活（首个）
+    for (let i = 0; i < ids.length; i++) {
+      vi.advanceTimersByTime(1000);
+      controller.onInstanceReady(ids[i], {
+        crepe: fakeCrepe(`内容${i}`),
+        frontMatter: null,
+      });
+    }
+    const victimId = ids[0];
+    mockReadFile.mockResolvedValueOnce({ content: "新内容", encoding: "utf8", lineEnding: "lf" });
+    expect(await controller.openFile("C:/a/new.md", "new.md")).toBe(true);
+    expect(controller.recycledIds.has(victimId)).toBe(true); // 前置：已回收（v-if 卸载态）
+    // 重开同一路径：去重命中已回收标签（created=false）→ 解除 recycled 标记
+    expect(await controller.openFile("C:/a/0.md", "0.md")).toBe(false);
+    expect(controller.recycledIds.has(victimId)).toBe(false); // TabHost 重挂载触发点
+    expect(controller.store.activeTabId).toBe(victimId); // store.openFile 已激活
+    // 重建链路就绪：TabHost 重挂载 → onInstanceReady → 登记 + 清快照 + 激活门面
+    controller.onInstanceReady(victimId, { crepe: fakeCrepe("重建正文"), frontMatter: null });
+    expect(registry.getInstance(victimId)).toBeDefined();
+    expect(controller.store.tabs.find((t) => t.id === victimId)!.contentSnapshot).toBeUndefined();
+    expect(controller.activeSession()).toBe(registry.getInstance(victimId)!.session);
+    startedAutoSaveIds.push(victimId); // 重建即激活（afterEach 停订）
+  });
+
   it("getContext：挂载取实例序列化；未挂载取快照/initialDoc/空串；未知 id undefined", async () => {
     expect(controller.getContext("nope")).toBeUndefined();
     // 未挂载：initialDocs 内容（openFile 成功路径）

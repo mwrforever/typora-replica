@@ -101,6 +101,8 @@ function createController(): TabsController {
 
   /**
    * 打开文件标签；同路径去重激活既有标签（created=false）。
+   * 去重命中「已回收标签」时解除 recycled 标记：TabHost v-if 据此重挂载，
+   * initialDoc 由 contentSnapshot 兜底提供（AC-F29-7 重建收口）。
    * 新标签：创建会话栈 → session.openFile 读入 → 内容就绪判定（监听捕获）；
    * 失败回滚（移除标签 + 丢弃上下文）。
    * @param path 文件完整路径
@@ -109,7 +111,12 @@ function createController(): TabsController {
    */
   async function openFile(path: string, title: string): Promise<boolean> {
     const { id, created } = store.openFile(path, title);
-    if (!created) return false;
+    if (!created) {
+      // 去重命中「已回收标签」：解除回收标记 → TabHost 重挂载（store 已激活该标签，
+      // 重建后 onInstanceReady → registerInstance → activateInstance 链路就绪）
+      if (recycledIds.has(id)) recycledIds.delete(id);
+      return false;
+    }
     createContext(id);
     await contexts.get(id)!.session.openFile(path);
     // 02 会话 openFile 失败不广播 onDocumentChange → 内容未就绪 → 回滚挂起标签
