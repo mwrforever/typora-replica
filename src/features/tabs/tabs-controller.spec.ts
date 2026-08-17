@@ -327,13 +327,13 @@ describe("tabsController 编排控制器", () => {
     startedAutoSaveIds.push(victimId); // 重建即激活（afterEach 停订）
   });
 
-  it("getContext：挂载取实例序列化；未挂载取快照/initialDoc/空串；未知 id undefined", async () => {
+  it("getContext：挂载取实例序列化；未挂载取快照/空串；未知 id undefined", async () => {
     expect(controller.getContext("nope")).toBeUndefined();
-    // 未挂载：initialDocs 内容（openFile 成功路径）
+    // 未挂载且无快照 → 空串（Task 14 与 finalizeClose 同口径，initialDocs 不参与序列化）
     mockReadFile.mockResolvedValueOnce({ content: "文件内容", encoding: "utf8", lineEnding: "lf" });
     await controller.openFile("C:/a/b.md", "b.md");
     const id = controller.store.activeTabId!;
-    expect(controller.getContext(id)!.serialize()).toBe("文件内容");
+    expect(controller.getContext(id)!.serialize()).toBe("");
     // 挂载：按实例序列化（getMarkdownFor）
     controller.onInstanceReady(id, { crepe: fakeCrepe("编辑器内容"), frontMatter: null });
     expect(controller.getContext(id)!.serialize()).toBe("编辑器内容");
@@ -342,7 +342,7 @@ describe("tabsController 编排控制器", () => {
     const uId = controller.store.activeTabId!;
     controller.store.setSnapshot(uId, "快照");
     expect(controller.getContext(uId)!.serialize()).toBe("快照");
-    // 无快照无 initialDoc → 空串（重开空文档场景：关闭无快照标签再重开）
+    // 无快照 → 空串（重开空文档场景：关闭无快照标签再重开）
     controller.closeTab(uId); // "快照" 入重开栈，邻位激活文件标签
     controller.createUntitled(); // 新未命名标签（未挂载无快照）
     const emptyId = controller.store.activeTabId!;
@@ -350,10 +350,9 @@ describe("tabsController 编排控制器", () => {
     controller.reopenClosed();
     const reopenedId = controller.store.activeTabId!;
     expect(controller.getContext(reopenedId)!.serialize()).toBe("");
-    // 兜底链路：上下文存在但既无快照也无 initialDoc（内容源缺失边缘）→ 空串
+    // 兜底链路：上下文存在但无快照（内容源缺失边缘）→ 空串
     controller.createUntitled();
     const bareId = controller.store.activeTabId!;
-    controller.initialDocs.delete(bareId);
     expect(controller.getContext(bareId)!.serialize()).toBe("");
   });
 

@@ -16,7 +16,6 @@ import OpenQuicklyPanel from "./features/open-quickly/OpenQuicklyPanel.vue";
 import { buildQuickItems } from "./features/open-quickly/open-quickly";
 import type { QuickItem } from "./features/open-quickly/fuzzy";
 import { DraftRecovery } from "./features/document/draft-recovery";
-import type { DocumentSession } from "./features/document/document-session";
 import { editorManager } from "./features/editor/editor-manager";
 import TabHost from "./features/tabs/TabHost.vue";
 import TabBar from "./features/tabs/TabBar.vue";
@@ -44,18 +43,22 @@ const tabs = useTabsController();
 const closeRequest = computed(() => tabs.closeRequest.value);
 
 /**
- * 草稿备份（P1 门面订阅：仅激活标签编辑触发心跳；dirty/currentPath 委托
- * 激活会话，Task 14 聚合改造）。DraftRecovery 构造签名要求 DocumentSession，
- * 此处以 getter 委托对象桥接——备份执行时点才解析激活会话，避免持有过期引用。
+ * 草稿备份（04 聚合，D1 裁决落地：心跳/退出备份覆盖全部脏标签）。
+ * 提供器惰性取快照：备份执行时点过滤 store 脏标签，per-tab 经 getContext
+ * 序列化（挂载实例含 FM 回写；未挂载 contentSnapshot 兜底）。
+ * 心跳订阅仍为门面流（任意标签编辑唤醒 → 5s 后遍历全部脏标签）。
  */
-const drafts = new DraftRecovery({
-  get dirty(): boolean {
-    return tabs.activeSession()?.dirty ?? false;
-  },
-  get currentPath(): string | undefined {
-    return tabs.activeSession()?.currentPath;
-  },
-} as unknown as DocumentSession);
+const drafts = new DraftRecovery(() =>
+  tabs.store.tabs
+    .filter((t) => t.dirty)
+    .map((t) => {
+      const ctx = tabs.getContext(t.id); // per-tab 序列化闭包（Task 14）
+      return {
+        path: t.path,
+        content: ctx ? ctx.serialize() : (t.contentSnapshot ?? ""),
+      };
+    }),
+);
 
 /** Ctrl+P 面板开关 */
 const quickOpenVisible = ref(false);

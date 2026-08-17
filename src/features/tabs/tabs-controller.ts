@@ -73,6 +73,17 @@ function createController(): TabsController {
   const closeRequest = ref<{ tabId: string; title: string } | undefined>(undefined);
 
   /**
+   * 序列化标签内容（finalizeClose 与 getContext 共用同口径，Task 14 收口防漂移）
+   * 已挂载：按实例序列化（含 FM 回写）；未挂载：contentSnapshot 兜底（空串）。
+   * @param id 标签 id（用于未挂载时从簿记取内容快照）
+   * @param ctx 标签会话栈上下文
+   */
+  function serializeContent(id: string, ctx: TabContext): string {
+    if (ctx.crepeRef) return editorManager.getMarkdownFor(ctx.crepeRef, ctx.frontMatterRef);
+    return store.tabs.find((t) => t.id === id)?.contentSnapshot ?? "";
+  }
+
+  /**
    * 创建每标签会话栈：DocumentSession + AutoSaveController（D1）
    * @param tabId 标签 id（会话栈与簿记关联键）
    * @returns 会话栈上下文（crepeRef 挂载后由 onInstanceReady 填充）
@@ -186,9 +197,7 @@ function createController(): TabsController {
     const ctx = contexts.get(id);
     const tab = store.tabs.find((t) => t.id === id);
     if (!ctx || !tab) return;
-    const content = ctx.crepeRef
-      ? editorManager.getMarkdownFor(ctx.crepeRef, ctx.frontMatterRef)
-      : (tab.contentSnapshot ?? "");
+    const content = serializeContent(id, ctx);
     store.closeTab(id, content);
     unregisterInstance(id);
     contexts.delete(id);
@@ -295,17 +304,16 @@ function createController(): TabsController {
 
   /**
    * 取标签序列化上下文（Task 14 草稿聚合消费）
-   * 已挂载：按实例序列化（含 FM 回写）；未挂载：快照 → initialDoc → 空串。
+   * 返回 context 的序列化包装（不暴露内部）：挂载取实例（含 FM 回写），
+   * 未挂载取 contentSnapshot 兜底——与 finalizeClose 同口径（serializeContent 共用）。
+   * 未知 tabId（上下文已失）返回 undefined。
    */
   function getContext(tabId: string): { serialize(): string } | undefined {
     const ctx = contexts.get(tabId);
     if (!ctx) return undefined;
     return {
       serialize(): string {
-        if (ctx.crepeRef) return editorManager.getMarkdownFor(ctx.crepeRef, ctx.frontMatterRef);
-        return (
-          store.tabs.find((t) => t.id === tabId)?.contentSnapshot ?? initialDocs.get(tabId) ?? ""
-        );
+        return serializeContent(tabId, ctx);
       },
     };
   }
