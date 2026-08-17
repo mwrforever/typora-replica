@@ -5,7 +5,7 @@
 // 脏状态经 session.onDirtyChange 桥接回 store（单一事件源 02 写盘事件驱动）。
 //
 // 模块级单例：TabHost 与 App.vue 各调一次 useTabsController 必须拿到同一实例
-// （createController 顶层创建一次；实例/上下文状态若分属两份会互相丢失）。
+// （惰性创建一次并缓存；实例/上下文状态若分属两份会互相丢失）。
 import { reactive, ref } from "vue";
 import type { Ref } from "vue";
 import type { Crepe } from "@milkdown/crepe";
