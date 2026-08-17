@@ -11,7 +11,9 @@ import type { Ref } from "vue";
 import type { Crepe } from "@milkdown/crepe";
 import { AutoSaveController } from "../document/auto-save";
 import { DocumentSession } from "../document/document-session";
+import type { SaveOutcome } from "../document/document-session";
 import { editorManager } from "../editor/editor-manager";
+import { saveAsDialog } from "../../services/open-commands";
 import { loadSettings } from "../../services/settings";
 import {
   activateInstance,
@@ -44,12 +46,18 @@ export interface TabsController {
   initialDocs: Map<string, string>;
   /** LRU 已回收的标签（TabHost v-if 重建依据） */
   recycledIds: Set<string>;
-  /** C2 弹窗挂起（P1 恒 undefined，P3 接弹窗；Ref 供模板/消费方 .value 读取） */
+  /** C2 脏标签关闭挂起（非 undefined 时 App.vue v-if 弹确认窗；Ref 供模板 .value 读取） */
   closeRequest: Ref<{ tabId: string; title: string } | undefined>;
   openFile(path: string, title: string): Promise<boolean>;
   createUntitled(): void;
   activate(id: string): void;
   closeTab(id: string): void;
+  /** C2「保存」：走 02 保存链路（未命名转另存为），成功后关闭；失败保持打开 */
+  confirmCloseSave(): Promise<void>;
+  /** C2「不保存」：丢弃变更直接关闭（重开栈仍存关闭前内容——D4 语义安全网） */
+  confirmCloseDiscard(): void;
+  /** C2「取消」：中止关闭，标签与内容不变 */
+  cancelClose(): void;
   reopenClosed(): void;
   cycle(dir: 1 | -1): void;
   onInstanceReady(tabId: string, inst: TabInstanceReady): void;
@@ -150,19 +158,78 @@ function createController(): TabsController {
   }
 
   /**
-   * 关闭标签（P1 直关；C2 脏确认弹窗由 Task 13 接）
+   * 关闭标签（C2：脏标签挂起三按钮确认——AC-C2-1；干净标签直接关闭）
+   * 挂起不关闭：closeRequest 供 App.vue v-if 弹窗，三按钮回调分别走
+   * confirmCloseSave/confirmCloseDiscard/cancelClose 分支。
    * 内容序列化：已挂载取实例（含 FM 回写），未挂载取快照（重开未重建场景）。
+   * @param id 目标标签 id（不存在或上下文已失则安全忽略）
    */
   function closeTab(id: string): void {
     const tab = store.tabs.find((t) => t.id === id);
     const ctx = contexts.get(id);
     if (!tab || !ctx) return;
+    if (tab.dirty) {
+      // 脏标签：挂起关闭请求，弹 C2 确认（AC-C2-1）——不直接关，内容不丢
+      closeRequest.value = { tabId: id, title: tab.title };
+      return;
+    }
+    finalizeClose(id);
+  }
+
+  /**
+   * 关闭执行体（C2 干净直关 / 保存成功 / 不保存 三入口共用）：
+   * 序列化关闭时内容入重开栈 → store 移除 + 邻位激活（D3 末标签自动新建）
+   * → 注销实例 → 丢弃会话上下文。关闭恒存内容（D4：Ctrl+Shift+T 恢复脏快照）。
+   * @param id 目标标签 id（上下文或簿记缺失则安全忽略）
+   */
+  function finalizeClose(id: string): void {
+    const ctx = contexts.get(id);
+    const tab = store.tabs.find((t) => t.id === id);
+    if (!ctx || !tab) return;
     const content = ctx.crepeRef
       ? editorManager.getMarkdownFor(ctx.crepeRef, ctx.frontMatterRef)
       : (tab.contentSnapshot ?? "");
     store.closeTab(id, content);
     unregisterInstance(id);
     contexts.delete(id);
+  }
+
+  /**
+   * C2「保存」：走 02 保存链路（未命名标签转另存为），保存成功才关闭（AC-C2-2/5）
+   * 保存失败（io-error 等）：02 已广播错误 notice；finalize 不执行，标签保持打开
+   * （弹窗已关，内容不丢）。另存为取消：中止，等价取消（无弹窗残留）。
+   */
+  async function confirmCloseSave(): Promise<void> {
+    const req = closeRequest.value;
+    if (!req) return;
+    const ctx = contexts.get(req.tabId);
+    if (!ctx) return;
+    // 弹窗先关：后续保存（含另存为对话框）期间不再悬挂确认态
+    closeRequest.value = undefined;
+    let outcome: SaveOutcome;
+    if (!ctx.session.currentPath) {
+      // 未命名标签：先经另存为对话框取目标路径；取消（null）中止——标签保持打开
+      const target = await saveAsDialog();
+      if (!target) return;
+      outcome = await ctx.session.saveAs(target);
+    } else {
+      outcome = await ctx.session.save();
+    }
+    if (outcome.saved) finalizeClose(req.tabId);
+    // 失败：02 已广播错误 notice；标签保持打开（弹窗已关，内容不丢）
+  }
+
+  /** C2「不保存」：丢弃变更直接关闭（重开栈仍存关闭前内容——D4，AC-C2-3 语义安全网） */
+  function confirmCloseDiscard(): void {
+    const req = closeRequest.value;
+    if (!req) return;
+    closeRequest.value = undefined;
+    finalizeClose(req.tabId);
+  }
+
+  /** C2「取消」：中止关闭，标签与内容不变（AC-C2-3） */
+  function cancelClose(): void {
+    closeRequest.value = undefined;
   }
 
   /** LIFO 重开最近关闭：新 id + 恢复关闭前内容快照（脏标签重开仍脏） */
@@ -252,6 +319,9 @@ function createController(): TabsController {
     createUntitled,
     activate,
     closeTab,
+    confirmCloseSave,
+    confirmCloseDiscard,
+    cancelClose,
     reopenClosed,
     cycle,
     onInstanceReady,

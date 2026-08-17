@@ -1,6 +1,6 @@
 <!-- 标签条（04 多标签）：渲染/点击激活/× 关闭/脏标记/溢出滚动
      展示层组件：不持有业务状态，所有行为经 activate/close 事件上抛，
-     close 的脏确认分支由上层（Task 13 C2 弹窗）决定 -->
+     close 的脏确认分支由上层（controller C2 弹窗）决定 -->
 <script setup lang="ts">
 import type { TabMeta } from "./tabs-store";
 

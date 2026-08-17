@@ -4,7 +4,7 @@
      04 装配：多标签控制器——TabHost 挂载、启动/打开/文件夹/保存改接激活会话；
      布局为 03 阶段临时形态（编辑器 + 左侧栏），12 窗口外壳替换为完整窗口装配） -->
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import FileTreeMenu from "./features/file-tree/FileTreeMenu.vue";
 import SidebarPanel from "./features/file-tree/SidebarPanel.vue";
@@ -20,6 +20,7 @@ import type { DocumentSession } from "./features/document/document-session";
 import { editorManager } from "./features/editor/editor-manager";
 import TabHost from "./features/tabs/TabHost.vue";
 import TabBar from "./features/tabs/TabBar.vue";
+import ConfirmCloseDialog from "./features/tabs/ConfirmCloseDialog.vue";
 import { registerTabsShortcuts } from "./features/tabs/tabs-shortcuts";
 import { useTabsController } from "./features/tabs/tabs-controller";
 import { getCliArgs, probePathExists } from "./services/file-io";
@@ -35,6 +36,12 @@ import { RecentFiles } from "./services/recent-files";
  * 控制器为模块级单例（useTabsController 与 TabHost 各调一次拿到同一实例）。
  */
 const tabs = useTabsController();
+
+/**
+ * C2 关闭确认挂起请求（弹窗显隐/标题驱动）。controller 为非响应式普通对象，
+ * 模板不会自动解包嵌套 ref → 此处顶层 computed 解包，模板侧直接消费且 v-if 可收窄。
+ */
+const closeRequest = computed(() => tabs.closeRequest.value);
 
 /**
  * 草稿备份（P1 门面订阅：仅激活标签编辑触发心跳；dirty/currentPath 委托
@@ -70,7 +77,8 @@ const cleanupFileTreeShortcuts = registerFileTreeShortcuts({
 
 /**
  * 标签快捷键（04：Ctrl+N 新建 / Ctrl+W 关闭 / Ctrl+Tab 轮换 / Ctrl+Shift+T 重开；
- * 12 窗口外壳可整体接管）。Ctrl+W 关闭激活标签（P1 直关，脏确认分支 Task 13 接）。
+ * 12 窗口外壳可整体接管）。Ctrl+W 关闭激活标签（脏标签经 C2 三按钮确认，
+ * 干净标签直关）。
  */
 const cleanupTabsShortcuts = registerTabsShortcuts({
   onNewTab: () => tabs.createUntitled(),
@@ -247,7 +255,7 @@ function basenameOf(path: string): string {
     />
     <!-- 编辑器宿主容器：dragover 阻止默认允许 drop，drop 消费文件树拖拽插链接（F7） -->
     <div class="editor-host" @dragover.prevent @drop="onEditorDrop">
-      <!-- 标签条（04）：渲染/激活/关闭/脏标记；close 直关（P1，脏分支 Task 13） -->
+      <!-- 标签条（04）：渲染/激活/关闭/脏标记；close 关闭（脏标签挂起 C2 确认） -->
       <TabBar
         :tabs="tabs.store.tabs"
         :active-tab-id="tabs.store.activeTabId"
@@ -282,6 +290,14 @@ function basenameOf(path: string): string {
       }
     "
     @close="quickOpenVisible = false"
+  />
+  <!-- C2 关闭确认（04）：脏标签关闭挂起时弹出；三按钮分派保存/不保存/取消 -->
+  <ConfirmCloseDialog
+    v-if="closeRequest"
+    :title="closeRequest.title"
+    @save="tabs.confirmCloseSave"
+    @discard="tabs.confirmCloseDiscard"
+    @cancel="tabs.cancelClose"
   />
 </template>
 
