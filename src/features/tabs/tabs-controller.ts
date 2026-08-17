@@ -339,11 +339,16 @@ function createController(): TabsController {
 }
 
 /**
- * 控制器模块级单例（TabHost 与 App.vue 装配各调一次必须同一实例——
+ * 控制器模块级单例（TabHost 与 App.vue 装配各调一次必须拿到同一实例——
  * 每标签会话栈/回收标记等状态跨调用共享）
+ *
+ * 惰性初始化：useTabsStore 必须在 Pinia 安装后调用（组件 setup 期），
+ * 若在模块加载期（App.vue import 链）直接实例化会因无活跃 Pinia 抛错，
+ * 导致整个应用白屏（E2E 首跑暴露）。
  */
-const controller = createController();
+let controller: TabsController | undefined;
 
 export function useTabsController(): TabsController {
+  controller ??= createController();
   return controller;
 }
