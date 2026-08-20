@@ -6,7 +6,7 @@
 //
 // 模块级单例：TabHost 与 App.vue 各调一次 useTabsController 必须拿到同一实例
 // （惰性创建一次并缓存；实例/上下文状态若分属两份会互相丢失）。
-import { reactive, ref } from "vue";
+import { reactive, ref, watch } from "vue";
 import type { Ref } from "vue";
 import type { Crepe } from "@milkdown/crepe";
 import { AutoSaveController } from "../document/auto-save";
@@ -90,7 +90,13 @@ function createController(): TabsController {
    */
   function createContext(tabId: string): TabContext {
     const ctx: TabContext = {
-      session: new DocumentSession(),
+      // 终审 C2：注入 per-tab 序列化器——后台脏标签「保存」不得经门面取激活内容
+      // （否则 a 脏、adopt=b 时会把 b 的内容写进 a.md）。serialize 为惰性调用
+      // （保存时才执行），届时 ctx.crepeRef/frontMatterRef 已由 onInstanceReady
+      // 填充（未挂载则回落 contentSnapshot ?? ""），无闭包时序死锁。
+      session: new DocumentSession({
+        serialize: () => serializeContent(tabId, ctx),
+      }),
       autoSave: undefined as unknown as AutoSaveController,
       crepeRef: undefined,
       frontMatterRef: null,
@@ -245,11 +251,13 @@ function createController(): TabsController {
   function reopenClosed(): void {
     const id = store.reopenClosed();
     if (!id) return;
-    createContext(id);
+    const ctx = createContext(id);
     const tab = store.tabs.find((t) => t.id === id)!;
-    // 快照作 initialDoc（重开的标签必是新 id、无存活实例 → 恒走重挂载路径；
-    // 内容快照为空串时跳过——initialDocs 无键即空文档）
-    if (tab.contentSnapshot) initialDocs.set(id, tab.contentSnapshot);
+    // 终审 I1：经 session.restore 恢复会话——登记原路径/脏状态（不读盘、不写偏好），
+    // 否则重开标签 currentPath 为空导致 Ctrl+S 恒弹另存为。restore 广播
+    // onDocumentChange → 内容自动入 initialDocs（TabHost 重挂载输入；空串也入键）。
+    // path 可能为 undefined（未命名标签重开）→ restore 内部处理（不登记路径）。
+    ctx.session.restore(tab.path, tab.contentSnapshot ?? "", tab.title, tab.dirty);
   }
 
   /** Ctrl+Tab 轮换（簿记透传） */
@@ -317,6 +325,18 @@ function createController(): TabsController {
       },
     };
   }
+
+  // 终审 C1（关键连接）：激活标签切换即驱动门面 adopt。
+  // 点击标签（activate）/Ctrl+Tab 轮换（cycle）/关闭邻位激活（finalizeClose→store.closeTab）
+  // 三者都只改 store.activeTabId，watch 统一桥接到 activateInstance（停旧 autoSave →
+  // editorManager.adopt → 起新）。activateInstance 自带 adoptedTabId===tabId 幂等守卫，
+  // 覆盖全部入口；实例未挂号（打开新标签的 onInstanceReady 前置）时安全跳过。
+  watch(
+    () => store.activeTabId,
+    (id) => {
+      if (id) activateInstance(id);
+    },
+  );
 
   return {
     store,

@@ -6,6 +6,7 @@
 // DocumentSession/AutoSaveController/editorManager 真实构造（不 mock 进本体），
 // 仅 mock 服务层（file-io/settings/recent-files）与 fake crepe（adopt 需 on 桩）。
 import { createPinia, setActivePinia } from "pinia";
+import { nextTick } from "vue";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Crepe } from "@milkdown/crepe";
 import type { TabsController } from "./tabs-controller";
@@ -216,13 +217,19 @@ describe("tabsController 编排控制器", () => {
     expect(controller.initialDocs.get(reopened.id)).toBe("脏内容");
   });
 
-  it("reopenClosed：空串快照不写 initialDocs（空文档重开）；栈空安全返回", () => {
+  it("reopenClosed：空内容经 restore 广播入 initialDocs；未命名不登记路径；栈空安全返回", () => {
     controller.createUntitled();
     const aId = controller.store.activeTabId!;
     controller.closeTab(aId); // 未挂载无快照 → 空串入栈；D3 自动新建 Untitled 2
     controller.reopenClosed();
     const reopenedId = controller.store.activeTabId!;
-    expect(controller.initialDocs.has(reopenedId)).toBe(false);
+    // I1：restore 恒广播内容（含空串）入 initialDocs——TabHost 模板 "?? ''" 保底空文档
+    expect(controller.initialDocs.get(reopenedId)).toBe("");
+    controller.onInstanceReady(reopenedId, { crepe: fakeCrepe(), frontMatter: null });
+    const session = registry.getInstance(reopenedId)!.session;
+    expect(session.currentPath).toBeUndefined(); // 未命名重开：restore 不登记路径
+    expect(session.dirty).toBe(false);
+    startedAutoSaveIds.push(reopenedId); // 重开即激活（afterEach 停订）
     controller.reopenClosed(); // 栈空：安全返回（标签不变）
     expect(controller.store.tabs).toHaveLength(2);
   });
@@ -371,5 +378,127 @@ describe("tabsController 编排控制器", () => {
     expect(console.error).toHaveBeenCalledWith("[MarkWell]", "写盘失败");
     session.notify({ level: "info", message: "已保存" });
     expect(console.info).toHaveBeenCalledWith("[MarkWell]", "已保存");
+  });
+
+  it("终审 C1：激活/轮换只改簿记仍驱动门面 adopt（activeSession 与 autoSave 切换）", async () => {
+    mockReadFile.mockResolvedValueOnce({ content: "a 文档", encoding: "utf8", lineEnding: "lf" });
+    await controller.openFile("D:/a/a.md", "a.md");
+    const aId = controller.store.activeTabId!;
+    mockReadFile.mockResolvedValueOnce({ content: "b 文档", encoding: "utf8", lineEnding: "lf" });
+    await controller.openFile("D:/a/b.md", "b.md");
+    const bId = controller.store.activeTabId!;
+    // 挂两个标签：a 非激活仅登记；b 挂载即激活（门面 adopt b）
+    controller.onInstanceReady(aId, { crepe: fakeCrepe("a 内容"), frontMatter: null });
+    controller.onInstanceReady(bId, { crepe: fakeCrepe("b 内容"), frontMatter: null });
+    const instA = registry.getInstance(aId)!;
+    const instB = registry.getInstance(bId)!;
+    expect(controller.activeSession()).toBe(instB.session); // 前置：门面在 b
+    // 插入 spy 后 a.start / b.stop 各应经 watch 驱动触发一次（此前 a 未激活、b 从未停）
+    const startSpyA = vi.spyOn(instA.autoSave, "start");
+    const stopSpyB = vi.spyOn(instB.autoSave, "stop");
+    controller.activate(aId); // 点击标签 a：store.activate → watch → activateInstance(a)
+    await nextTick(); // 冲刷 Vue watch 微任务队列
+    expect(controller.activeSession()).toBe(instA.session); // 门面已 adopt a
+    expect(startSpyA).toHaveBeenCalledTimes(1); // a 的 autoSave 启动
+    expect(stopSpyB).toHaveBeenCalledTimes(1); // b 的 autoSave 停订
+    // 轮换路径（Ctrl+Tab → store.cycle）同样走 watch：切回 b
+    const startSpyB2 = vi.spyOn(instB.autoSave, "start");
+    const stopSpyA = vi.spyOn(instA.autoSave, "stop");
+    controller.cycle(1);
+    await nextTick();
+    expect(controller.activeSession()).toBe(instB.session);
+    expect(startSpyB2).toHaveBeenCalledTimes(1);
+    expect(stopSpyA).toHaveBeenCalledTimes(1);
+    // 清理：还原 spy 后真实停订两个标签（避免残留订阅与 5 分钟兜底定时器）
+    startSpyA.mockRestore();
+    stopSpyB.mockRestore();
+    startSpyB2.mockRestore();
+    stopSpyA.mockRestore();
+    instA.autoSave.stop();
+    instB.autoSave.stop();
+  });
+
+  it("终审 C2：后台脏标签「保存」写自身文件（per-tab 序列化注入，不串激活标签内容）", async () => {
+    mockReadFile.mockResolvedValueOnce({ content: "a 文档", encoding: "utf8", lineEnding: "lf" });
+    await controller.openFile("D:/a/a.md", "a.md");
+    const aId = controller.store.activeTabId!;
+    controller.onInstanceReady(aId, { crepe: fakeCrepe("a 编辑器内容"), frontMatter: null });
+    mockReadFile.mockResolvedValueOnce({ content: "b 文档", encoding: "utf8", lineEnding: "lf" });
+    await controller.openFile("D:/a/b.md", "b.md");
+    const bId = controller.store.activeTabId!;
+    controller.onInstanceReady(bId, { crepe: fakeCrepe("b 编辑器内容"), frontMatter: null });
+    // 前置：门面已 adopt b、a 为后台（若无 per-tab 注入，a 保存会经门面取到 b 内容）
+    expect(controller.activeSession()).toBe(registry.getInstance(bId)!.session);
+    // a 脏 → 挂起关闭 → 选「保存」
+    controller.store.markDirty(aId);
+    controller.closeTab(aId);
+    await controller.confirmCloseSave();
+    // 写盘目标与内容必须属于 a（不得把 b 的内容写进 a.md）
+    expect(mockWriteFile).toHaveBeenCalledTimes(1);
+    const [targetPath, diskContent] = mockWriteFile.mock.calls[0] as [string, string];
+    expect(targetPath).toBe("D:/a/a.md");
+    expect(diskContent).toContain("a 编辑器内容");
+    expect(diskContent).not.toContain("b");
+    // a 保存成功已关闭；b 保持打开且门面不变
+    expect(controller.store.tabs.map((t) => t.id)).toEqual([bId]);
+    expect(controller.activeSession()).toBe(registry.getInstance(bId)!.session);
+  });
+
+  it("终审 I1：reopenClosed 经 session.restore 登记原路径与脏状态（Ctrl+S 直存不弹另存为）", async () => {
+    mockReadFile.mockResolvedValue({ content: "内容", encoding: "utf8", lineEnding: "lf" });
+    await controller.openFile("D:/a/reopen.md", "reopen.md");
+    const aId = controller.store.activeTabId!;
+    controller.onInstanceReady(aId, { crepe: fakeCrepe("脏内容"), frontMatter: null });
+    controller.store.markDirty(aId); // 编辑置脏
+    controller.closeTab(aId); // 脏 → 挂起确认
+    controller.confirmCloseDiscard(); // 丢弃：关闭前脏内容入重开栈
+    controller.reopenClosed();
+    const reopenedId = controller.store.activeTabId!;
+    // 重开标签挂载登记 → 会话恢复状态可检（restore 已登记原路径/脏状态）
+    controller.onInstanceReady(reopenedId, { crepe: fakeCrepe(), frontMatter: null });
+    const session = registry.getInstance(reopenedId)!.session;
+    expect(session.currentPath).toBe("D:/a/reopen.md"); // 原文件路径恢复（非空 → 不弹另存为）
+    expect(session.dirty).toBe(true); // 脏状态恢复
+    expect(controller.initialDocs.get(reopenedId)).toBe("脏内容"); // restore 广播内容入 initialDocs
+    startedAutoSaveIds.push(reopenedId); // 重开即激活（afterEach 停订）
+  });
+
+  it("终审 I1 兜底分支：重开标签快照缺失时 restore 回落空串（类型防御）", () => {
+    // store.reopenClosed 恒写 contentSnapshot（字符串），`tab.contentSnapshot ?? ""` 的
+    // 空串侧仅在类型级防御（TabMeta.contentSnapshot 可选缺失）可及——经 spy 注入缺失
+    // 快照的重开 id 覆盖兜底侧（与既有防御分支用例同手法：tab-close-flow 幽灵 id 注入）。
+    const spy = vi.spyOn(controller.store, "reopenClosed").mockReturnValueOnce("defensive-id");
+    controller.store.$patch((s) => {
+      s.tabs.push({
+        id: "defensive-id",
+        kind: "untitled",
+        title: "防御",
+        dirty: false,
+        contentReady: true,
+      });
+    });
+    controller.reopenClosed(); // restore(tab.path=undefined, "" 兜底, ...)
+    controller.onInstanceReady("defensive-id", { crepe: fakeCrepe(), frontMatter: null });
+    const session = registry.getInstance("defensive-id")!.session;
+    expect(session.currentPath).toBeUndefined(); // 无路径不登记
+    expect(session.dirty).toBe(false);
+    expect(controller.initialDocs.get("defensive-id")).toBe(""); // 空串经 restore 广播入 initialDocs
+    spy.mockRestore();
+  });
+
+  it("终审 I2：回收重建内容源 contentSnapshot（回收时最新）优先 initialDocs（打开时旧值）", () => {
+    // 前置簿记（终审 I2）：initialDocs 打开时写入后从不清理（恒陈旧）；contentSnapshot
+    // 由 maybeRecycle 以实例最新内容覆盖（恒新鲜）。TabHost 重建模板序
+    // ":initial-doc=\"tab.contentSnapshot ?? initialDocs.get(tab.id) ?? ''\"" 把
+    // contentSnapshot 放左侧 → 编辑后最新内容优先，回收重建不丢编辑；若序颠倒会读到旧值。
+    controller.createUntitled();
+    const id = controller.store.activeTabId!;
+    controller.initialDocs.set(id, "打开时旧内容");
+    controller.store.setSnapshot(id, "编辑后最新内容"); // 模拟 maybeRecycle 覆盖快照
+    // 重建解析式（与 TabHost 模板逐字对应）：contentSnapshot 优先
+    const tab = controller.store.tabs.find((t) => t.id === id)!;
+    const rebuildDoc = tab.contentSnapshot ?? controller.initialDocs.get(id) ?? "";
+    expect(rebuildDoc).toBe("编辑后最新内容");
+    expect(controller.initialDocs.get(id)).toBe("打开时旧内容"); // 旧值仍在但被 contentSnapshot 遮蔽
   });
 });
