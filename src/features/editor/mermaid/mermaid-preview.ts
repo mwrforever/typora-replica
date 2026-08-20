@@ -29,22 +29,22 @@ const LOADING_HTML = '<div class="markwell-mermaid-loading">图表渲染中…</
  * 按传入 id 把文档中同名旧元素移除，且返回的 SVG 自带该 id 并被嵌入预览面板。
  * 若固定 id 渲染，第二个图表渲染时会把第一个图表的 SVG 从 DOM 移除，
  * 多图表文档任一时刻只保留最后渲染的一个。每次渲染分配自增唯一 id 规避。
+ *
+ * 保持模块级：removeExistingElements 按 id 扫整个 document——多编辑器实例同
+ * document 共存时 id 必须全文档唯一，若移入闭包会让 A/B 实例的 id 冲突、
+ * 互相误删对方 SVG（04 多标签）。
  */
 let renderSeq = 0;
-/**
- * 预览代次自增计数器（异步渲染竞态守卫）
- *
- * 编辑图表内容会立即重触发 renderPreview（先回 LOADING_HTML 再异步渲染），
- * 旧代次（慢、大图）的 promise 可能晚于新代次 resolve——无守卫时旧 SVG 会
- * 永久覆盖新预览（FIX-7）。applyPreview 前校验代次仍为最新，过期结果丢弃。
- */
-let previewGen = 0;
 
 /**
  * 创建 mermaid 预览钩子（链式包裹前序 renderPreview）
  * @param prev 前序 renderPreview（内置 latex 等）
  */
 export function createMermaidRenderPreview(prev: RenderPreviewHandler): RenderPreviewHandler {
+  // 预览代次按编辑器实例隔离（04 多标签）：实例 A 的异步渲染不得使实例 B 的
+  // 预览结果过期——FIX-7 竞态守卫由模块级改为实例级（旧实现共享计数器，
+  // 后触发实例会作废先触发实例的未完成渲染，其预览被永久丢弃）
+  let previewGen = 0;
   return (language: string, content: string, applyPreview) => {
     const lang = language.toLowerCase();
     if (lang === "mermaid" || lang === "sequence" || lang === "flow") {

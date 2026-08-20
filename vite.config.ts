@@ -128,6 +128,14 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 04 核心功能 100%：标签状态机/实例注册表/快捷键（TabBar/ConfirmCloseDialog
+        // 为 vue 组件走全局 ≥80%）
+        "src/features/tabs/**/*.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },

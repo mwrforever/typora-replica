@@ -1,8 +1,9 @@
 // 文档会话（02 文档管理核心）
 //
 // 单一职责：文档状态机（路径/目录/脏状态）+ 打开/保存/另存文件链路。
-// 不持有编辑器实例：正文经 editorManager.getMarkdown() 序列化（01 契约，
-// 已剥全部尾随换行），落盘前补尾换行 + 行尾归一（line-ending 收口）。
+// 不持有编辑器实例：正文经序列化提供器落盘——缺省 editorManager.getMarkdown()
+// （01 契约，已剥全部尾随换行）；04 多标签 per-tab 注入 serialize，
+// 后台标签保存不得经门面取激活内容。落盘前补尾换行 + 行尾归一（line-ending 收口）。
 // 目录（currentDir）同时服务 F1（父目录加载）与 03 侧栏；lastFile/lastFolder
 // 随打开/另存/换目录写入偏好（F14 启动恢复数据源）。
 import { FileIoError, readFile, writeFile } from "../../services/file-io";
@@ -36,7 +37,14 @@ export interface SessionListeners {
   onNotice?: (notice: { level: "error" | "info"; message: string }) => void;
 }
 
-/** 文档会话（单例由 App.vue 持有） */
+/** 会话选项（04 多标签 per-tab 注入；缺省单文档路径兼容） */
+export interface DocumentSessionOptions {
+  /** 内容序列化提供器（04：per-tab 注入，后台标签保存不得经门面取激活内容；
+   *  缺省取激活编辑器门面（单文档路径兼容）） */
+  serialize?: () => string;
+}
+
+/** 文档会话（单例由 App.vue 持有；04 多标签下 per-tab 实例由 tabs-controller 创建） */
 export class DocumentSession {
   /** 当前文件路径（未命名文档为空） */
   currentPath?: string;
@@ -53,6 +61,13 @@ export class DocumentSession {
   private saveChain: Promise<unknown> = Promise.resolve();
   /** 当前事件监听（最后一次 on() 覆盖） */
   private listeners: SessionListeners = {};
+
+  /**
+   * 构造文档会话
+   * @param options 会话选项（04 多标签 per-tab 注入 serialize；缺省取激活编辑器门面，
+   * 单文档路径兼容——现有无参消费方行为不变）
+   */
+  constructor(private options: DocumentSessionOptions = {}) {}
 
   /** 注册事件监听（App.vue 装配时调用一次） */
   on(listeners: SessionListeners): void {
@@ -113,6 +128,23 @@ export class DocumentSession {
     this.listeners.onDocumentChange?.({ content: "", name: "未命名" });
   }
 
+  /**
+   * 恢复会话（04：重开脏快照/LRU 重建——登记路径与内容但**不读盘**，不写偏好；
+   * 与 openFile 不同，不触发文件 IO 与偏好持久化）
+   * @param path 文件完整路径（LRU 未命名标签重建时传 undefined）
+   * @param content 快照/重建的文档正文
+   * @param name 显示名
+   * @param dirty 恢复后的脏状态（脏快照重开为 true，干净标签重建为 false）
+   */
+  restore(path: string | undefined, content: string, name: string, dirty: boolean): void {
+    this.currentPath = path;
+    // 父目录联动侧栏（与 openFile 语义一致；无路径时保持未登记）
+    this.currentDir = path ? dirnameOf(path) : undefined;
+    this.dirty = dirty;
+    this.docVersion += 1;
+    this.listeners.onDocumentChange?.({ content, path, name });
+  }
+
   /** 标记脏（markdownUpdated 到达时由 auto-save 调用；幂等广播） */
   markDirty(): void {
     // 每次编辑递增纪元：save 写盘期间的新编辑以此识别（C 竞态守卫）
@@ -150,6 +182,11 @@ export class DocumentSession {
     return run;
   }
 
+  /** 序列化当前文档内容（注入优先，缺省门面——后台标签经注入器取本实例内容） */
+  private serialize(): string {
+    return (this.options.serialize ?? (() => editorManager.getMarkdown()))();
+  }
+
   /** save 实际执行体（串行链队列目标） */
   private async doSave(): Promise<SaveOutcome> {
     if (!this.currentPath) {
@@ -169,7 +206,7 @@ export class DocumentSession {
       return { saved: false, reason: "doc-switched", message };
     }
     const lineEnding = settings?.defaultLineEnding ?? "lf";
-    const body = editorManager.getMarkdown();
+    const body = this.serialize();
     const disk = toDiskContent(body, lineEnding);
     try {
       await writeFile(pathSnapshot, disk, lineEnding);

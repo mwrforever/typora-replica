@@ -32,6 +32,27 @@ describe("EditorPage 编辑器宿主", () => {
     expect(editorManager.getMarkdown()).toBe(md);
   });
 
+  it("passive 模式：不 adopt 进门面，实例经 onInstanceReady 上缴（04 多标签）", async () => {
+    // 用例间清态：editorManager 为模块级单例，前一用例已 adopt——destroy 幂等
+    editorManager.destroy();
+    const ready: Array<{ crepe: unknown; frontMatter: string | null }> = [];
+    render(EditorPage, {
+      props: {
+        initialDoc: "---\ntitle: 元数据\n---\n# FM 剥离后的正文",
+        adopt: false,
+        onInstanceReady: (inst) => ready.push(inst),
+      },
+    });
+    await waitFor(() => {
+      expect(ready).toHaveLength(1);
+    });
+    // 上缴载荷携带工厂解析出的 FM 内文（不含定界符，与 adopt/getMarkdownFor 约定一致：
+    // 注册表保存时经 getMarkdownFor 原样回写定界符）
+    expect(ready[0].frontMatter).toBe("title: 元数据");
+    // 门面未被 adopt：实例归回调方（tabs 注册表）管理，门面为空态
+    expect(editorManager.getCrepe()).toBeUndefined();
+  });
+
   it("渲染版式容器（800px 居中纸面）", () => {
     const { container } = render(EditorPage, { props: { initialDoc: "" } });
     expect(container.querySelector(".markwell-editor")).toBeInTheDocument();

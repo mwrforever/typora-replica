@@ -4,7 +4,8 @@ import { editorViewCtx } from "@milkdown/kit/core";
 import { fireEvent } from "@testing-library/dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTestEditor } from "../../../test/editor-test-utils";
-import { configureToc, tocSchema } from "./toc-plugin";
+import { configureToc, createTocViewRegistry, tocSchema } from "./toc-plugin";
+import type { TocNodeView } from "./toc-plugin";
 
 describe("E12 目录 TOC", () => {
   beforeEach(() => vi.useFakeTimers());
@@ -156,5 +157,32 @@ describe("E12 目录 TOC", () => {
     expect(toc).not.toBeNull();
     expect(toc?.getAttribute("data-node-type")).toBe("toc");
     crepe.destroy();
+  });
+
+  it("04 多标签：视图注册表 per-实例——notify 只重建自己的视图", () => {
+    // 两个编辑器实例各持独立注册表：notify 其一，另一注册表的视图不重建
+    // （TocNodeView 为模块私有类，测试侧以 as unknown as TocNodeView 断言 fake 形态）
+    const registryA = createTocViewRegistry();
+    const registryB = createTocViewRegistry();
+    const viewA = { rebuild: vi.fn() } as unknown as TocNodeView;
+    const viewB = { rebuild: vi.fn() } as unknown as TocNodeView;
+    registryA.add(viewA);
+    registryB.add(viewB);
+
+    registryA.notify();
+
+    expect(viewA.rebuild).toHaveBeenCalledTimes(1);
+    expect(viewB.rebuild).not.toHaveBeenCalled();
+  });
+
+  it("注册表 remove 退订后 notify 不再重建该视图", () => {
+    const registry = createTocViewRegistry();
+    const view = { rebuild: vi.fn() } as unknown as TocNodeView;
+    registry.add(view);
+    registry.remove(view);
+
+    registry.notify();
+
+    expect(view.rebuild).not.toHaveBeenCalled();
   });
 });

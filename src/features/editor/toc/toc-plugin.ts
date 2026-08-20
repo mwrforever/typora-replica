@@ -11,9 +11,10 @@
 //   - 条目点击定位对应标题（选区 + 滚动 + 临时高亮，高亮守卫与 reveal-range 同款）
 //
 // 接线（create-editor.ts 与测试助手 makeTestEditor 同源调用）：
+//   const tocViews = createTocViewRegistry();  // 每编辑器实例独立注册表（04 多标签隔离）
 //   crepe.editor.use(tocSchema).use(tocInputRule)
-//   crepe.editor.config((ctx) => { configureToc(ctx); setupTocNodeView(ctx); })
-//   setupTocRebuildListener(crepe)
+//   crepe.editor.config((ctx) => { configureToc(ctx); setupTocNodeView(ctx, tocViews); })
+//   setupTocRebuildListener(crepe, tocViews)
 import type { Crepe } from "@milkdown/crepe";
 import { nodeViewCtx, remarkPluginsCtx, remarkStringifyOptionsCtx } from "@milkdown/kit/core";
 import type { Ctx } from "@milkdown/kit/ctx";
@@ -108,24 +109,57 @@ const tocInputRule = $inputRule(() => {
   });
 });
 
-/** 存活的 toc 节点视图清单（更新通知用） */
-const liveTocViews = new Set<TocNodeView>();
+/**
+ * toc 视图注册表（04 多标签：按编辑器实例隔离——一个实例的更新只重建自己的目录）
+ *
+ * 每个编辑器实例持有一个独立注册表，实例销毁时随编辑器的 NodeView 销毁自动退订，
+ * 避免多标签场景下任一实例的更新重建全部实例的目录视图。
+ */
+export interface TocViewRegistry {
+  /** 登记一个存活的 toc 节点视图（NodeView 构造时调用） */
+  add(view: TocNodeView): void;
+  /** 退订（NodeView destroy 时调用） */
+  remove(view: TocNodeView): void;
+  /** 通知本注册表内全部视图重算目录（updated 事件防抖后调用） */
+  notify(): void;
+}
+
+/** 创建独立的 toc 视图注册表（每编辑器实例一个） */
+export function createTocViewRegistry(): TocViewRegistry {
+  const views = new Set<TocNodeView>();
+  return {
+    add: (view) => {
+      views.add(view);
+    },
+    remove: (view) => {
+      views.delete(view);
+    },
+    notify: () => {
+      for (const view of views) view.rebuild();
+    },
+  };
+}
 
 /**
  * toc 节点视图：渲染目录列表 DOM
  *
  * 目录结构来自文档 heading 节点（含层级缩进），点击条目把选区定位到标题文本并临时高亮。
  * 非线程安全（仅编辑器主线程访问）；rebuild 全量重建，防抖由调用方（updated 事件）负责。
+ * 视图从构造到销毁登记在所属实例的 registry 中（04 多标签：各实例独立，互不干扰）。
  */
 class TocNodeView {
   /** 容器 DOM */
   dom: HTMLElement;
 
-  constructor(private view: EditorView) {
+  constructor(
+    private view: EditorView,
+    private registry: TocViewRegistry,
+  ) {
     this.dom = document.createElement("div");
     this.dom.className = "markwell-toc";
     this.dom.contentEditable = "false";
-    liveTocViews.add(this);
+    // 登记进所属实例的注册表（后续 updated 防抖通知只重建本实例目录）
+    this.registry.add(this);
     this.rebuild();
   }
 
@@ -175,9 +209,9 @@ class TocNodeView {
     }
   }
 
-  /** 销毁：退出存活清单 */
+  /** 销毁：从所属实例注册表退订 */
   destroy(): void {
-    liveTocViews.delete(this);
+    this.registry.remove(this);
   }
 
   /** 忽略外部 DOM 变更（原子节点，容器内容由 rebuild 全量接管） */
@@ -186,17 +220,10 @@ class TocNodeView {
   }
 }
 
-/**
- * 通知全部存活 toc 视图重算（create-editor.ts 在 updated 事件防抖后调用）
- */
-export function notifyTocViews(): void {
-  for (const view of liveTocViews) view.rebuild();
-}
-
-/** 节点视图工厂（供 nodeViewCtx 注册：ProseMirror NodeViewConstructor 形态） */
-export function tocNodeViewFactory() {
+/** 节点视图工厂（供 nodeViewCtx 注册：ProseMirror NodeViewConstructor 形态，闭包携带实例注册表） */
+export function tocNodeViewFactory(registry: TocViewRegistry) {
   // node/getPos 由 PM 调用方传入但本视图不消费（额外参数被 JS 忽略，不参与签名）
-  return (_node: ProseMirrorNode, view: EditorView) => new TocNodeView(view);
+  return (_node: ProseMirrorNode, view: EditorView) => new TocNodeView(view, registry);
 }
 
 /**
@@ -205,10 +232,11 @@ export function tocNodeViewFactory() {
  * nodeViewCtx 条目为二元组 [节点名, 工厂]（与 $view 组合子同构），
  * 消费方 Object.fromEntries 直接展开为 ProseMirror nodeViews 选项。
  * @param ctx milkdown 配置上下文（create() 前 config 回调中调用）
+ * @param registry 本编辑器实例的 toc 视图注册表（04 多标签隔离）
  */
-export function setupTocNodeView(ctx: Ctx): void {
+export function setupTocNodeView(ctx: Ctx, registry: TocViewRegistry): void {
   // 显式标注二元组类型：展开数组字面量会被 TS 拓宽为联合数组，与 NodeView 元组类型不兼容
-  const entry: [string, NodeViewConstructor] = [tocNodeName, tocNodeViewFactory()];
+  const entry: [string, NodeViewConstructor] = [tocNodeName, tocNodeViewFactory(registry)];
   ctx.update(nodeViewCtx, (prev) => [...prev, entry]);
 }
 
@@ -232,15 +260,19 @@ export function configureToc(ctx: Ctx): void {
  * listener.updated 为 Crepe 原生事件（自身带 200ms 内部防抖），叠加本层 300ms
  * 防抖后总窗口 500ms；计时器按编辑器实例隔离，避免多实例互相清理。
  * @param crepe 目标编辑器实例（create() 前后调用均可，create 前走 config 注册路径）
+ * @param registry 本编辑器实例的 toc 视图注册表（notify 只重建本实例目录）
  */
-export function setupTocRebuildListener(crepe: Crepe): void {
+export function setupTocRebuildListener(crepe: Crepe, registry: TocViewRegistry): void {
   let tocTimer: ReturnType<typeof setTimeout> | undefined;
   crepe.on((listener) => {
     listener.updated(() => {
       clearTimeout(tocTimer);
-      tocTimer = setTimeout(notifyTocViews, 300);
+      tocTimer = setTimeout(registry.notify, 300);
     });
   });
 }
 
 export { tocSchema, tocInputRule };
+// 类型导出：TocNodeView 为模块私有类（值不可导入），仅导出类型供测试侧
+// `as unknown as TocNodeView` 断言 fake 视图（04 多标签隔离用例）
+export type { TocNodeView };

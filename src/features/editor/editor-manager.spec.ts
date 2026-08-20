@@ -248,6 +248,50 @@ describe("编辑器实例管理", () => {
     await editorManager.destroy();
   });
 
+  it("adopt 切换实例先解绑旧实例事件桥：旧实例变更不再投递（04 多标签）", async () => {
+    const received: string[] = [];
+    const unsubscribe = editorManager.subscribeMarkdownUpdated((md) => received.push(md));
+    const a = await makeTestEditor("实例A");
+    const b = await makeTestEditor("实例B");
+    editorManager.adopt(a.crepe);
+    // 门面切换：B 接管后旧实例 A 的事件桥必须解绑（否则 A 残留监听继续向订阅集合投递）
+    editorManager.adopt(b.crepe);
+    expect(editorManager.getCrepe()).toBe(b.crepe);
+    // 旧实例 A 触发 markdownUpdated：底层 listener 无法移除，但解绑标记应阻断投递
+    a.view.dispatch(a.view.state.tr.insertText("追加"));
+    // 新实例 B 触发：事件桥正常投递（证明订阅集合完好、仅旧实例被解绑）
+    b.view.dispatch(b.view.state.tr.insertText("追加"));
+    await new Promise((r) => setTimeout(r, 600));
+    expect(received.some((md) => md.includes("实例B"))).toBe(true);
+    expect(received.some((md) => md.includes("实例A"))).toBe(false);
+    unsubscribe();
+    await editorManager.destroy();
+  });
+
+  it("getMarkdownFor 按实例取内容：非激活实例 FM 回写 + 激活实例正文（04 多标签）", async () => {
+    const a = await makeTestEditor("# A 正文");
+    const b = await makeTestEditor("# B 正文");
+    editorManager.adopt(a.crepe, "title: A");
+    // 门面切换至 B（无 FM）：getMarkdownFor 仍可取 A 完整内容（FM 原样回写）
+    editorManager.adopt(b.crepe);
+    expect(editorManager.getMarkdownFor(a.crepe, "title: A")).toBe("---\ntitle: A\n---\n# A 正文");
+    expect(editorManager.getMarkdownFor(b.crepe, null)).toBe("# B 正文");
+    // 门面 getMarkdown 与激活实例的 getMarkdownFor 同构
+    expect(editorManager.getMarkdown()).toBe("# B 正文");
+  });
+
+  it("getMarkdownFor 的 serialize 转换器生效（与 getMarkdown 同构）", async () => {
+    const a = await makeTestEditor("# A 正文");
+    editorManager.adopt(a.crepe, "title: A");
+    editorManager.setDocumentTransformers({
+      serialize: (body) => `${body}\n尾部标注`,
+    });
+    expect(editorManager.getMarkdownFor(a.crepe, "title: A")).toBe(
+      "---\ntitle: A\n---\n# A 正文\n尾部标注",
+    );
+    editorManager.setDocumentTransformers({});
+  });
+
   it("insertMarkdown 向编辑器视图 dispatch 插入文本（F7 插入链路）", async () => {
     await editorManager.create("初始内容");
     // 复用既有 view 实例：dispatch 加 spy，断言载荷事务携带 insertText 方法

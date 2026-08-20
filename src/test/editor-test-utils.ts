@@ -20,6 +20,7 @@ import { latexEscapePlugin } from "../features/editor/latex-escape";
 import { openLinkPlugin } from "../features/editor/link/open-link";
 import {
   configureToc,
+  createTocViewRegistry,
   setupTocNodeView,
   setupTocRebuildListener,
   tocInputRule,
@@ -96,6 +97,8 @@ export async function makeTestEditor(
       ? { [CrepeFeature.ImageBlock]: { onUpload: options.onUpload } }
       : undefined,
   });
+  // TOC 目录（E12）：本实例独立视图注册表（04 多标签隔离，与产品工厂同源）
+  const tocViews = createTocViewRegistry();
   // 与产品工厂（create-editor.ts）同源注入自定义语法规则、Typora 式键位与序列化形态，
   // 保证测试环境覆盖自定义行为
   // 代码围栏语言落盘小写归一化（E6-4），与产品工厂同源插件
@@ -118,14 +121,14 @@ export async function makeTestEditor(
     configureFootnoteTooltip(ctx);
     // TOC 解析/序列化接线与节点视图注册（E12），与产品工厂同源
     configureToc(ctx);
-    setupTocNodeView(ctx);
+    setupTocNodeView(ctx, tocViews);
     // E20 html 节点渲染 NodeView（清洗 + 渲染剥离），与产品工厂同源
     setupHtmlNodeView(ctx);
     // E20 行内 HTML 开闭标签合并（WYSIWYG 平价），与产品工厂同源
     configureHtmlMerge(ctx);
   });
   // 目录防抖重算接线（E12），与产品工厂同源
-  setupTocRebuildListener(crepe);
+  setupTocRebuildListener(crepe, tocViews);
   await crepe.create();
   liveEditors.push(crepe);
   liveRoots.push(root);

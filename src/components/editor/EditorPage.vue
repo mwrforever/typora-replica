@@ -6,6 +6,7 @@
  * 负责 Crepe 与 Vue 集成的装配：MilkdownProvider + useEditor 生命周期管理，
  * 以及 MarkWell 版式容器（居中纸面）。窗口外壳（12 模块）在此基础上装配。
  */
+import type { Crepe } from "@milkdown/crepe";
 import { Milkdown, MilkdownProvider, useEditor } from "@milkdown/vue";
 import { defineComponent, onBeforeUnmount } from "vue";
 import { createMarkwellEditor } from "../../features/editor/create-editor";
@@ -17,8 +18,12 @@ const props = withDefaults(
   defineProps<{
     /** 初始文档内容（02 文档管理接管后由外部传入） */
     initialDoc?: string;
+    /** 04 多标签：false 时挂载不 adopt 进 editorManager（被动挂载，实例经回调上缴） */
+    adopt?: boolean;
+    /** 被动挂载时的实例上缴回调（adopt=true 时忽略） */
+    onInstanceReady?: (inst: { crepe: Crepe; frontMatter: string | null }) => void;
   }>(),
-  { initialDoc: "" },
+  { initialDoc: "", adopt: true, onInstanceReady: undefined },
 );
 
 /**
@@ -37,7 +42,12 @@ const EditorSurface = defineComponent({
       // 内文经 adopt 登记到实例管理服务，保存时 getMarkdown 原样回写
       const { frontMatter, body } = parseFrontMatter(props.initialDoc);
       const crepe = createMarkwellEditor(root, body);
-      editorManager.adopt(crepe, frontMatter);
+      if (props.adopt) {
+        editorManager.adopt(crepe, frontMatter);
+      } else {
+        // 被动挂载：实例归调用方（tabs 注册表）管理，门面在激活时 adopt
+        props.onInstanceReady?.({ crepe, frontMatter });
+      }
       return crepe;
     });
     return () => slots.default?.();
@@ -45,8 +55,9 @@ const EditorSurface = defineComponent({
 });
 
 onBeforeUnmount(() => {
-  // 组件卸载即销毁编辑器实例（12 多标签场景由该模块扩展为实例池）
-  editorManager.destroy();
+  // 被动模式不销毁门面（实例销毁由 @milkdown/vue 集成层在卸载时负责；
+  // 门面可能已指向另一标签，误 destroy 会杀掉其他实例）
+  if (props.adopt) editorManager.destroy();
 });
 </script>
 

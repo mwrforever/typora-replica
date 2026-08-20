@@ -22,6 +22,7 @@ import { handleMermaidContextMenu } from "./mermaid/mermaid-menu";
 import { createMermaidRenderPreview } from "./mermaid/mermaid-preview";
 import {
   configureToc,
+  createTocViewRegistry,
   setupTocNodeView,
   setupTocRebuildListener,
   tocInputRule,
@@ -223,6 +224,8 @@ export function createMarkwellEditor(
   const renderPreview = createMermaidRenderPreview(
     codeMirrorConfig.renderPreview ?? defaultCodeBlockConfig.renderPreview,
   );
+  // TOC 目录（E12）：每实例独立视图注册表（04 多标签隔离——一个实例的更新只重建自己的目录）
+  const tocViews = createTocViewRegistry();
   const crepe = new Crepe({
     root,
     defaultValue,
@@ -271,7 +274,7 @@ export function createMarkwellEditor(
     configureFootnoteTooltip(ctx);
     // TOC 解析/序列化接线（remark 转换 + stringify handler）与节点视图注册
     configureToc(ctx);
-    setupTocNodeView(ctx);
+    setupTocNodeView(ctx, tocViews);
     // E20 html 节点渲染 NodeView：清洗 + 渲染剥离 class/id/data-*（导出保留原文）
     setupHtmlNodeView(ctx);
     // E20 行内 HTML 开闭标签与纯文本合并（WYSIWYG 平价，解析侧）
@@ -279,7 +282,7 @@ export function createMarkwellEditor(
     // Typora 式落盘序列化选项（列表 `- ` 前缀、GFM 单词内下划线不转义）
     applyMarkwellStringifyOptions(ctx);
   });
-  // 文档更新 → 防抖 300ms 重算目录（listener.updated 为 Crepe 原生事件，自身 200ms 防抖）
-  setupTocRebuildListener(crepe);
+  // 文档更新 → 防抖 300ms 重算本实例目录（listener.updated 为 Crepe 原生事件，自身 200ms 防抖）
+  setupTocRebuildListener(crepe, tocViews);
   return crepe;
 }
