@@ -6,6 +6,8 @@
 // 当前为单实例形态（01 阶段单编辑器）；05/06 多实例需求由消费方基于本服务
 // 扩展或替换（接口已按「文档级」而非「应用级」划分）。
 import type { Editor } from "@milkdown/kit/core";
+import type { Node as ProseMirrorNode } from "@milkdown/kit/prose/model";
+import type { Selection } from "@milkdown/kit/prose/state";
 import { editorViewCtx } from "@milkdown/kit/core";
 import type { Crepe } from "@milkdown/crepe";
 import { createMarkwellEditor } from "./create-editor";
@@ -36,6 +38,10 @@ class EditorManager {
   private currentFrontMatter: string | null = null;
   /** markdownUpdated 订阅集合（destroy 不清理——重建后订阅继续生效） */
   private markdownSubscribers = new Set<(markdown: string) => void>();
+  /** docUpdated 订阅集合（destroy 不清理——与 markdownSubscribers 同惯例，重建后订阅继续生效） */
+  private docSubscribers = new Set<(doc: ProseMirrorNode) => void>();
+  /** selectionUpdated 订阅集合（同上） */
+  private selectionSubscribers = new Set<(selection: Selection) => void>();
   /** create 并发序号（01 终审裁决：create 并发重入无 in-flight 守卫，本次补上） */
   private createSeq = 0;
 
@@ -68,7 +74,11 @@ class EditorManager {
     // 守卫 2：创建期间被更新的 create 取代（this.crepe 已被其 destroy 清空）→
     // 不再挂事件桥（错挂 undefined 会崩溃）；实例销毁已由对方的 pendingDestroy 负责
     if (seq !== this.createSeq) return;
-    setupEditorEvents(this.crepe, { onMarkdownUpdated: (md) => this.emitMarkdownUpdated(md) });
+    setupEditorEvents(this.crepe, {
+      onMarkdownUpdated: (md) => this.emitMarkdownUpdated(md),
+      onDocUpdated: (doc) => this.emitDocUpdated(doc),
+      onSelectionUpdated: (sel) => this.emitSelectionUpdated(sel),
+    });
   }
 
   /**
@@ -89,7 +99,11 @@ class EditorManager {
     this.crepe = crepe;
     this.editor = crepe.editor;
     this.currentFrontMatter = frontMatter;
-    setupEditorEvents(crepe, { onMarkdownUpdated: (md) => this.emitMarkdownUpdated(md) });
+    setupEditorEvents(crepe, {
+      onMarkdownUpdated: (md) => this.emitMarkdownUpdated(md),
+      onDocUpdated: (doc) => this.emitDocUpdated(doc),
+      onSelectionUpdated: (sel) => this.emitSelectionUpdated(sel),
+    });
   }
 
   /** 销毁当前实例并解除事件绑定 */
@@ -197,9 +211,43 @@ class EditorManager {
     };
   }
 
+  /**
+   * 订阅 docUpdated 防抖事件（200ms：供 05 大纲收集重算）
+   * @param cb 回调（ProseMirror 文档对象）
+   * @returns 幂等取消订阅函数
+   */
+  subscribeDocUpdated(cb: (doc: ProseMirrorNode) => void): () => void {
+    this.docSubscribers.add(cb);
+    return () => {
+      this.docSubscribers.delete(cb);
+    };
+  }
+
+  /**
+   * 订阅 selectionUpdated 即时事件（供 05 当前标题高亮编辑通道）
+   * @param cb 回调（ProseMirror 选区）
+   * @returns 幂等取消订阅函数
+   */
+  subscribeSelectionUpdated(cb: (selection: Selection) => void): () => void {
+    this.selectionSubscribers.add(cb);
+    return () => {
+      this.selectionSubscribers.delete(cb);
+    };
+  }
+
   /** 分发 markdownUpdated 到订阅集合（事件桥回调） */
   private emitMarkdownUpdated(markdown: string): void {
     for (const cb of Array.from(this.markdownSubscribers)) cb(markdown);
+  }
+
+  /** 分发 docUpdated 到订阅集合（事件桥回调） */
+  private emitDocUpdated(doc: ProseMirrorNode): void {
+    for (const cb of Array.from(this.docSubscribers)) cb(doc);
+  }
+
+  /** 分发 selectionUpdated 到订阅集合（事件桥回调） */
+  private emitSelectionUpdated(selection: Selection): void {
+    for (const cb of Array.from(this.selectionSubscribers)) cb(selection);
   }
 }
 

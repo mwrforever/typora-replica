@@ -1,5 +1,8 @@
 // 编辑器实例管理服务：单例生命周期 + 文档存取 + 只读切换（跨模块接口，100% 覆盖）
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { TextSelection } from "@milkdown/kit/prose/state";
+import type { Node as ProseMirrorNode } from "@milkdown/kit/prose/model";
+import type { Selection } from "@milkdown/kit/prose/state";
 import { makeTestEditor } from "../../test/editor-test-utils";
 import { showMermaidMenu } from "./mermaid/mermaid-menu";
 import { editorManager } from "./editor-manager";
@@ -306,5 +309,51 @@ describe("编辑器实例管理", () => {
   it("insertMarkdown 未创建实例时静默 no-op", () => {
     editorManager.destroy();
     expect(() => editorManager.insertMarkdown("x")).not.toThrow();
+  });
+
+  describe("subscribeDocUpdated / subscribeSelectionUpdated（05 大纲消费口）", () => {
+    it("文档变更后经防抖收到 doc 对象，取消订阅后不再收到", async () => {
+      await editorManager.create("# 标题\n\n正文");
+      const received: ProseMirrorNode[] = [];
+      const off = editorManager.subscribeDocUpdated((doc) => received.push(doc));
+      const view = editorManager.getView()!;
+      // pos 6 为“正文”段落内容末端（heading 贡献 3 + 段落起点 3），追加字符落在文本节点边界内
+      view.dispatch(view.state.tr.insertText("更", 6));
+      // 防抖总窗口 = listener 内置 200ms + 事件桥 200ms，等 600ms 保证触发（沿用本文件真实计时器惯例）
+      await new Promise((r) => setTimeout(r, 600));
+      expect(received.length).toBeGreaterThan(0);
+      expect(received[received.length - 1].textContent).toContain("更");
+      // 幂等：二次取消不抛错
+      off();
+      off();
+      view.dispatch(view.state.tr.insertText("再", 7));
+      await new Promise((r) => setTimeout(r, 600));
+      expect(received.length).toBe(1); // 取消后不再投递
+    });
+
+    it("选区变更即时回调（无防抖），adopt 切换实例后事件来自新实例", async () => {
+      await editorManager.create("# A");
+      const selections: Selection[] = [];
+      const off = editorManager.subscribeSelectionUpdated((s) => selections.push(s));
+      const oldView = editorManager.getView()!;
+      // “# A” 文档合法位置为 0–2（heading 贡献 2）：取末尾 pos 2 触发选区变更
+      oldView.dispatch(oldView.state.tr.setSelection(TextSelection.create(oldView.state.doc, 2)));
+      expect(selections.length).toBeGreaterThan(0); // 即时，不等计时器
+
+      // 门面切换到外部创建的实例（makeTestEditor 返回 { crepe }）：旧实例编辑不再投递
+      const external = await makeTestEditor("## 外部标题");
+      editorManager.adopt(external.crepe);
+      const countBefore = selections.length;
+      // 旧实例仍存活但桥已解绑：在其标题末尾插入字符（pos 2 合法），不应投递
+      oldView.dispatch(oldView.state.tr.insertText("x", 2));
+      await new Promise((r) => setTimeout(r, 600));
+      expect(selections.length).toBe(countBefore);
+
+      const newView = editorManager.getView()!;
+      // “## 外部标题” 标题文本 4 字：pos 5 为标题内容末端（doc 合法位置上限）
+      newView.dispatch(newView.state.tr.setSelection(TextSelection.create(newView.state.doc, 5)));
+      expect(selections.length).toBeGreaterThan(countBefore);
+      off();
+    });
   });
 });
