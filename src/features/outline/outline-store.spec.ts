@@ -32,6 +32,18 @@ describe("outlineStore", () => {
     expect(store.collapsedIds.has("b")).toBe(false); // 交集裁剪，不留僵尸
   });
 
+  it("applyHeadings 后激活标题被删除 → activeHeadingId 复位 undefined（悬空高亮收口）", () => {
+    const store = useOutlineStore();
+    store.applyHeadings([H("a", 1, "A", 0), H("b", 2, "B", 5)]);
+    store.setActive("b");
+    store.applyHeadings([H("a", 1, "A", 0)]); // 重算后 b 消失
+    expect(store.activeHeadingId).toBeUndefined();
+    // id 仍存活的常规重算（如标题文本编辑，锚点 id 不变）不清高亮
+    store.setActive("a");
+    store.applyHeadings([H("a", 1, "A", 2), H("c", 2, "C", 8)]);
+    expect(store.activeHeadingId).toBe("a");
+  });
+
   it("filteredHeadings 命中项保留原 level；清空恢复全量（AC-F21-1/2）", () => {
     const store = useOutlineStore();
     store.applyHeadings([H("a", 1, "安装指南", 0), H("b", 2, "卸载", 10), H("c", 1, "附录", 20)]);

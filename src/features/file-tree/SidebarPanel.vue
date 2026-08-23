@@ -1,11 +1,11 @@
 <!-- 侧栏容器（03 文件树，F2 三面板切换）
-     面板：文件树/文件列表/大纲（占位，05 填充）；
+     面板：文件树/文件列表/最近位置/大纲（05 真实渲染，跨域消费 features/outline）；
      底部工具条：+ 新建文件（emit create-file）、⋯ 菜单（刷新/打开文件夹/最近位置/搜索/排序）。 -->
 <script setup lang="ts">
 import { ref } from "vue";
 import FileListPanel from "./FileListPanel.vue";
 import FileTreePanel from "./FileTreePanel.vue";
-import OutlinePanel from "./OutlinePanel.vue";
+import OutlinePanel from "../outline/OutlinePanel.vue";
 import RecentLocationsPanel from "./RecentLocationsPanel.vue";
 import { useFileTreeStore, type PanelKey } from "./file-tree-store";
 import { createSearchEntry } from "./search-entry";

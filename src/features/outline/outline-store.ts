@@ -77,6 +77,12 @@ export const useOutlineStore = defineStore("outline", {
       for (const id of this.collapsedIds) {
         if (!aliveIds.has(id)) this.collapsedIds.delete(id);
       }
+      // 悬空高亮复位：激活标题随文档重算消失后，activeHeadingId 残留会指向
+      // 不存在的条目（高亮既不渲染也无法清除）；与折叠集合同口径在此统一收口，
+      // id 仍存活的常规重算（如编辑标题文本）不受影响
+      if (this.activeHeadingId !== undefined && !aliveIds.has(this.activeHeadingId)) {
+        this.activeHeadingId = undefined;
+      }
     },
 
     /**
