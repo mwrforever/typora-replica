@@ -3,7 +3,7 @@
 // 覆盖：层级缩进列表渲染与激活高亮（F17）/ 点击条目透传 revealRange 定位标题
 // 文本区间（F18-1）/ 空态文案 / doc·selection 双通道装配语义（F19）/ 滚动通道
 // 「scroll 发生时 setActive 按 pickActiveByTop 结果回写」的装配语义 / dispose 与
-// mount 严格成对 / 设置镜像加载。
+// mount 严格成对 / 设置镜像加载 / 过滤输入框输入即滤与双空态区分（F21）。
 //
 // 边界说明（jsdom 无布局）：findScrollContainer 的 scrollHeight/overflow 判定与
 // coordsAtPos 像素度量在 jsdom 中不可真实触发——滚动通道纯判定已由 current-heading.spec
@@ -266,6 +266,23 @@ describe("OutlinePanel（AC-F17/F18/F19）", () => {
     await flushPromises();
     expect(wrapper.findAll("[data-outline-item]")).toHaveLength(3);
     expect(useOutlineStore().collapsible).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("输入即滤；无匹配显示专属空态；清空恢复（AC-F21-1/2/3）", async () => {
+    h.view = makeView({ docItems: FIXTURE });
+    const wrapper = mount(OutlinePanel);
+    await flushPromises();
+    // 输入非空即滤（v-model 经可写计算代理写穿 setFilter）：A/B/C 仅 B 命中子串
+    const input = wrapper.find("[data-outline-filter]");
+    await input.setValue("B");
+    expect(wrapper.findAll("[data-outline-item]")).toHaveLength(1);
+    // 有标题但零命中 → 与「无标题」区分的专属空态文案
+    await input.setValue("不存在词");
+    expect(wrapper.find(".outline-panel__empty").text()).toBe("无匹配标题");
+    // 清空过滤词恢复全量三条
+    await input.setValue("");
+    expect(wrapper.findAll("[data-outline-item]")).toHaveLength(3);
     wrapper.unmount();
   });
 

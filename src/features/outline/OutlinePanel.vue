@@ -1,6 +1,6 @@
-<!-- 大纲面板（05）：层级缩进列表 + 点击跳转 + 当前标题高亮 + 空态 -->
+<!-- 大纲面板（05）：过滤输入框 + 层级缩进列表 + 点击跳转 + 当前标题高亮 + 双空态 -->
 <script setup lang="ts">
-import { onUnmounted } from "vue";
+import { computed, onUnmounted } from "vue";
 import { revealRange } from "../editor/reveal-range";
 import { editorManager } from "../editor/editor-manager";
 import type { HeadingInfo } from "../editor/heading-collect";
@@ -8,6 +8,13 @@ import { useOutlineData } from "./outline-data";
 import { useOutlineStore } from "./outline-store";
 
 const store = useOutlineStore();
+
+// 可写计算代理（AC-F21）：输入框 v-model 双向绑定过滤词——读直取 state、
+// 写经 setFilter action 收口，保证过滤状态变更与其他 action 同一入口
+const filterQuery = computed({
+  get: () => store.filterQuery,
+  set: (v: string) => store.setFilter(v),
+});
 
 // 数据装配订阅与组件生命周期严格成对：setup 内注册（useOutlineData），
 // unmount 统一解除（dispose）
@@ -31,6 +38,13 @@ function jumpTo(item: HeadingInfo): void {
 
 <template>
   <div class="outline-panel">
+    <!-- 过滤输入框常驻面板顶部：输入即滤（store.filteredHeadings 大小写不敏感子串匹配） -->
+    <input
+      v-model="filterQuery"
+      class="outline-panel__filter"
+      placeholder="过滤标题…"
+      data-outline-filter
+    />
     <ul v-if="store.visibleHeadings.length > 0" class="outline-panel__list" data-outline-list>
       <li
         v-for="h in store.visibleHeadings"
@@ -44,7 +58,9 @@ function jumpTo(item: HeadingInfo): void {
         {{ h.text }}
       </li>
     </ul>
-    <p v-else class="outline-panel__empty">（无标题）</p>
+    <!-- 双空态区分：无标题文档 vs 有标题但过滤零命中（AC-F21-2） -->
+    <p v-else-if="store.headings.length === 0" class="outline-panel__empty">（无标题）</p>
+    <p v-else class="outline-panel__empty">无匹配标题</p>
   </div>
 </template>
 
@@ -54,6 +70,19 @@ function jumpTo(item: HeadingInfo): void {
   height: 100%;
   overflow-y: auto;
   padding: 4px 0;
+}
+
+/* 过滤输入框：常驻顶部，token 与侧栏搜索框（sidebar-panel__search-input）同源 */
+.outline-panel__filter {
+  box-sizing: border-box;
+  width: calc(100% - 16px);
+  margin: 4px 8px;
+  padding: 4px 8px;
+  font-size: 13px;
+  border: 1px solid var(--markwell-border, #ddd);
+  border-radius: 4px;
+  background: var(--markwell-surface, #fff);
+  color: var(--markwell-text, #333);
 }
 
 .outline-panel__list {
