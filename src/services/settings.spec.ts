@@ -69,4 +69,15 @@ describe("偏好设置（store 持久化）", () => {
     const reloaded = await loadSettings();
     expect(reloaded.autoSave.enabled).toBe(false); // 已写回 store
   });
+
+  it("outline.collapsible 默认回落 false，updateSettings 深合并写回", async () => {
+    // 无存储键（beforeEach 已清空）→ outline 组逐字段回落默认值（AC-F22-1 默认 Flat）
+    const loaded = await loadSettings();
+    expect(loaded.outline.collapsible).toBe(false);
+    await updateSettings({ outline: { collapsible: true } });
+    // 深合并后整组写回独立键 outline（与 loadSettings 的读取键对称）
+    expect(memory.get("outline")).toEqual({ collapsible: true });
+    const reloaded = await loadSettings();
+    expect(reloaded.outline.collapsible).toBe(true); // 存量命中路径（非回落分支）
+  });
 });
