@@ -88,11 +88,21 @@ export function useOutlineData(): { dispose(): void } {
     scroller = null;
   };
 
+  // 卸载竞态防护：watch 回调挂起在 await nextTick() 期间组件可能已卸载
+  // （SidebarPanel v-if/v-else 快速切换面板即真实窗口）——dispose 先跑完，
+  // 挂起续延恢复后若继续执行，pullFromFacade 会幽灵写共享 Pinia store，
+  // attachScroll 会在 dispose 之后重挂 scroll 监听且永无人解除（新实例的
+  // detachScroll 只能解自己的闭包）。disposed 标志令续延早退，
+  // 保证 dispose 与 mount 严格成对。
+  let disposed = false;
+
   // 标签切换/首挂：等 adopt 完成后拉取 + 重挂滚动监听
   const stopTabWatch = watch(
     () => tabsStore.activeTabId,
     async () => {
       await nextTick();
+      // 卸载竞态防护：nextTick 解析时组件已卸载 → 放弃本次拉取与重挂
+      if (disposed) return;
       pullFromFacade();
       attachScroll();
     },
@@ -110,6 +120,8 @@ export function useOutlineData(): { dispose(): void } {
 
   return {
     dispose(): void {
+      // 先置位再解绑：封堵已挂起的 nextTick 续延（见 disposed 声明处竞态说明）
+      disposed = true;
       offSelection();
       offDoc();
       stopTabWatch();

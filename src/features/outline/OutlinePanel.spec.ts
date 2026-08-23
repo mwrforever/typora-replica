@@ -227,6 +227,29 @@ describe("OutlinePanel（AC-F17/F18/F19）", () => {
     expect(h.selCbs).toHaveLength(0);
   });
 
+  it("卸载竞态防护：nextTick 挂起期间 dispose → 续延早退不幽灵写不重挂监听", async () => {
+    // 可滚动容器链就绪：若无防护，挂起续延会在 dispose 之后经 attachScroll
+    // 在此容器重挂 scroll 监听（新实例 detachScroll 只能解自己的闭包，该监听成泄漏）
+    const scroller = document.createElement("div");
+    scroller.style.overflowY = "auto";
+    document.body.appendChild(scroller);
+    const dom = document.createElement("div");
+    scroller.appendChild(dom);
+    const addSpy = vi.spyOn(scroller, "addEventListener");
+    h.view = makeView({ docItems: FIXTURE, dom });
+    const wrapper = mount(OutlinePanel);
+    // 刻意不 flush：watch 回调仍挂起在 await nextTick()；此刻先卸载（dispose 抢跑）
+    wrapper.unmount();
+    await flushPromises(); // 挂起续延恢复——防护生效则在此早退
+    const store = useOutlineStore();
+    expect(store.headings).toHaveLength(0); // pullFromFacade 未幽灵写共享 store
+    expect(addSpy).not.toHaveBeenCalled(); // attachScroll 未在 dispose 后重挂监听
+    // 兜底口径：即便误有事件投递也无监听可回写
+    scroller.dispatchEvent(new Event("scroll"));
+    expect(store.activeHeadingId).toBeUndefined();
+    scroller.remove();
+  });
+
   it("onMounted 加载设置镜像 collapsible（持久化值回落覆盖 store 默认 Flat）", async () => {
     h.loadSettings.mockResolvedValue({ outline: { collapsible: true } });
     h.view = makeView({ docItems: FIXTURE });
