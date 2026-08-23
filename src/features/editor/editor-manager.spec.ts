@@ -317,7 +317,7 @@ describe("编辑器实例管理", () => {
       const received: ProseMirrorNode[] = [];
       const off = editorManager.subscribeDocUpdated((doc) => received.push(doc));
       const view = editorManager.getView()!;
-      // pos 6 为“正文”段落内容末端（heading 贡献 3 + 段落起点 3），追加字符落在文本节点边界内
+      // “# 标题\n\n正文” doc 尺寸 8（heading 贡献 4 + 段落贡献 4）：pos 6 位于段落文本节点内部（“正”之后）
       view.dispatch(view.state.tr.insertText("更", 6));
       // 防抖总窗口 = listener 内置 200ms + 事件桥 200ms，等 600ms 保证触发（沿用本文件真实计时器惯例）
       await new Promise((r) => setTimeout(r, 600));
@@ -336,7 +336,7 @@ describe("编辑器实例管理", () => {
       const selections: Selection[] = [];
       const off = editorManager.subscribeSelectionUpdated((s) => selections.push(s));
       const oldView = editorManager.getView()!;
-      // “# A” 文档合法位置为 0–2（heading 贡献 2）：取末尾 pos 2 触发选区变更
+      // “# A” doc 尺寸 3（heading 内容 1 + 开闭各 1）：pos 2 为标题内容末端，触发选区变更
       oldView.dispatch(oldView.state.tr.setSelection(TextSelection.create(oldView.state.doc, 2)));
       expect(selections.length).toBeGreaterThan(0); // 即时，不等计时器
 
@@ -350,7 +350,7 @@ describe("编辑器实例管理", () => {
       expect(selections.length).toBe(countBefore);
 
       const newView = editorManager.getView()!;
-      // “## 外部标题” 标题文本 4 字：pos 5 为标题内容末端（doc 合法位置上限）
+      // “## 外部标题” doc 尺寸 6（标题文本 4 字 + 开闭各 1）：pos 5 为标题内容末端，触发选区变更
       newView.dispatch(newView.state.tr.setSelection(TextSelection.create(newView.state.doc, 5)));
       expect(selections.length).toBeGreaterThan(countBefore);
       off();
