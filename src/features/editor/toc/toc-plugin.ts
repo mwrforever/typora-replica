@@ -24,11 +24,10 @@ import { TextSelection } from "@milkdown/kit/prose/state";
 import type { EditorView, NodeViewConstructor } from "@milkdown/kit/prose/view";
 import { $inputRule, $nodeSchema } from "@milkdown/kit/utils";
 
+import { collectHeadings } from "../heading-collect";
+
 /** toc 节点名 */
 export const tocNodeName = "toc";
-
-/** 标题节点名（preset-commonmark 稳定契约；headingSchema.type(ctx) 需要 ctx，NodeView 无 ctx 不可用） */
-const HEADING_NODE_NAME = "heading";
 
 /** mdast 节点最小结构（remark 树遍历用，仅取 type/children/value 字段） */
 interface MdastNode {
@@ -163,15 +162,10 @@ class TocNodeView {
     this.rebuild();
   }
 
-  /** 重建目录 DOM：遍历文档收集 heading 节点（含层级/文本/位置） */
+  /** 重建目录 DOM：经共享收集函数取全量标题（层级/文本/位置，与 05 大纲/09 导出同源） */
   rebuild(): void {
     this.dom.textContent = "";
-    const headings: Array<{ level: number; text: string; pos: number }> = [];
-    this.view.state.doc.descendants((node, pos) => {
-      if (node.type.name === HEADING_NODE_NAME) {
-        headings.push({ level: node.attrs.level as number, text: node.textContent, pos });
-      }
-    });
+    const headings = collectHeadings(this.view.state.doc);
     if (headings.length === 0) {
       // AC-E12-4：无标题时显示提示
       const empty = document.createElement("span");
