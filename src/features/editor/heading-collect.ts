@@ -27,7 +27,9 @@ export function collectHeadings(doc: ProseMirrorNode): HeadingInfo[] {
     if (node.type.name !== "heading") return;
     if (node.textContent.trim().length === 0) return;
     items.push({
-      id: String(node.attrs.id ?? ""),
+      // attrs.id 运行时恒为字符串（heading schema 的 id 属性 default ""，锚点插件恒写入字符串），
+      // String 仅做宽类型收窄，无需空值兜底分支
+      id: String(node.attrs.id),
       level: node.attrs.level as number,
       text: node.textContent,
       pos,
