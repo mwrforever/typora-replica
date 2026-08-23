@@ -1,12 +1,14 @@
 # Build Verification：Windows 构建 + E2E/Smoke 测试 + 产物归档
-# PR 与 main 推送触发（合入需 Quality Gate 与 Build 均绿，由 GitHub 分支保护规则保证）。
+# PR 与 main/test 推送触发（合入需 Quality Gate 与 Build 均绿，由 GitHub 分支保护规则保证）。
+# 2026-08-23 分支策略调整：模块合入目标由 main 改为 test（main 冻结），
+# 触发分支同步加入 test（main 保留触发作兜底）。
 name: Build Verification
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, test]
   push:
-    branches: [main]
+    branches: [main, test]
   workflow_dispatch:
 
 concurrency:
