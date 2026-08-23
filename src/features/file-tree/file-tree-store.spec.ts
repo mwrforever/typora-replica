@@ -135,6 +135,16 @@ describe("fileTreeStore", () => {
     expect(store.searchVisible).toBe(true); // 搜索框显示（AC-F12-1）
   });
 
+  // AC-F16-1：Ctrl+Shift+1 已注册指向 switchPanel("outline")，侧栏隐藏时按键必须
+  // 让用户看到目标面板——仅改 activePanel 无感知，须同时展开侧栏
+  it("switchPanel 在侧栏隐藏时切换面板并展开侧栏（AC-F16-1）", () => {
+    const store = useFileTreeStore();
+    store.toggleSidebar(); // 隐藏
+    store.switchPanel("outline");
+    expect(store.sidebarVisible).toBe(true);
+    expect(store.activePanel).toBe("outline");
+  });
+
   // 补充用例：loadDir 失败路径——保持旧目录/旧树一致、不切换监视（Task 4 审查修复 2）
   it("loadDir 失败时保持旧目录/旧树一致且不建立新目录监视", async () => {
     vi.mocked(listDirDetailed)
