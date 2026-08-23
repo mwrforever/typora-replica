@@ -1,9 +1,11 @@
-// OutlinePanel 组件用例（05 大纲 Task 6，AC-F17/F18/F19）
+// OutlinePanel 组件用例（05 大纲 Task 6 + Task 8，AC-F17/F18/F19/F20/F22）
 //
 // 覆盖：层级缩进列表渲染与激活高亮（F17）/ 点击条目透传 revealRange 定位标题
 // 文本区间（F18-1）/ 空态文案 / doc·selection 双通道装配语义（F19）/ 滚动通道
 // 「scroll 发生时 setActive 按 pickActiveByTop 结果回写」的装配语义 / dispose 与
-// mount 严格成对 / 设置镜像加载 / 过滤输入框输入即滤与双空态区分（F21）。
+// mount 严格成对 / 设置镜像加载 / 过滤输入框输入即滤与双空态区分（F21）/
+// 右键菜单弹出·click-away 关闭·HCH 滚入视野闪现高亮 / 折叠开关切换持久化 /
+// caret 折叠钮交互（F22）/ 空态三分修正（全部折叠隐藏 ≠ 无匹配）。
 //
 // 边界说明（jsdom 无布局）：findScrollContainer 的 scrollHeight/overflow 判定与
 // coordsAtPos 像素度量在 jsdom 中不可真实触发——滚动通道纯判定已由 current-heading.spec
@@ -19,6 +21,8 @@ import { createPinia, setActivePinia } from "pinia";
 const h = vi.hoisted(() => ({
   revealRange: vi.fn(),
   loadSettings: vi.fn(),
+  /** updateSettings 桩（AC-F22-2 折叠开关持久化断言） */
+  updateSettings: vi.fn(),
   /** 装配层注册的 docUpdated 订阅回调（用例内手动投递模拟事件桥） */
   docCbs: [] as Array<(doc: unknown) => void>,
   /** 装配层注册的 selectionUpdated 订阅回调 */
@@ -55,6 +59,7 @@ vi.mock("../editor/editor-manager", () => ({
 
 vi.mock("../../services/settings", () => ({
   loadSettings: (...a: unknown[]) => h.loadSettings(...a),
+  updateSettings: (...a: unknown[]) => h.updateSettings(...a),
 }));
 
 import OutlinePanel from "./OutlinePanel.vue";
@@ -290,6 +295,147 @@ describe("OutlinePanel（AC-F17/F18/F19）", () => {
     const wrapper = mount(OutlinePanel); // h.view = undefined
     await flushPromises();
     expect(wrapper.find(".outline-panel__empty").exists()).toBe(true);
+    wrapper.unmount();
+  });
+});
+
+describe("OutlinePanel 右键菜单与折叠（AC-F20/F22）", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    h.revealRange.mockClear();
+    h.loadSettings.mockReset().mockResolvedValue({ outline: { collapsible: false } });
+    h.updateSettings.mockReset().mockResolvedValue({});
+    h.docCbs.length = 0;
+    h.selCbs.length = 0;
+    h.view = undefined;
+  });
+
+  /** 挂载已就绪面板：门面视图桩注入三级标题夹具并 flush 装配链 */
+  async function mountReady(): Promise<ReturnType<typeof mount>> {
+    h.view = makeView({ docItems: FIXTURE });
+    const wrapper = mount(OutlinePanel);
+    await flushPromises();
+    return wrapper;
+  }
+
+  it("右键空白处弹菜单，Highlight Current Header 将激活条目滚入视野并闪现高亮（AC-F20-1）", async () => {
+    const wrapper = await mountReady();
+    useOutlineStore().setActive("b");
+    await nextTick();
+
+    // 右键列表空白区：自绘菜单弹出（原生菜单由 preventDefault 阻止）
+    await wrapper.find("[data-outline-list]").trigger("contextmenu", { clientX: 10, clientY: 10 });
+    expect(wrapper.find("[data-outline-menu]").exists()).toBe(true);
+
+    // jsdom 未实现 scrollIntoView 且实例上无该成员（spyOn 需既有属性）→ 实例直挂桩
+    const activeEl = wrapper.find(".outline-panel__item--active").element as HTMLElement;
+    const scrollSpy = vi.fn();
+    activeEl.scrollIntoView = scrollSpy;
+
+    // 假定时器钉住高亮闪现时长（reveal-range 同款 1200ms）
+    vi.useFakeTimers();
+    try {
+      await wrapper.find("[data-outline-menu-hch]").trigger("click");
+      expect(scrollSpy).toHaveBeenCalledWith({ block: "center" });
+      // 动作后菜单关闭 + 高亮类即时生效
+      expect(wrapper.find("[data-outline-menu]").exists()).toBe(false);
+      expect(activeEl.classList.contains("markwell-reveal-highlight")).toBe(true);
+      vi.advanceTimersByTime(1200);
+      expect(activeEl.classList.contains("markwell-reveal-highlight")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+    wrapper.unmount();
+  });
+
+  it("无激活条目时 Highlight Current Header 静默返回不抛错", async () => {
+    const wrapper = await mountReady();
+    expect(useOutlineStore().activeHeadingId).toBeUndefined();
+    await wrapper.find("[data-outline-list]").trigger("contextmenu", { clientX: 10, clientY: 10 });
+    await wrapper.find("[data-outline-menu-hch]").trigger("click");
+    // 无目标不闪现高亮，菜单照常关闭
+    expect(wrapper.find(".markwell-reveal-highlight").exists()).toBe(false);
+    expect(wrapper.find("[data-outline-menu]").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("点击面板其他区域关闭右键菜单，卸载时监听成对解除（click-away）", async () => {
+    const wrapper = await mountReady();
+    await wrapper.find("[data-outline-list]").trigger("contextmenu", { clientX: 10, clientY: 10 });
+    expect(wrapper.find("[data-outline-menu]").exists()).toBe(true);
+    // document 级一次性 click 关闭
+    document.dispatchEvent(new Event("click"));
+    await nextTick();
+    expect(wrapper.find("[data-outline-menu]").exists()).toBe(false);
+    // 卸载兜底解除：document 上不再残留 click 监听登记
+    const removeSpy = vi.spyOn(document, "removeEventListener");
+    wrapper.unmount();
+    expect(removeSpy.mock.calls.some(([type]) => type === "click")).toBe(true);
+    removeSpy.mockRestore();
+  });
+
+  it("菜单切换可折叠并持久化设置（AC-F22-2）", async () => {
+    const wrapper = await mountReady();
+    await wrapper.find("[data-outline-list]").trigger("contextmenu", { clientX: 10, clientY: 10 });
+    const collapseItem = () => wrapper.find("[data-outline-menu-collapse]");
+    // 默认 Flat → 勾选态为空；点击后 store 翻转并持久化增量 patch
+    expect(collapseItem().text()).not.toContain("✓");
+    await collapseItem().trigger("click");
+    expect(useOutlineStore().collapsible).toBe(true);
+    expect(h.updateSettings).toHaveBeenCalledWith({ outline: { collapsible: true } });
+    expect(wrapper.find("[data-outline-menu]").exists()).toBe(false); // 动作后关菜单
+    // 重开菜单勾选态出现 ✓；再次点击切回 Flat 并持久化 false（往返覆盖）
+    await wrapper.find("[data-outline-list]").trigger("contextmenu", { clientX: 10, clientY: 10 });
+    expect(collapseItem().text()).toContain("✓");
+    await collapseItem().trigger("click");
+    expect(useOutlineStore().collapsible).toBe(false);
+    expect(h.updateSettings).toHaveBeenCalledWith({ outline: { collapsible: false } });
+    wrapper.unmount();
+  });
+
+  it("折叠态下父条目显示切换钮且点击只切折叠不触发跳转（AC-F22-2 交互）", async () => {
+    const wrapper = await mountReady();
+    const store = useOutlineStore();
+    store.setCollapsible(true);
+    await nextTick();
+    // A(1)→B(2)→C(3)：A、B 有子级各带 caret；C 为叶子无 caret。
+    // 注意父级判定取全量序列——A 自身被折叠后仍须保留 caret 作为展开入口
+    const carets = wrapper.findAll("[data-outline-caret]");
+    expect(carets).toHaveLength(2);
+    // 点击首个 caret（A）：toggleCollapsed 生效但不触发条目跳转（@click.stop 生效）
+    await carets[0].trigger("click");
+    expect(h.revealRange).not.toHaveBeenCalled();
+    expect(store.collapsedIds.has("a")).toBe(true);
+    // 折叠裁剪联动：A 子树隐藏仅剩根条目，且 A 的 caret 不消失（可再展开）
+    expect(wrapper.findAll("[data-outline-item]")).toHaveLength(1);
+    expect(wrapper.findAll("[data-outline-caret]")).toHaveLength(1);
+    await wrapper.findAll("[data-outline-caret]")[0].trigger("click");
+    expect(store.collapsedIds.size).toBe(0);
+    expect(wrapper.findAll("[data-outline-item]")).toHaveLength(3);
+    wrapper.unmount();
+  });
+
+  it("折叠根标题后列表仅剩存活的根条目，不误显任何空态（空态三分修正）", async () => {
+    const wrapper = await mountReady();
+    const store = useOutlineStore();
+    store.setCollapsible(true);
+    store.toggleCollapsed("a"); // 折叠唯一根标题 → 子树 B/C 隐藏
+    await nextTick();
+    // 根条目在 store 裁剪算法下恒存活（首条目入栈前祖先栈为空，「全部折叠隐藏」
+    // 在当前 store 语义下不可达）→ 必须渲染列表而非任何空态文案（防回退 length 边界）
+    expect(store.visibleHeadings.map((x) => x.id)).toEqual(["a"]);
+    expect(wrapper.find("[data-outline-list]").exists()).toBe(true);
+    expect(wrapper.find(".outline-panel__empty").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("过滤零命中判定先于折叠兜底空态：显示「无匹配标题」而非「无可见标题」", async () => {
+    const wrapper = await mountReady();
+    // 开启折叠后触发零命中：钉住新空态链的分支次序（过滤词判定先于「无可见标题」）
+    useOutlineStore().setCollapsible(true);
+    const input = wrapper.find("[data-outline-filter]");
+    await input.setValue("不存在词");
+    expect(wrapper.find(".outline-panel__empty").text()).toBe("无匹配标题");
     wrapper.unmount();
   });
 });

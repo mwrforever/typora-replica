@@ -85,9 +85,11 @@ export async function loadSettings(): Promise<AppSettings> {
 
 /** 更新偏好（深合并后写回并返回新值；调用方拿返回值继续链路） */
 export async function updateSettings(
-  // launch/outline 允许部分字段（文档会话等调用方只传 lastFile/lastFolder、
-  // 05 大纲只传 collapsible 增量）
-  patch: Partial<Omit<AppSettings, "launch">> & { launch?: Partial<LaunchSettings> } & {
+  // launch/outline 允许部分字段且均走纯 Partial（文档会话等调用方只传
+  // lastFile/lastFolder、05 大纲只传 collapsible 增量）——outline 与 launch
+  // 同一收口机制：排除在 Omit 外单独声明 Partial，避免「整组必填」误约束增量调用方
+  patch: Partial<Omit<AppSettings, "launch" | "outline">> & {
+    launch?: Partial<LaunchSettings>;
     outline?: Partial<OutlineSettings>;
   },
 ): Promise<AppSettings> {

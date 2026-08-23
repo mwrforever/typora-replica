@@ -80,4 +80,15 @@ describe("偏好设置（store 持久化）", () => {
     const reloaded = await loadSettings();
     expect(reloaded.outline.collapsible).toBe(true); // 存量命中路径（非回落分支）
   });
+
+  it("outline 增量 patch 类型收口：仅传部分字段可编译且深合并保持存量", async () => {
+    memory.set("outline", { collapsible: true });
+    // 类型层回归钉（Task 8 收口）：patch.outline 须为纯 Partial——旧签名把 outline
+    // 排除在 Omit 外（交集 OutlineSettings & Partial<OutlineSettings> 使 collapsible
+    // 恒必填），下方显式类型声明在旧签名下无法通过 vue-tsc 编译
+    const patch: Parameters<typeof updateSettings>[0] = { outline: {} };
+    const s = await updateSettings(patch);
+    expect(s.outline.collapsible).toBe(true); // 空 patch 深合并保持存量值
+    expect(memory.get("outline")).toEqual({ collapsible: true }); // 写回不丢存量
+  });
 });
