@@ -1,10 +1,11 @@
 // 查找面板装配层（06 P1）：store ↔ 门面活动实例桥
 //
 // 职责：①面板输入受控构建查询经 setSearchState 派发到门面当前视图；
-// ②切实例（create/adopt 快照广播 docUpdated）向新视图幂等重放当前查询；
+// ②切实例（create/adopt 快照广播 docUpdated）向新视图重放当前查询；
 // ③selectionUpdated 即时通道做未挂查询的首次交互愈合 + 活动序号回写；
 // ④导航/替换命令封装（快捷键与按钮共用入口）。
-// 幂等守卫用闭包 appliedQuery 对比（不读插件内部 state，版本演进安全）。
+// 闭包 appliedQuery 记录门面当前已派发的查询，供清除判定/愈合守卫/计数守卫消费
+// （不读插件内部 state，版本演进安全）。
 import { nextTick, watch } from "vue";
 import type { EditorView } from "@milkdown/kit/prose/view";
 import {
@@ -78,10 +79,10 @@ function scheduleRecount(): void {
 }
 
 /**
- * 把面板当前查询应用到门面活动视图
- * @param force true=无条件重放（切实例/输入变化）；false=幂等对比后跳过
+ * 把面板当前查询应用到门面活动视图：每次调用都重新评估面板态并按需派发
+ * （切实例/输入变化/标签切换等事件源共用；setSearchState 同查询重复派发无害）
  */
-function applyToView(force: boolean): void {
+function applyToView(): void {
   const store = useSearchStore();
   const view = currentView();
   if (!view) {
@@ -103,8 +104,6 @@ function applyToView(force: boolean): void {
     store.applyCounts(0, 0);
     return;
   }
-  // 幂等守卫：非 force 且五元组未变则跳过派发（防 docUpdated 风暴重复重建装饰集）
-  if (!force && appliedQuery?.eq(built.query)) return;
   view.dispatch(setSearchState(view.state.tr, built.query));
   appliedQuery = built.query;
   store.setStatus("ok");
@@ -129,7 +128,7 @@ export function useFindController(): { dispose(): void } {
 
   // 结构通道：编辑（防抖）/ 切实例（adopt 广播）→ 重放 + 重计数
   const offDoc = editorManager.subscribeDocUpdated(() => {
-    applyToView(true);
+    applyToView();
   });
   // 即时通道：活动序号回写 + 未挂查询时的首次交互愈合（残余①首挂窗口期兜底）。
   // 愈合派发必须延后到原生微任务：selectionUpdated 会在事务的插件 apply 阶段同步触发
@@ -139,7 +138,7 @@ export function useFindController(): { dispose(): void } {
     if (!appliedQuery && store.visible && store.query) {
       // 原生 Promise 微任务不受假计时器影响；届时已挂查询则跳过（避免与常规派发重复）
       void Promise.resolve().then(() => {
-        if (!appliedQuery) applyToView(true);
+        if (!appliedQuery) applyToView();
       });
       return;
     }
@@ -158,7 +157,7 @@ export function useFindController(): { dispose(): void } {
         store.wholeWord,
         store.regexp,
       ] as const,
-    () => applyToView(true),
+    () => applyToView(),
     { immediate: true },
   );
   // 标签切换：nextTick 等 activateInstance/adopt 完成后重放到新视图
@@ -166,7 +165,7 @@ export function useFindController(): { dispose(): void } {
     () => tabs.activeTabId,
     async () => {
       await nextTick();
-      applyToView(true);
+      applyToView();
     },
   );
 

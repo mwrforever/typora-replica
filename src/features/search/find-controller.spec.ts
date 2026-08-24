@@ -149,7 +149,7 @@ describe("useFindController", () => {
     expect(view.state.doc.textBetween(0, view.state.doc.content.size)).toBe("你好 world hello");
   });
 
-  it("标签切换信号（activeTabId 变更）触发幂等重放——装饰与计数保持", async () => {
+  it("标签切换信号（activeTabId 变更）触发查询重放——装饰与计数保持", async () => {
     const store = await openWith("hello");
     const view = editorManager.getView()!;
     useTabsStore().activate("tab-1"); // 无真实多实例：仅驱动重放通道冒烟（真实切换见 adopt 用例）
