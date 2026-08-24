@@ -22,6 +22,10 @@ import TabBar from "./features/tabs/TabBar.vue";
 import ConfirmCloseDialog from "./features/tabs/ConfirmCloseDialog.vue";
 import { registerTabsShortcuts } from "./features/tabs/tabs-shortcuts";
 import { useTabsController } from "./features/tabs/tabs-controller";
+import FindReplacePanel from "./features/search/FindReplacePanel.vue";
+import { navigateNext, navigatePrev } from "./features/search/find-controller";
+import { registerSearchShortcuts } from "./features/search/search-shortcuts";
+import { useSearchStore } from "./features/search/search-store";
 import { getCliArgs, probePathExists } from "./services/file-io";
 import { resolveLaunch } from "./services/launch-behavior";
 import { openFolderDialog, saveAsDialog } from "./services/open-commands";
@@ -91,6 +95,21 @@ const cleanupTabsShortcuts = registerTabsShortcuts({
   },
   onCycle: (dir) => tabs.cycle(dir),
   onReopenClosed: () => tabs.reopenClosed(),
+});
+
+/** 搜索面板状态与快捷键（06：Ctrl+F/H 开关、F3/Shift+F3 导航、ESC 关闭回焦） */
+const searchStore = useSearchStore();
+const cleanupSearchShortcuts = registerSearchShortcuts({
+  onToggleFind: () => searchStore.toggleFind(),
+  onToggleReplace: () => searchStore.toggleReplace(),
+  onNext: () => navigateNext(),
+  onPrev: () => navigatePrev(),
+  // 可见性守卫在本处：不可见时 ESC 不抢焦点（latex 公式浮层的 ESC 归其自身处理）
+  onClose: () => {
+    if (!searchStore.visible) return;
+    searchStore.close();
+    editorManager.getView()?.focus();
+  },
 });
 
 /**
@@ -227,6 +246,7 @@ onBeforeUnmount(() => {
   cleanupShortcuts();
   cleanupFileTreeShortcuts();
   cleanupTabsShortcuts();
+  cleanupSearchShortcuts();
   drafts.stop();
   // 门面销毁由 04 集成层负责（被动挂载不自动 destroy；应用卸载即终态）
   editorManager.destroy();
@@ -294,6 +314,8 @@ function basenameOf(path: string): string {
     "
     @close="quickOpenVisible = false"
   />
+  <!-- 查找/替换浮层（06）：常驻挂载（内部 v-if 控显隐），装配订阅随组件存活 -->
+  <FindReplacePanel />
   <!-- C2 关闭确认（04）：脏标签关闭挂起时弹出；三按钮分派保存/不保存/取消 -->
   <ConfirmCloseDialog
     v-if="closeRequest"
