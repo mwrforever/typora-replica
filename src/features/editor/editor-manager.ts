@@ -104,6 +104,15 @@ class EditorManager {
       onDocUpdated: (doc) => this.emitDocUpdated(doc),
       onSelectionUpdated: (sel) => this.emitSelectionUpdated(sel),
     });
+    // 晚挂号快照广播：adopt 时点晚于订阅方拉取窗口时（如大纲面板可见时新建标签，
+    // 装配层 nextTick 拉取命中的仍是旧实例），订阅方无从得知实例已切换——
+    // 此处同步补发当前 doc/selection 快照，保证「订阅语义 = 激活标签当前状态流」
+    // 在切换边界可靠成立（05 终审 Important-1 根治；后续编辑仍走事件桥常规投递）
+    const view = this.getView();
+    if (view) {
+      this.emitDocUpdated(view.state.doc);
+      this.emitSelectionUpdated(view.state.selection);
+    }
   }
 
   /** 销毁当前实例并解除事件绑定 */

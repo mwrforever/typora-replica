@@ -355,5 +355,26 @@ describe("编辑器实例管理", () => {
       expect(selections.length).toBeGreaterThan(countBefore);
       off();
     });
+
+    it("adopt 后立即补发当前快照：doc/selection 订阅者各收到一次新实例状态（晚挂号广播）", async () => {
+      // 业务背景：大纲面板可见时 Ctrl+N 新建标签，装配层 nextTick 拉取命中的仍是
+      // 旧实例，订阅方无从得知门面已切换——adopt 必须同步补发当前快照，
+      // 保证「订阅语义 = 激活标签当前状态流」在实例切换边界可靠成立
+      const docs: ProseMirrorNode[] = [];
+      const selections: Selection[] = [];
+      const offDoc = editorManager.subscribeDocUpdated((doc) => docs.push(doc));
+      const offSel = editorManager.subscribeSelectionUpdated((s) => selections.push(s));
+      // 外部创建的实例直接 adopt（EditorPage 装配路径）：全程不派发任何事务，
+      // 排除事件桥常规投递干扰——回调只能来自 adopt 的快照补发本身
+      const external = await makeTestEditor("## 快照标题");
+      editorManager.adopt(external.crepe);
+      expect(docs).toHaveLength(1);
+      expect(docs[0].textContent).toContain("快照标题");
+      expect(selections).toHaveLength(1);
+      // 快照即新实例当前选区对象（emit 直传引用，无拷贝）
+      expect(selections[0]).toBe(external.view.state.selection);
+      offDoc();
+      offSel();
+    });
   });
 });
