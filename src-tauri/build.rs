@@ -29,6 +29,10 @@ fn main() {
             "save_draft",
             "list_drafts",
             "recover_draft",
+            // 06 全局搜索（search.rs）：漏声明则 ACL 拒绝 invoke
+            // （"search_in_folder not allowed. Command not found"）
+            "search_in_folder",
+            "cancel_search",
         ]))
         // 关闭 tauri-build 默认 manifest：改由下方 rustc-link-arg 统一嵌入，
         // 否则主程序出现两份 manifest 资源（winres 一份 + 链接器一份）冲突

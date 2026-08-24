@@ -21,6 +21,8 @@
     "allow-unwatch-dir",
     "allow-save-draft",
     "allow-list-drafts",
-    "allow-recover-draft"
+    "allow-recover-draft",
+    "allow-search-in-folder",
+    "allow-cancel-search"
   ]
 }
