@@ -3,10 +3,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { SearchQuery } from "prosemirror-search";
 import { destroyTestEditors, makeTestEditor } from "../../test/editor-test-utils";
 import {
+  MATCH_ITER_LIMIT,
   activeMatchIndex,
   buildSearchQuery,
   collectMatches,
-  findMatchOnLine,
+  nthMatch,
 } from "./search-query";
 
 describe("buildSearchQuery", () => {
@@ -78,20 +79,44 @@ describe("collectMatches", () => {
   });
 });
 
-describe("findMatchOnLine / activeMatchIndex", () => {
+describe("nthMatch / activeMatchIndex", () => {
   afterEach(async () => {
     await destroyTestEditors();
   });
 
-  it("行号定位该行首个匹配；无匹配行返回 undefined（AC-F26-2 定位底座）", async () => {
-    const te = await makeTestEditor("第一行 无词\n第二行 目标 目标二\n第三行");
+  it("按序号取匹配：同段多次命中逐序可取；越界返回 undefined", async () => {
+    const te = await makeTestEditor("目标 目标二");
     const q = new SearchQuery({ search: "目标" });
-    const hit = findMatchOnLine(te.view.state, q, 2);
-    expect(hit).not.toBeUndefined();
-    if (!hit) return;
-    expect(te.view.state.doc.textBetween(hit.from, hit.to)).toBe("目标");
-    expect(findMatchOnLine(te.view.state, q, 1)).toBeUndefined();
-    expect(findMatchOnLine(te.view.state, q, 99)).toBeUndefined();
+    const m0 = nthMatch(te.view.state, q, 0);
+    expect(m0).not.toBeUndefined();
+    if (!m0) return;
+    expect(te.view.state.doc.textBetween(m0.from, m0.to)).toBe("目标");
+    const m1 = nthMatch(te.view.state, q, 1);
+    expect(m1).not.toBeUndefined();
+    if (!m1) return;
+    expect(te.view.state.doc.textBetween(m1.from, m1.to)).toBe("目标");
+    expect(nthMatch(te.view.state, q, 2)).toBeUndefined();
+  });
+
+  it("多段落空行不影响命中序：序号纯按文档序累计（跨文件对齐底座）", async () => {
+    // 源码含单空行与连续双空行：PM 文档模型丢弃空行，命中序不受其影响
+    const te = await makeTestEditor("甲\n\n乙 甲\n\n\n甲尾");
+    const q = new SearchQuery({ search: "甲" });
+    const texts = [0, 1, 2].map((i) => {
+      const m = nthMatch(te.view.state, q, i);
+      return m ? te.view.state.doc.textBetween(m.from, m.to) : null;
+    });
+    expect(texts).toEqual(["甲", "甲", "甲"]);
+    expect(nthMatch(te.view.state, q, 3)).toBeUndefined();
+  });
+
+  it("非法序号守卫：负数/非整数/达迭代上限一律拒绝（外部扫描输入不可信）", async () => {
+    const te = await makeTestEditor("甲");
+    const q = new SearchQuery({ search: "甲" });
+    expect(nthMatch(te.view.state, q, -1)).toBeUndefined();
+    expect(nthMatch(te.view.state, q, 1.5)).toBeUndefined();
+    expect(nthMatch(te.view.state, q, Number.NaN)).toBeUndefined();
+    expect(nthMatch(te.view.state, q, MATCH_ITER_LIMIT)).toBeUndefined();
   });
 
   it("activeMatchIndex：光标前最近未越过项优先；越尾回落末项；空集 0", () => {

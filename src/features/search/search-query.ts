@@ -2,7 +2,7 @@
 //
 // 职责：三开关 → 官方 SearchQuery 的受控构建（非法正则/可空匹配正则前置拒绝）、
 // 匹配集迭代（零长匹配步进守卫——官方 buildMatchDeco/replaceAll 对可空正则会
-// pos=next.to 原地打转，本层统一拦截）、行号定位与活动序号判定。
+// pos=next.to 原地打转，本层统一拦截）、按序号定位与活动序号判定。
 // 全部为纯函数：jsdom + makeTestEditor 即可完整测试。
 import { SearchQuery } from "prosemirror-search";
 import type { SearchResult } from "prosemirror-search";
@@ -90,33 +90,25 @@ export function collectMatches(
 }
 
 /**
- * 行号定位该行首个匹配区间（跨文件结果点击 → 文档内 revealRange 的换算层）
+ * 取第 ordinal 个匹配区间（0 起，文档序）
+ *
+ * 跨文件结果与文档内命中的对齐底座：外部扫描产出的结果序号直接对齐
+ * 本函数取位，不做行号换算（PM 文档模型丢弃空行，行号映射会系统性漂移）。
  * @param state 编辑器状态
  * @param query 已构建查询
- * @param lineNumber 1 起行号（Rust 侧扫描口径一致）
- * @returns 匹配区间；该行无匹配/行号越界返回 undefined
+ * @param ordinal 匹配序号（0 起；来源为跨文件扫描等外部输入，不可信）
+ * @returns 匹配区间；序号非法（非整数/负数/达迭代上限）或越界返回 undefined
  */
-export function findMatchOnLine(
+export function nthMatch(
   state: EditorState,
   query: SearchQuery,
-  lineNumber: number,
+  ordinal: number,
 ): { from: number; to: number } | undefined {
-  // 行号口径（与源码行对齐）：顶层块序号 + 该块内匹配起点之前的 hardbreak 计数。
-  // ProseMirror 无 CodeMirror 式 doc.lineAt；Milkdown 把 Markdown 单换行解析为
-  // 段内 hardbreak 节点（非独立段落），故行边界须同时计入块起点与硬换行。
-  const hardbreakType = state.doc.type.schema.nodes.hardbreak;
-  for (const m of collectMatches(state, query)) {
-    // 匹配恒落在文本块内容内（官方 findNext 只扫描 textblock，depth ≥ 1），
-    // 顶层块起点取 before(1) 安全；行号 = 顶层块序号 + 块内起点前硬换行数
-    const $from = state.doc.resolve(m.from);
-    let line = $from.index(0) + 1;
-    const blockStart = $from.before(1);
-    state.doc.nodesBetween(blockStart, m.from, (node) => {
-      if (node.type === hardbreakType) line += 1;
-    });
-    if (line === lineNumber) return { from: m.from, to: m.to };
-  }
-  return undefined;
+  // 非法序号防御：非整数（含 NaN/Infinity）/负数/超出迭代上限一律拒绝，
+  // 防御异常外部输入把 collectMatches 拖成超限扫描
+  if (!Number.isInteger(ordinal) || ordinal < 0 || ordinal >= MATCH_ITER_LIMIT) return undefined;
+  // 只收集到目标序号为止：避免为取单项而全量迭代大文档
+  return collectMatches(state, query, ordinal + 1)[ordinal];
 }
 
 /**
