@@ -98,15 +98,17 @@ function fakeDoc(items: HeadingInfo[]): Record<string, unknown> {
 
 /**
  * 视图桩：state.doc（descendants 供门面重收集、resolve 供 activeIdByPos 祖先上溯——
- * depth=0 令其走前置回退路径）；state.selection.head 供装配层初始高亮判定（默认 0 =
- * 文档起始，FIXTURE 下命中首标题 a）；coordsAtPos 按 pos 映射视口 top（滚动通道度量桩）；
- * dom 作为 findScrollContainer 起点。
- * @param opts.docItems 文档标题集合；tops pos→视口 top 映射；dom 挂载宿主元素
+ * depth=0 令其走前置回退路径）；state.selection.head 供装配层初始高亮判定
+ * （默认 0 = 文档起始，FIXTURE 下命中首标题 a）；coordsAtPos 按 pos 映射视口 top
+ * （滚动通道度量桩）；dom 作为 findScrollContainer 起点。
+ * @param opts.docItems 文档标题集合；tops pos→视口 top 映射；dom 挂载宿主元素；
+ *                      head 光标偏移（初始高亮判定消费，默认文档起始）
  */
 function makeView(opts: {
   docItems: HeadingInfo[];
   tops?: Record<number, number>;
   dom?: HTMLElement;
+  head?: number;
 }): unknown {
   return {
     state: {
@@ -116,7 +118,7 @@ function makeView(opts: {
         resolve: (): { depth: number } => ({ depth: 0 }),
       },
       // 选区桩：pullFromFacade 初始高亮判定消费 selection.head（挂载/标签切换语义）
-      selection: { head: 0 },
+      selection: { head: opts.head ?? 0 },
     },
     coordsAtPos: (pos: number): { top: number } => ({ top: opts.tops?.[pos] ?? 0 }),
     dom: opts.dom ?? document.createElement("div"),
@@ -147,6 +149,18 @@ describe("OutlinePanel（AC-F17/F18/F19）", () => {
     expect(items[1].classes()).toContain("outline-panel__item--active");
     // DOMWrapper 泛型为 Element，内联样式断言收窄到 HTMLElement（jsdom 可解析 style 绑定）
     expect((items[2].element as HTMLElement).style.paddingLeft).toBe("32px"); // (3-1)*16
+    wrapper.unmount();
+  });
+
+  it("挂载后按当前选区初始判定高亮（pullFromFacade 初始高亮回归钉）", async () => {
+    // 光标预置在 B 标题文本区间内（B pos=3，文本自 pos+1=4 起）：resolve 桩无标题祖先，
+    // activeIdByPos 前置回退取最近前序标题 b（即 activeIdByPos([a,b,c], doc, 4) = "b"）。
+    // 钉住终审 Important-2 新行为——挂载即按当前选区高亮；移除 pullFromFacade 的
+    // 初始判定行后挂载期无任何 setActive 来源，本断言即红
+    h.view = makeView({ docItems: FIXTURE, head: 4 });
+    const wrapper = mount(OutlinePanel);
+    await flushPromises(); // watch immediate → nextTick → 门面拉取 + 初始高亮判定
+    expect(useOutlineStore().activeHeadingId).toBe("b");
     wrapper.unmount();
   });
 
