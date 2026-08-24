@@ -1,11 +1,21 @@
-// 全局搜索面板组件用例：global-reveal mock（定位链路已独立覆盖），store 真实 Pinia
+// 全局搜索面板组件用例：global-reveal / search-service 全量 mock（定位链路已
+// 独立覆盖；service 沿 FindReplacePanel.spec hoisted 桩惯例防真实 invoke），store 走真实 Pinia
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 
-const h = vi.hoisted(() => ({ revealGlobalMatch: vi.fn() }));
+// vi.mock 工厂被提升到 import 之前求值，共享桩状态收拢进 hoisted 容器
+const h = vi.hoisted(() => ({
+  revealGlobalMatch: vi.fn(),
+  startGlobalSearch: vi.fn(),
+  cancelGlobalSearch: vi.fn(),
+}));
 vi.mock("./global-reveal", () => ({
   revealGlobalMatch: (...a: unknown[]) => h.revealGlobalMatch(...a),
+}));
+vi.mock("../../services/search-service", () => ({
+  startGlobalSearch: (...a: unknown[]) => h.startGlobalSearch(...a),
+  cancelGlobalSearch: (...a: unknown[]) => h.cancelGlobalSearch(...a),
 }));
 
 import GlobalSearchPanel from "./GlobalSearchPanel.vue";
@@ -30,7 +40,13 @@ const GROUPS: GlobalFileResult[] = [
   },
 ];
 
-beforeEach(() => setActivePinia(createPinia()));
+// 桩跨用例共享：每例清零调用记录 + 新建 Pinia，保证次数断言只计本例行为
+beforeEach(() => {
+  setActivePinia(createPinia());
+  h.revealGlobalMatch.mockClear();
+  h.startGlobalSearch.mockClear();
+  h.cancelGlobalSearch.mockClear();
+});
 
 describe("GlobalSearchPanel", () => {
   it("空态三态：未开文件夹/搜索中/无结果", async () => {
@@ -83,6 +99,34 @@ describe("GlobalSearchPanel", () => {
     store.globalTruncated = true;
     const wrapper = mount(GlobalSearchPanel);
     expect(wrapper.find("[data-global-truncated]").exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it("三开关点击即时重跑：翻转后立即发起全局重扫；空查询仅翻转不发起", async () => {
+    useFileTreeStore().currentDir = "C:/ws";
+    const store = useSearchStore();
+    store.globalResults = GROUPS; // 预置旧口径结果，重扫后应被新查询清空重建
+    store.globalQuery = "目标";
+    const wrapper = mount(GlobalSearchPanel);
+    await wrapper.find("[data-global-case]").trigger("click");
+    expect(store.globalCaseSensitive).toBe(true);
+    expect(h.startGlobalSearch).toHaveBeenCalledOnce();
+    // 重扫快照携带翻转后的开关口径（root/查询词/三开关/Channel 批量回调）
+    expect(h.startGlobalSearch).toHaveBeenCalledWith(
+      "C:/ws",
+      "目标",
+      { caseSensitive: true, wholeWord: false, regexp: false },
+      expect.anything(),
+    );
+    await wrapper.find("[data-global-word]").trigger("click");
+    await wrapper.find("[data-global-regexp]").trigger("click");
+    expect(store.globalWholeWord && store.globalRegexp).toBe(true);
+    expect(h.startGlobalSearch).toHaveBeenCalledTimes(3); // 每次点击即时重跑
+    // 空查询：开关只翻转状态，不发起无谓扫描
+    h.startGlobalSearch.mockClear();
+    store.globalQuery = "";
+    await wrapper.find("[data-global-case]").trigger("click");
+    expect(h.startGlobalSearch).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 });

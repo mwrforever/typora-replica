@@ -54,6 +54,16 @@ describe("prosemirror-search 装配", () => {
     expect(decoCounts(te.view).normal + decoCounts(te.view).active).toBe(1);
   });
 
+  it("wholeWord ASCII 数字邻接钉桩：cat 对『concatenate cat cat2』DOM 高亮 2 处（JS \\p{L} 词界）", async () => {
+    // 钉住 JS 引擎词界语义并与 io/search.rs 头注分引擎陈述互证：concatenate
+    // 内部 cat 左邻字母 → 拒；裸 cat → 命中；cat2 尾邻数字 2 在 \p{L} 判据下
+    // 属边界 → 命中（Rust \b 把数字当词字符故全局面板同查询不命中，spec §11 披露）
+    const te = await makeTestEditor("concatenate cat cat2");
+    const query = new SearchQuery({ search: "cat", wholeWord: true });
+    te.view.dispatch(setSearchState(te.view.state.tr, query));
+    expect(decoCounts(te.view).normal + decoCounts(te.view).active).toBe(2);
+  });
+
   it("findNext 从当前选区起跳且文档尾回绕（AC-F24-3 引擎语义）", async () => {
     const te = await makeTestEditor("甲乙甲");
     const query = new SearchQuery({ search: "甲" });

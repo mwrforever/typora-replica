@@ -32,6 +32,13 @@ function onSubmit(): void {
   store.flushGlobalSearch();
 }
 
+/** 三开关点击：翻转后立即重跑在途查询（结果不滞留旧口径，对照当前文件面板开关即时生效）；
+ * 空查询或未开文件夹时不发起，避免无谓扫描 */
+function onToggleOption(name: "globalCaseSensitive" | "globalWholeWord" | "globalRegexp"): void {
+  store.toggleOption(name);
+  if (store.globalQuery && fileTree.currentDir) store.flushGlobalSearch();
+}
+
 /** 分组展开态：单匹配文件恒展开；多匹配默认折叠，expandedFiles 记录手动切换 */
 function isOpen(filePath: string): boolean {
   const group = store.globalResults.find((r) => r.filePath === filePath);
@@ -62,7 +69,7 @@ async function onOpen(filePath: string, fileName: string, matchIndex: number): P
         :class="{ 'global-search__toggle--active': store.globalCaseSensitive }"
         title="区分大小写"
         data-global-case
-        @click="store.toggleOption('globalCaseSensitive')"
+        @click="onToggleOption('globalCaseSensitive')"
       >
         Aa
       </button>
@@ -71,7 +78,7 @@ async function onOpen(filePath: string, fileName: string, matchIndex: number): P
         :class="{ 'global-search__toggle--active': store.globalWholeWord }"
         title="全词匹配"
         data-global-word
-        @click="store.toggleOption('globalWholeWord')"
+        @click="onToggleOption('globalWholeWord')"
       >
         全词
       </button>
@@ -80,7 +87,7 @@ async function onOpen(filePath: string, fileName: string, matchIndex: number): P
         :class="{ 'global-search__toggle--active': store.globalRegexp }"
         title="正则表达式"
         data-global-regexp
-        @click="store.toggleOption('globalRegexp')"
+        @click="onToggleOption('globalRegexp')"
       >
         .*
       </button>

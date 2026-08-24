@@ -6,6 +6,8 @@ import { createPinia, setActivePinia } from "pinia";
 const h = vi.hoisted(() => ({
   revealRange: vi.fn(),
   nthMatch: vi.fn(),
+  /** buildSearchQuery 桩返回值（默认恒 ok；用例可整体换桩模拟 invalid-regex 等态） */
+  built: { status: "ok", query: { marker: true } } as { status: string; query?: unknown },
   /** getView 注入值（undefined = 门面空态） */
   view: undefined as unknown,
   /** getEditor 注入值 */
@@ -30,7 +32,8 @@ vi.mock("../editor/editor-manager", () => ({
   },
 }));
 vi.mock("./search-query", () => ({
-  buildSearchQuery: () => ({ status: "ok", query: { marker: true } }),
+  // 换桩化：返回 hoisted 容器的 built（默认 ok 形态；非 ok 用例整体覆写）
+  buildSearchQuery: () => h.built,
   nthMatch: (...a: unknown[]) => h.nthMatch(...a),
 }));
 // 实例注册表桩：恒登记目标标签且实例与门面 h.editor 同源——
@@ -52,6 +55,7 @@ beforeEach(() => {
   setActivePinia(createPinia());
   h.revealRange.mockClear();
   h.nthMatch.mockReset();
+  h.built = { status: "ok", query: { marker: true } };
   h.view = undefined;
   h.editor = {};
   h.docCbs.length = 0;
@@ -110,6 +114,17 @@ describe("revealGlobalMatch 定位链路（序号对齐口径）", () => {
     await revealGlobalMatch("C:/ws/b.md", "b.md", 7);
     expect(h.nthMatch).toHaveBeenCalledWith(expect.anything(), expect.anything(), 7);
     expect(h.revealRange).not.toHaveBeenCalled();
+  });
+
+  it("查询构建非 ok（invalid-regex）：仅激活标签不定位，nthMatch/revealRange 均不触（降级披露口径）", async () => {
+    vi.useFakeTimers();
+    const tabs = useTabsStore();
+    tabs.openFile("C:/ws/bad.md", "bad.md"); // 预置已激活标签 + 就绪视图：直落状态分支
+    h.view = fakeView();
+    h.built = { status: "invalid-regex" }; // 换桩：查询构建失败（非法正则态）
+    await revealGlobalMatch("C:/ws/bad.md", "bad.md", 0);
+    expect(h.nthMatch).not.toHaveBeenCalled(); // 非 ok 不进入匹配取位
+    expect(h.revealRange).not.toHaveBeenCalled(); // 仅激活标签不定位
   });
 
   it("超时未就绪：静默放弃不抛错（标签被切走场景）", async () => {
