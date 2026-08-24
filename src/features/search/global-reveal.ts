@@ -6,9 +6,14 @@
 // 不定位（序号对齐裁决披露项），不抛错。
 // 就绪等待：主路径吃 05 adopt 快照广播（subscribeDocUpdated 一次性订阅），
 // 兜底 50ms 有限轮询——覆盖已知残余①「全新标签首挂窗口期广播跳过」。
+// 归属校验（06 E2E 实测竞态根治）：openFile 跨标签激活后，门面切换由 Vue
+// watch 异步完成，切换完成前 getView() 返回的仍是上一标签的旧实例——
+// 以「注册表实例 == 门面当前实例」判定门面确已指向目标标签，未确认前
+// 一律不采信瞬时视图（快路径/轮询/广播回调共用同一 grab 判据）。
 import type { EditorView } from "@milkdown/kit/prose/view";
 import { editorManager } from "../editor/editor-manager";
 import { revealRange } from "../editor/reveal-range";
+import { getInstance } from "../tabs/editor-registry";
 import { useTabsStore } from "../tabs/tabs-store";
 import { buildSearchQuery, nthMatch } from "./search-query";
 import { useSearchStore } from "./search-store";
@@ -20,14 +25,26 @@ const POLL_INTERVAL_MS = 50;
 const POLL_MAX_TRIES = 40;
 
 /**
- * 等待指定标签成为激活标签且门面视图就绪
+ * 门面是否已指向目标标签的编辑器实例
+ * @param tabId 目标标签 id
+ * @returns 注册表登记实例与门面当前编辑器同源时 true；目标未挂号或门面
+ *          尚指向其他标签（激活 watch 未 flush）时 false
+ */
+function facadeOnTarget(tabId: string): boolean {
+  const inst = getInstance(tabId);
+  return !!inst && editorManager.getEditor() === inst.crepe.editor;
+}
+
+/**
+ * 等待指定标签成为激活标签且门面实例已切换就绪
  * @param tabId openFile 返回的标签 id
  * @returns 就绪的 EditorView；超时或标签已切走返回 undefined
  */
 function waitForActiveView(tabId: string): Promise<EditorView | undefined> {
   const tabs = useTabsStore();
+  // 双判据：标签激活 + 门面归属确认（缺一不可，防采信上一标签旧实例）
   const grab = (): EditorView | undefined =>
-    tabs.activeTabId === tabId
+    tabs.activeTabId === tabId && facadeOnTarget(tabId)
       ? ((editorManager.getView() as EditorView | undefined) ?? undefined)
       : undefined;
   // 快路径：已激活且视图就绪（同文件去重激活的常见形态）
@@ -81,6 +98,10 @@ export async function revealGlobalMatch(
   const { id } = tabs.openFile(filePath, fileName);
   const view = await waitForActiveView(id);
   if (!view) return; // 标签被切走/超时未就绪：放弃本次定位（用户可再点）
+  // 焦点先行（AC-F26-2「光标选中匹配文本」可见面）：ProseMirror 仅在视图持有
+  // 焦点时才把状态选区回写为 DOM 选区（editorOwnsSelection 守卫），点击结果后
+  // 焦点仍在侧栏按钮上，不聚焦则用户看不到光标落位，E2E 也无从断言选区
+  view.focus();
   const editor = editorManager.getEditor();
   if (!editor) return;
   if (built.status === "ok") {
