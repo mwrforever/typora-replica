@@ -48,6 +48,9 @@ export function useOutlineData(): { dispose(): void } {
       return;
     }
     store.applyHeadings(collectHeadings(view.state.doc));
+    // 初始高亮判定：挂载/标签切换重建标题列表后，按当前选区立即判定激活章节
+    // （Typora 行为：打开面板即高亮光标所在章节）；跨标签同 id 残留亦随每次拉取重判定消除
+    store.setActive(activeIdByPos(store.headings, view.state.doc, view.state.selection.head));
   };
 
   // 编辑通道：即时选区 → 当前标题（上溯祖先 + 前置回退）

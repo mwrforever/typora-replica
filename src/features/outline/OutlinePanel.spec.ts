@@ -29,6 +29,8 @@ const h = vi.hoisted(() => ({
   selCbs: [] as Array<(sel: unknown) => void>,
   /** getView() 返回值（按用例注入视图桩；undefined = 门面空态） */
   view: undefined as unknown,
+  /** getEditor() 返回值（默认非空对象；置 undefined = 编辑器未就绪守卫场景） */
+  editor: {} as unknown,
 }));
 
 vi.mock("../editor/reveal-range", () => ({
@@ -37,8 +39,8 @@ vi.mock("../editor/reveal-range", () => ({
 
 vi.mock("../editor/editor-manager", () => ({
   editorManager: {
-    // revealRange 已 mock：编辑器桩仅需非空即可通过组件守卫
-    getEditor: (): unknown => ({}),
+    // revealRange 已 mock：编辑器桩仅需非空即可通过组件守卫（用例可注入 undefined 验守卫）
+    getEditor: (): unknown => h.editor,
     getView: (): unknown => h.view,
     subscribeDocUpdated: (cb: (doc: unknown) => void) => {
       h.docCbs.push(cb);
@@ -96,7 +98,8 @@ function fakeDoc(items: HeadingInfo[]): Record<string, unknown> {
 
 /**
  * 视图桩：state.doc（descendants 供门面重收集、resolve 供 activeIdByPos 祖先上溯——
- * depth=0 令其走前置回退路径）；coordsAtPos 按 pos 映射视口 top（滚动通道度量桩）；
+ * depth=0 令其走前置回退路径）；state.selection.head 供装配层初始高亮判定（默认 0 =
+ * 文档起始，FIXTURE 下命中首标题 a）；coordsAtPos 按 pos 映射视口 top（滚动通道度量桩）；
  * dom 作为 findScrollContainer 起点。
  * @param opts.docItems 文档标题集合；tops pos→视口 top 映射；dom 挂载宿主元素
  */
@@ -112,6 +115,8 @@ function makeView(opts: {
         // resolve 桩：深度恒 0 → activeIdByPos 跳过祖先上溯，走「pos 前最近标题」回退
         resolve: (): { depth: number } => ({ depth: 0 }),
       },
+      // 选区桩：pullFromFacade 初始高亮判定消费 selection.head（挂载/标签切换语义）
+      selection: { head: 0 },
     },
     coordsAtPos: (pos: number): { top: number } => ({ top: opts.tops?.[pos] ?? 0 }),
     dom: opts.dom ?? document.createElement("div"),
@@ -126,6 +131,7 @@ describe("OutlinePanel（AC-F17/F18/F19）", () => {
     h.docCbs.length = 0;
     h.selCbs.length = 0;
     h.view = undefined;
+    h.editor = {};
   });
 
   it("渲染 store.headings 为层级缩进列表，激活项带高亮类（AC-F17）", async () => {
@@ -155,6 +161,17 @@ describe("OutlinePanel（AC-F17/F18/F19）", () => {
     wrapper.unmount();
   });
 
+  it("编辑器未就绪时点击条目静默跳过（jumpTo 空守卫）", async () => {
+    // 门面 getEditor 返回 undefined（编辑器实例尚未挂号）：点击不得外呼 revealRange
+    h.view = makeView({ docItems: FIXTURE });
+    h.editor = undefined;
+    const wrapper = mount(OutlinePanel);
+    await flushPromises();
+    await wrapper.findAll("[data-outline-item]")[0].trigger("click");
+    expect(h.revealRange).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
   it("空文档显示空态文案（AC-F21-3 前置形态）", async () => {
     h.view = makeView({ docItems: [] });
     const wrapper = mount(OutlinePanel);
@@ -168,6 +185,9 @@ describe("OutlinePanel（AC-F17/F18/F19）", () => {
     h.view = makeView({ docItems: FIXTURE });
     const wrapper = mount(OutlinePanel);
     await flushPromises();
+    // 升格前置：激活条目置为 c（当前列表中存在）——重算后 c 消失，
+    // 使「悬空高亮复位」断言具备鉴别力（否则对 undefined 初值恒真）
+    useOutlineStore().setActive("c");
     // 编辑删除了 C：事件桥投递新文档 → 列表收敛为 A/B
     for (const cb of h.docCbs) cb(fakeDoc(FIXTURE.slice(0, 2)));
     await nextTick();
@@ -308,6 +328,7 @@ describe("OutlinePanel 右键菜单与折叠（AC-F20/F22）", () => {
     h.docCbs.length = 0;
     h.selCbs.length = 0;
     h.view = undefined;
+    h.editor = {};
   });
 
   /** 挂载已就绪面板：门面视图桩注入三级标题夹具并 flush 装配链 */
@@ -350,6 +371,9 @@ describe("OutlinePanel 右键菜单与折叠（AC-F20/F22）", () => {
 
   it("无激活条目时 Highlight Current Header 静默返回不抛错", async () => {
     const wrapper = await mountReady();
+    // 初始判定语义（05 终审 Important-2）：挂载即按当前选区高亮（head=0 → 命中 a），
+    // 本用例构造「无高亮」前置须显式清除，验证 HCH 在无目标时的静默路径
+    useOutlineStore().setActive(undefined);
     expect(useOutlineStore().activeHeadingId).toBeUndefined();
     await wrapper.find("[data-outline-list]").trigger("contextmenu", { clientX: 10, clientY: 10 });
     await wrapper.find("[data-outline-menu-hch]").trigger("click");
