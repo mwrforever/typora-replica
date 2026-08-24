@@ -112,9 +112,10 @@ describe("E14 链接", () => {
     const ids = [...te.view.dom.querySelectorAll("h1[id]")].map((h) => h.id);
     expect(ids).toHaveLength(2);
     expect(new Set(ids).size).toBe(2); // 两个 id 不冲突
-    // 实际渲染形态：首个标题用原文 id，重复标题追加 -#2 后缀（Milkdown 内置去重方案）
+    // 实际渲染形态：首个标题用原文 id，重复标题追加 -1 后缀（Typora「-1 起编号」，
+    // 05 大纲 P1 起由 typora-heading-id 插件替代内置 sync-heading-id 的 -#2 形态）
     expect(ids[0]).toBe("标题");
-    expect(ids[1]).toBe("标题-#2");
+    expect(ids[1]).toBe("标题-1");
   });
 
   it("普通点击链接不触发系统浏览器（放行内置编辑）", async () => {

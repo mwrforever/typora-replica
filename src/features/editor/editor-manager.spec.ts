@@ -1,5 +1,8 @@
 // 编辑器实例管理服务：单例生命周期 + 文档存取 + 只读切换（跨模块接口，100% 覆盖）
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { TextSelection } from "@milkdown/kit/prose/state";
+import type { Node as ProseMirrorNode } from "@milkdown/kit/prose/model";
+import type { Selection } from "@milkdown/kit/prose/state";
 import { makeTestEditor } from "../../test/editor-test-utils";
 import { showMermaidMenu } from "./mermaid/mermaid-menu";
 import { editorManager } from "./editor-manager";
@@ -306,5 +309,72 @@ describe("编辑器实例管理", () => {
   it("insertMarkdown 未创建实例时静默 no-op", () => {
     editorManager.destroy();
     expect(() => editorManager.insertMarkdown("x")).not.toThrow();
+  });
+
+  describe("subscribeDocUpdated / subscribeSelectionUpdated（05 大纲消费口）", () => {
+    it("文档变更后经防抖收到 doc 对象，取消订阅后不再收到", async () => {
+      await editorManager.create("# 标题\n\n正文");
+      const received: ProseMirrorNode[] = [];
+      const off = editorManager.subscribeDocUpdated((doc) => received.push(doc));
+      const view = editorManager.getView()!;
+      // “# 标题\n\n正文” doc 尺寸 8（heading 贡献 4 + 段落贡献 4）：pos 6 位于段落文本节点内部（“正”之后）
+      view.dispatch(view.state.tr.insertText("更", 6));
+      // 防抖总窗口 = listener 内置 200ms + 事件桥 200ms，等 600ms 保证触发（沿用本文件真实计时器惯例）
+      await new Promise((r) => setTimeout(r, 600));
+      expect(received.length).toBeGreaterThan(0);
+      expect(received[received.length - 1].textContent).toContain("更");
+      // 幂等：二次取消不抛错
+      off();
+      off();
+      view.dispatch(view.state.tr.insertText("再", 7));
+      await new Promise((r) => setTimeout(r, 600));
+      expect(received.length).toBe(1); // 取消后不再投递
+    });
+
+    it("选区变更即时回调（无防抖），adopt 切换实例后事件来自新实例", async () => {
+      await editorManager.create("# A");
+      const selections: Selection[] = [];
+      const off = editorManager.subscribeSelectionUpdated((s) => selections.push(s));
+      const oldView = editorManager.getView()!;
+      // “# A” doc 尺寸 3（heading 内容 1 + 开闭各 1）：pos 2 为标题内容末端，触发选区变更
+      oldView.dispatch(oldView.state.tr.setSelection(TextSelection.create(oldView.state.doc, 2)));
+      expect(selections.length).toBeGreaterThan(0); // 即时，不等计时器
+
+      // 门面切换到外部创建的实例（makeTestEditor 返回 { crepe }）：旧实例编辑不再投递
+      const external = await makeTestEditor("## 外部标题");
+      editorManager.adopt(external.crepe);
+      const countBefore = selections.length;
+      // 旧实例仍存活但桥已解绑：在其标题末尾插入字符（pos 2 合法），不应投递
+      oldView.dispatch(oldView.state.tr.insertText("x", 2));
+      await new Promise((r) => setTimeout(r, 600));
+      expect(selections.length).toBe(countBefore);
+
+      const newView = editorManager.getView()!;
+      // “## 外部标题” doc 尺寸 6（标题文本 4 字 + 开闭各 1）：pos 5 为标题内容末端，触发选区变更
+      newView.dispatch(newView.state.tr.setSelection(TextSelection.create(newView.state.doc, 5)));
+      expect(selections.length).toBeGreaterThan(countBefore);
+      off();
+    });
+
+    it("adopt 后立即补发当前快照：doc/selection 订阅者各收到一次新实例状态（晚挂号广播）", async () => {
+      // 业务背景：大纲面板可见时 Ctrl+N 新建标签，装配层 nextTick 拉取命中的仍是
+      // 旧实例，订阅方无从得知门面已切换——adopt 必须同步补发当前快照，
+      // 保证「订阅语义 = 激活标签当前状态流」在实例切换边界可靠成立
+      const docs: ProseMirrorNode[] = [];
+      const selections: Selection[] = [];
+      const offDoc = editorManager.subscribeDocUpdated((doc) => docs.push(doc));
+      const offSel = editorManager.subscribeSelectionUpdated((s) => selections.push(s));
+      // 外部创建的实例直接 adopt（EditorPage 装配路径）：全程不派发任何事务，
+      // 排除事件桥常规投递干扰——回调只能来自 adopt 的快照补发本身
+      const external = await makeTestEditor("## 快照标题");
+      editorManager.adopt(external.crepe);
+      expect(docs).toHaveLength(1);
+      expect(docs[0].textContent).toContain("快照标题");
+      expect(selections).toHaveLength(1);
+      // 快照即新实例当前选区对象（emit 直传引用，无拷贝）
+      expect(selections[0]).toBe(external.view.state.selection);
+      offDoc();
+      offSel();
+    });
   });
 });

@@ -10,6 +10,7 @@ import type { Handlers } from "mdast-util-to-markdown";
 import type { Options } from "remark-stringify";
 // mhchem 副作用导入：KaTeX 化学式扩展（E7），全应用只需一次
 import "katex/contrib/mhchem";
+import { typoraHeadingIdPlugin } from "./anchor-id/typora-heading-id";
 import { configureFootnoteTooltip, footnoteTooltipPlugin } from "./footnote-tooltip";
 import { configureHtmlMerge } from "./html/html-merge";
 import { setupHtmlNodeView } from "./html/html-node-view";
@@ -250,6 +251,9 @@ export function createMarkwellEditor(
   // E19 AC-E19-5：行内公式编辑浮层内按 ESC 取消编辑回预览态（document 级监听，
   // PluginView 生命周期随编辑器销毁清理）
   crepe.editor.use(latexEscapePlugin);
+  // Typora 式 heading 锚点 id（05 大纲 P1，AC-F23-2/3）：禁用内置 sync-heading-id
+  // 并按 Typora「-1 起编号」重写 attrs.id，Task 3 collectHeadings 的读取来源
+  crepe.editor.use(typoraHeadingIdPlugin);
   // E21 图表右键菜单：contextmenu 落在 mermaid 预览容器时弹出另存/复制菜单
   //（非图表区域返回 false 放行浏览器默认菜单；handleDOMEvents 由 ProseMirror
   // 在编辑器 DOM 上统一监听，预览面板位于编辑器内容 DOM 内故可命中）

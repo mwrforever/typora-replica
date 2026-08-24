@@ -4,6 +4,7 @@ import { editorViewCtx, type Editor } from "@milkdown/kit/core";
 import { TextSelection } from "@milkdown/kit/prose/state";
 import type { EditorView } from "@milkdown/kit/prose/view";
 import { fireEvent } from "@testing-library/dom";
+import { typoraHeadingIdPlugin } from "../features/editor/anchor-id/typora-heading-id";
 import {
   applyMarkwellStringifyOptions,
   lowerLanguageCodeBlockSchema,
@@ -112,6 +113,8 @@ export async function makeTestEditor(
   crepe.editor.use(openLinkPlugin);
   // E19 AC-E19-5：行内公式编辑浮层 ESC 退出编辑态，与产品工厂同源插件
   crepe.editor.use(latexEscapePlugin);
+  // Typora 式 heading 锚点 id（05 大纲 P1），与产品工厂同源插件
+  crepe.editor.use(typoraHeadingIdPlugin);
   crepe.editor.config((ctx) => {
     registerEditorInputRules(ctx);
     applyEditorKeymaps(ctx);

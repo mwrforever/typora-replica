@@ -69,4 +69,26 @@ describe("偏好设置（store 持久化）", () => {
     const reloaded = await loadSettings();
     expect(reloaded.autoSave.enabled).toBe(false); // 已写回 store
   });
+
+  it("outline.collapsible 默认回落 false，updateSettings 深合并写回", async () => {
+    // 无存储键（beforeEach 已清空）→ outline 组逐字段回落默认值（AC-F22-1 默认 Flat）
+    const loaded = await loadSettings();
+    expect(loaded.outline.collapsible).toBe(false);
+    await updateSettings({ outline: { collapsible: true } });
+    // 深合并后整组写回独立键 outline（与 loadSettings 的读取键对称）
+    expect(memory.get("outline")).toEqual({ collapsible: true });
+    const reloaded = await loadSettings();
+    expect(reloaded.outline.collapsible).toBe(true); // 存量命中路径（非回落分支）
+  });
+
+  it("outline 增量 patch 类型收口：仅传部分字段可编译且深合并保持存量", async () => {
+    memory.set("outline", { collapsible: true });
+    // 类型层回归钉（Task 8 收口）：patch.outline 须为纯 Partial——旧签名把 outline
+    // 排除在 Omit 外（交集 OutlineSettings & Partial<OutlineSettings> 使 collapsible
+    // 恒必填），下方显式类型声明在旧签名下无法通过 vue-tsc 编译
+    const patch: Parameters<typeof updateSettings>[0] = { outline: {} };
+    const s = await updateSettings(patch);
+    expect(s.outline.collapsible).toBe(true); // 空 patch 深合并保持存量值
+    expect(memory.get("outline")).toEqual({ collapsible: true }); // 写回不丢存量
+  });
 });

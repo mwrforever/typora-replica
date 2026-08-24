@@ -136,6 +136,19 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 05 大纲核心纯逻辑 100%（store 状态机 + 双通道判定；组件/装配层走全局 80% + E2E）
+        "src/features/outline/outline-store.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        "src/features/outline/current-heading.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },

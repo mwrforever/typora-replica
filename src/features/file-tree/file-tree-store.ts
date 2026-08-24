@@ -113,9 +113,11 @@ export const useFileTreeStore = defineStore("fileTree", {
       this.sidebarVisible = !this.sidebarVisible;
     },
 
-    /** 面板切换（Ctrl+Shift+1/2/3；搜索入口自动切文件树） */
+    /** 面板切换（Ctrl+Shift+1/2/3；搜索入口自动切文件树）。切换同时保证侧栏可见：
+     *  面板切换键的语义是「让用户看到目标面板」，隐藏态下仅改 activePanel 无感知（AC-F16-1） */
     switchPanel(key: PanelKey): void {
       this.activePanel = key;
+      this.sidebarVisible = true;
     },
 
     /** 设置排序（F6：四种排序各可升降序） */
