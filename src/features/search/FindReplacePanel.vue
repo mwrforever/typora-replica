@@ -4,7 +4,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 import { editorManager } from "../editor/editor-manager";
-import { navigateNext, navigatePrev, useFindController } from "./find-controller";
+import {
+  navigateNext,
+  navigatePrev,
+  replaceAllInView,
+  replaceOneInView,
+  useFindController,
+} from "./find-controller";
 import { useSearchStore } from "./search-store";
 
 const store = useSearchStore();
@@ -23,7 +29,7 @@ watch(
   },
 );
 
-/** 计数文案：n/m；零匹配 0/0（AC-F24-6）；非法态专属提示（AC-F25-5 呈现） */
+/** 计数文案：n/m；零匹配 0/0（AC-F24-6）；非法正则/空匹配态专属提示（AC-F25-5 呈现） */
 const countText = computed(() => {
   if (!store.query) return "";
   if (store.queryStatus === "invalid-regex") return "无效正则";
@@ -35,6 +41,26 @@ const queryModel = computed({
   get: () => store.query,
   set: (v: string) => store.setQuery(v),
 });
+
+const replaceModel = computed({
+  get: () => store.replacement,
+  set: (v: string) => store.setReplacement(v),
+});
+
+/** AC-F25-5 UI 面：非 ok 态或空查询时替换动作不可用 */
+const canReplace = computed(() => store.query.length > 0 && store.queryStatus === "ok");
+
+/** 替换当前项（光标不在匹配上时先选中下一处——官方两段式）；禁用态兜底拒绝（合成 click 不受 disabled 拦截） */
+function onReplaceOne(): void {
+  if (!canReplace.value) return;
+  replaceOneInView();
+}
+
+/** 全部替换（单事务合并，一次 Ctrl+Z 全撤）；禁用态兜底拒绝同上 */
+function onReplaceAll(): void {
+  if (!canReplace.value) return;
+  replaceAllInView();
+}
 
 /** 查询框键盘：Enter 下一个 / Shift+Enter 上一个（与窗口层 F3 同源命令） */
 function onQueryKeydown(event: KeyboardEvent): void {
@@ -83,7 +109,31 @@ function closePanel(): void {
       </button>
     </div>
     <div v-if="store.mode === 'replace'" class="find-panel__row">
-      <!-- 替换行（Task 6 增量：替换/全部按钮） -->
+      <input
+        v-model="replaceModel"
+        class="find-panel__input"
+        placeholder="替换为（支持 $1/$2 捕获组）"
+        data-replace-input
+        @keydown="onQueryKeydown"
+      />
+      <button
+        class="find-panel__action"
+        :disabled="!canReplace"
+        title="替换当前项"
+        data-replace-one
+        @click="onReplaceOne"
+      >
+        替换
+      </button>
+      <button
+        class="find-panel__action"
+        :disabled="!canReplace"
+        title="全部替换（一次 Ctrl+Z 可全部撤销）"
+        data-replace-all
+        @click="onReplaceAll"
+      >
+        全部
+      </button>
     </div>
     <div class="find-panel__row find-panel__toggles">
       <button
@@ -169,6 +219,20 @@ function closePanel(): void {
   line-height: 1;
   color: var(--markwell-text, #333);
   cursor: pointer;
+}
+.find-panel__action {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border: 1px solid var(--markwell-border, #ddd);
+  border-radius: 4px;
+  background: var(--markwell-surface, #fff);
+  font-size: 12px;
+  color: var(--markwell-text, #333);
+  cursor: pointer;
+}
+.find-panel__action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .find-panel__toggle {
   padding: 2px 8px;

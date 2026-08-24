@@ -149,6 +149,27 @@ describe("useFindController", () => {
     expect(view.state.doc.textBetween(0, view.state.doc.content.size)).toBe("你好 world hello");
   });
 
+  it("replaceOneInView 两段式：光标不在匹配上先选中下一处；再点原位替换并前进（AC-F25-4）", async () => {
+    const store = await openWith("hello", "hello x hello");
+    const view = editorManager.getView()!;
+    store.setReplacement("嗨");
+    // 替换串经输入 watch 异步重放挂载到插件查询（同既有 replaceOne/replaceAll 用例口径）
+    await vi.advanceTimersByTimeAsync(0);
+    // 第一击：初始光标（空选区）不在匹配上 → 仅选中第一处，文档不变。
+    // 返回值语义同官方 replaceNext「命中即 true」；区间动态求出，规避段落 +1 偏移硬编码
+    expect(replaceOneInView()).toBe(true);
+    const first = new SearchQuery({ search: "hello" }).findNext(view.state, 0)!;
+    expect([view.state.selection.from, view.state.selection.to]).toEqual([first.from, first.to]);
+    // 第二击：选中态即匹配 → 原位替换并前进到下一处
+    expect(replaceOneInView()).toBe(true);
+    expect(view.state.doc.textBetween(0, view.state.doc.content.size)).toContain("嗨 x hello");
+    const advanced = new SearchQuery({ search: "hello" }).findNext(view.state, 0)!;
+    expect([view.state.selection.from, view.state.selection.to]).toEqual([
+      advanced.from,
+      advanced.to,
+    ]);
+  });
+
   it("标签切换信号（activeTabId 变更）触发查询重放——装饰与计数保持", async () => {
     const store = await openWith("hello");
     const view = editorManager.getView()!;
