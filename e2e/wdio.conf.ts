@@ -1,4 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { Capabilities, Options } from "@wdio/types";
 
@@ -10,6 +11,29 @@ const fixtureDir = path.join(process.cwd(), "e2e/.fixtures");
 const fixturePath = path.join(fixtureDir, "opening.md");
 mkdirSync(fixtureDir, { recursive: true });
 writeFileSync(fixturePath, "# 启动测试\n\n自动保存验证占位。\n", "utf8");
+
+/**
+ * 06 全局搜索专用 fixture 目录：置于系统临时目录（仓库外）。
+ * 原因：全局扫描按 spec F26 尊重工作区 gitignore 与隐藏项（Rust 侧
+ * WalkBuilder hidden(true)），而 e2e/.fixtures 被 .gitignore 覆盖——
+ * 以它为 currentDir 的全局搜索恒零命中。搜索 E2E 必须以仓库外的
+ * 可见目录为扫描根，其余用例不受影响。
+ */
+const searchableDir = path.join(os.tmpdir(), "markwell-e2e-search");
+mkdirSync(searchableDir, { recursive: true });
+const searchableFixturePath = path.join(searchableDir, "opening.md");
+writeFileSync(searchableFixturePath, "# 启动测试\n\n自动保存验证占位。\n", "utf8");
+
+/** 共享 tauri:options（两 capability 仅 --reopen-file 启动参数不同） */
+function tauriOptions(reopenFile: string): Record<string, unknown> {
+  return {
+    // application 路径相对 tauri-driver 进程的工作目录（项目根）解析
+    application: "src-tauri/target/debug/typora-replica.exe",
+    // --reopen-file 直传（WebDriver args 无 shell 转义；Windows 反斜杠路径原样透传）
+    args: ["--use-localhost", `--reopen-file=${reopenFile}`],
+    webviewUrl: "http://localhost:1420",
+  };
+}
 
 /**
  * WebdriverIO 配置：连接 tauri-driver（WebDriver 服务）驱动 Tauri 应用窗口
@@ -35,7 +59,8 @@ export const config: Options.Testrunner = {
   path: "/",
 
   // 测试用例：specs 目录下的全部 .e2e.ts 文件
-  // 注：pattern 相对配置文件所在目录（e2e/）解析
+  // 注：pattern 相对配置文件所在目录（e2e/）解析；capability 内可用
+  // specs/exclude 覆盖（见下），未声明者沿用此处
   specs: ["./specs/**/*.e2e.ts"],
   exclude: [],
 
@@ -44,13 +69,16 @@ export const config: Options.Testrunner = {
   capabilities: [
     {
       maxInstances: 1,
-      "tauri:options": {
-        // application 路径相对 tauri-driver 进程的工作目录（项目根）解析
-        application: "src-tauri/target/debug/typora-replica.exe",
-        // --reopen-file 直传（WebDriver args 无 shell 转义；Windows 反斜杠路径原样透传）
-        args: ["--use-localhost", `--reopen-file=${fixturePath}`],
-        webviewUrl: "http://localhost:1420",
-      },
+      // 其余模块用例维持原启动链路（.fixtures 为侧栏数据源）
+      exclude: ["./specs/search.e2e.ts"],
+      "tauri:options": tauriOptions(fixturePath),
+    } as unknown as Capabilities.Capability,
+    {
+      maxInstances: 1,
+      // 06 搜索替换专用：以临时目录 fixture 启动——currentDir 即可扫描目录，
+      // 全局搜索三场景在该目录上闭环（含点击定位回 opening.md 标签）
+      specs: ["./specs/search.e2e.ts"],
+      "tauri:options": tauriOptions(searchableFixturePath),
     } as unknown as Capabilities.Capability,
   ],
 
