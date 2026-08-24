@@ -171,6 +171,24 @@ pub fn scan_file(
     }))
 }
 
+/// 饱和递减（返回递减后新值）：并发 worker 各持满额预算时 taken 合计可能超过
+/// 剩余配额，裸 fetch_sub 会下溢回绕致截断上限失效——CAS 循环钳制于 0
+///
+/// @param counter 配额计数器（全局剩余可命中条数）
+/// @param amount 本次批次消耗量（调用方保证 > 0）
+/// @returns 递减后的新值（0 表示配额耗尽，调用方据此置截断并退出遍历）
+fn saturating_fetch_sub(counter: &AtomicU32, amount: u32) -> u32 {
+    let mut prev = counter.load(Ordering::SeqCst);
+    loop {
+        let next = prev.saturating_sub(amount);
+        match counter.compare_exchange_weak(prev, next, Ordering::SeqCst, Ordering::SeqCst) {
+            Ok(_) => return next,
+            // CAS 失败说明并发方已改写计数器，以最新值重试
+            Err(actual) => prev = actual,
+        }
+    }
+}
+
 // —— 命令层（06 P3）：Channel 流式推送 + 句柄替换取消 ——
 
 /// 流式事件（serde internally-tagged；字段 camelCase 对齐前端 SearchStreamEvent；
@@ -297,7 +315,9 @@ pub fn search_in_folder<R: tauri::Runtime>(
                         Ok(Some(outcome)) => {
                             let taken = outcome.matches.len() as u32;
                             if taken > 0 {
-                                remaining.fetch_sub(taken, Ordering::SeqCst);
+                                // 饱和递减防并发下溢回绕（回绕后 remaining==0 永不
+                                // 触发，截断上限 AC-F26-3 会被静默突破）
+                                let _ = saturating_fetch_sub(&remaining, taken);
                                 let _ = tx.send(SearchEvent::Result {
                                     file_path: entry.path().to_string_lossy().into_owned(),
                                     file_name: entry.path().file_name().map_or_else(
@@ -539,6 +559,40 @@ mod tests {
     fn scan_file_unreadable_path_errors() {
         let m = build_matcher("x", &opts(false, false, false)).unwrap();
         assert!(scan_file(Path::new("Z:/no-such-file-xyz.md"), &m, 50).is_err());
+    }
+
+    #[test]
+    fn saturating_fetch_sub_clamps_at_zero_without_wrapping() {
+        // 裸 fetch_sub 在 5-7 时会下溢回绕至约 4.29e9，截断上限 AC-F26-3 随之失效
+        let counter = AtomicU32::new(5);
+        let next = saturating_fetch_sub(&counter, 7);
+        assert_eq!(next, 0); // 钳制于 0 而非回绕
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
+        // 配额已尽后继续消耗仍稳定为 0（幂等饱和）
+        assert_eq!(saturating_fetch_sub(&counter, 3), 0);
+    }
+
+    #[test]
+    fn saturating_fetch_sub_concurrent_decrement_never_wraps_below_zero() {
+        // 并发压测简化版：4 线程各 1000 次递减 1，初值 10 远小于总量 4000——
+        // 终值须恰为 max(初值-总量, 0) 且全程无 panic（join 传播失败即测败）
+        let counter = Arc::new(AtomicU32::new(10));
+        let mut handles = Vec::new();
+        for _ in 0..4 {
+            let worker_counter = counter.clone();
+            handles.push(std::thread::spawn(move || {
+                for _ in 0..1000 {
+                    saturating_fetch_sub(&worker_counter, 1);
+                }
+            }));
+        }
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            10u32.saturating_sub(4 * 1000)
+        );
     }
 
     // —— 命令层测试（mock 运行时直呼命令，wire 契约不变）——
