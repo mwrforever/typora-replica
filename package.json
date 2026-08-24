@@ -29,6 +29,7 @@
     "katex": "^0.18.4",
     "mermaid": "^11.16.1",
     "pinia": "^4.0.3",
+    "prosemirror-search": "1.1.1",
     "vue": "^3.5.13"
   },
   "devDependencies": {

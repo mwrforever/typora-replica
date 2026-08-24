@@ -19,6 +19,7 @@ import { registerEditorInputRules } from "../features/editor/input-rules";
 import { applyEditorKeymaps } from "../features/editor/keymaps";
 import { latexEscapePlugin } from "../features/editor/latex-escape";
 import { openLinkPlugin } from "../features/editor/link/open-link";
+import { markwellSearchPlugin } from "../features/editor/search-plugin";
 import {
   configureToc,
   createTocViewRegistry,
@@ -115,6 +116,8 @@ export async function makeTestEditor(
   crepe.editor.use(latexEscapePlugin);
   // Typora 式 heading 锚点 id（05 大纲 P1），与产品工厂同源插件
   crepe.editor.use(typoraHeadingIdPlugin);
+  // 官方查找高亮插件（06 搜索替换 P1），与产品工厂同源
+  crepe.editor.use(markwellSearchPlugin);
   crepe.editor.config((ctx) => {
     registerEditorInputRules(ctx);
     applyEditorKeymaps(ctx);
