@@ -107,11 +107,18 @@ class EditorManager {
     // 晚挂号快照广播：adopt 时点晚于订阅方拉取窗口时（如大纲面板可见时新建标签，
     // 装配层 nextTick 拉取命中的仍是旧实例），订阅方无从得知实例已切换——
     // 此处同步补发当前 doc/selection 快照，保证「订阅语义 = 激活标签当前状态流」
-    // 在切换边界可靠成立（05 终审 Important-1 根治；后续编辑仍走事件桥常规投递）
-    const view = this.getView();
-    if (view) {
-      this.emitDocUpdated(view.state.doc);
-      this.emitSelectionUpdated(view.state.selection);
+    // 在切换边界可靠成立（05 终审 Important-1 根治；后续编辑仍走事件桥常规投递）。
+    // 集成层 adopt 时点可能早于 create 完成（EditorPage 经 use-get-editor 回调
+    // adopt 时 ctx 未就绪，Editor.action 直接抛）：getView 抛错即实例未就绪，
+    // 静默跳过广播、不阻断 adopt 主链路，订阅方会在后续常规事件中收到状态
+    try {
+      const view = this.getView();
+      if (view) {
+        this.emitDocUpdated(view.state.doc);
+        this.emitSelectionUpdated(view.state.selection);
+      }
+    } catch {
+      // 未就绪实例（create 未完成）：跳过本次快照广播（语义见上方注释），非异常场景不记日志
     }
   }
 

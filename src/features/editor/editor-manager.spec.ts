@@ -1,5 +1,6 @@
 // 编辑器实例管理服务：单例生命周期 + 文档存取 + 只读切换（跨模块接口，100% 覆盖）
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Crepe } from "@milkdown/crepe";
 import { TextSelection } from "@milkdown/kit/prose/state";
 import type { Node as ProseMirrorNode } from "@milkdown/kit/prose/model";
 import type { Selection } from "@milkdown/kit/prose/state";
@@ -373,6 +374,36 @@ describe("编辑器实例管理", () => {
       expect(selections).toHaveLength(1);
       // 快照即新实例当前选区对象（emit 直传引用，无拷贝）
       expect(selections[0]).toBe(external.view.state.selection);
+      offDoc();
+      offSel();
+    });
+
+    it("未就绪实例 adopt 不抛错且不广播（getView 抛错容错跳过）", async () => {
+      // 业务背景：EditorPage 经 @milkdown/vue 工厂回调 adopt 时 create 可能尚未完成，
+      // 此刻 Editor.action 访问 ctx 直接抛——快照广播必须容错跳过、不阻断 adopt 主链路
+      // （EditorPage.spec 组件域 4 用例为端到端回归证据，此处用最小骨架钉住门面语义）
+      const unready = {
+        // 未 action-ready：create 未完成时 action 抛错（milkdown Editor.action 守卫行为）
+        editor: {
+          action: (): never => {
+            throw new Error("editor not ready");
+          },
+        },
+        // 事件桥登记入口桩：仅要求可挂载（真实链路由集成层 create 后触发）；
+        // 零参函数可安全承接 on(listener) 的回调实参
+        on: (): void => {},
+        // destroy 桩：收尾 editorManager.destroy() 需要可调用的异步销毁
+        destroy: (): Promise<void> => Promise.resolve(),
+      } as unknown as Crepe;
+      const docs: ProseMirrorNode[] = [];
+      const selections: Selection[] = [];
+      const offDoc = editorManager.subscribeDocUpdated((doc) => docs.push(doc));
+      const offSel = editorManager.subscribeSelectionUpdated((s) => selections.push(s));
+      // adopt 主链路不受未就绪影响：引用照常登记，广播静默跳过
+      expect(() => editorManager.adopt(unready)).not.toThrow();
+      expect(editorManager.getCrepe()).toBe(unready);
+      expect(docs).toHaveLength(0);
+      expect(selections).toHaveLength(0);
       offDoc();
       offSel();
     });
