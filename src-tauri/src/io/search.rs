@@ -1,17 +1,21 @@
-// 跨文件搜索（06 搜索替换）：扫描纯函数层
+// 跨文件搜索（06 搜索替换）：扫描纯函数层 + 命令层
 //
 // 职责：三开关 → regex 构建（regex crate 引擎线性时间无灾难回溯；\b 为 Unicode
 // 词界，中文字符属词字符，全词语义与官方前端侧一致）；单文件扫描（头 8KB NUL
 // 探测廉价跳二进制 → 全量读 + 全文 NUL 复查 → 复用 02 decode_text 编码探测
-// 转码 → 逐行匹配收集，含结果上限与行文本截断）。
-// 命令层（Channel 流式/取消/并行遍历）由 Task 8 在本文件下半部追加。
+// 转码 → 逐行匹配收集，含结果上限与行文本截断）；
+// 命令层（Channel 流式推送/句柄替换取消/ignore 并行遍历）。
 use std::fs;
 use std::io::Read;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{mpsc, Arc};
 
 // 最小适配：brief 原文未导入 RegexBuilder（build_matcher 使用）且导入了未使用的
 // serde::{Deserialize, Serialize}（derive 已用全路径），此处修正以过编译与 clippy。
 use regex::{Regex, RegexBuilder};
+use tauri::ipc::Channel;
+use tauri::Manager;
 
 use super::encoding::{decode_text, encoding_name};
 
@@ -37,8 +41,9 @@ fn default_max_results() -> u32 {
     50
 }
 
-/// 单条匹配行 DTO（camelCase 对齐前端 GlobalSearchMatch）
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+/// 单条匹配行 DTO（camelCase 对齐前端 GlobalSearchMatch；Deserialize 供测试端
+/// 对 Channel 载荷做类型化反解）
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchMatchDto {
     /// 1 起行号
@@ -164,6 +169,190 @@ pub fn scan_file(
         hit_limit,
         encoding_name: encoding,
     }))
+}
+
+// —— 命令层（06 P3）：Channel 流式推送 + 句柄替换取消 ——
+
+/// 流式事件（serde internally-tagged；字段 camelCase 对齐前端 SearchStreamEvent；
+/// Deserialize 供测试端对 Channel 载荷做类型化反解，兼验 wire 契约）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum SearchEvent {
+    /// 文件级命中批次
+    Result {
+        /// 完整路径
+        file_path: String,
+        /// 文件名（末级）
+        file_name: String,
+        /// 非 UTF-8 编码标注（utf8 时 None，AC-F26-5）
+        encoding: Option<String>,
+        /// 命中行集
+        matches: Vec<SearchMatchDto>,
+    },
+    /// 扫描收口（完成/取消/截断恒发一次；前端代次守卫丢弃过期代）
+    Done {
+        /// 是否因结果上限提前截断（AC-F26-3）
+        truncated: bool,
+    },
+    /// 单文件读取失败（不中断整体扫描）
+    Error {
+        /// 文件路径
+        path: String,
+        /// 中文错误消息
+        message: String,
+    },
+}
+
+/// 在途搜索任务句柄（AppState.search_job 持有；标志置位即尽快取消）
+pub struct SearchJobHandle {
+    /// 取消标志：扫描线程在文件粒度检查，置位即退出遍历
+    pub cancelled: Arc<AtomicBool>,
+}
+
+/// 命令：跨文件搜索（Channel 流式事件流；新任务替换在途句柄即取消旧任务）
+///
+/// 启动编排全部为同步快路径（校验/构 matcher/换句柄/起线程），扫描在后台
+/// 线程执行不阻塞主链路。事件先经 mpsc 汇集、由 flush_loop 合并窗口批量
+/// 投递（watch_dir 防洪泛同款）。app 参数沿 watch_dir 的 AppHandle<R>
+/// 可测性模式（mock 运行时直呼命令，wire 契约不变）。
+///
+/// @param root 扫描根目录（必须存在且为文件夹）
+/// @param query 搜索词（字面或正则取决于 opts.regexp；非法正则同步拒绝）
+/// @param opts 三开关选项 + 结果上限（wire camelCase）
+/// @param channel 前端通道（事件按 100ms 合并窗口批量投递；收口恒发 Done）
+/// @returns Ok 已启动后台扫描；Err 目录无效/正则非法（invoke 拒绝直达前端，
+///          此时不产生任何线程、不动在途任务槽位）
+#[tauri::command]
+pub fn search_in_folder<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    root: String,
+    query: String,
+    opts: SearchOptions,
+    channel: Channel<Vec<SearchEvent>>,
+) -> Result<(), String> {
+    let root_path = std::path::PathBuf::from(&root);
+    if !root_path.is_dir() {
+        return Err(format!("目录不存在或不是文件夹: {root}"));
+    }
+    // 非法正则在此快速失败：invoke 拒绝直达前端 globalError，不产生任何线程
+    let matcher = build_matcher(&query, &opts)?;
+
+    let cancelled = Arc::new(AtomicBool::new(false));
+    {
+        // State 为临时值须先绑定再取锁（E0716，watch.rs 同款注释）
+        let state = app.state::<crate::AppState>();
+        let mut guard = state
+            .search_job
+            .lock()
+            .map_err(|_| "搜索状态锁损坏".to_string())?;
+        // 替换语义：旧任务立即置位取消（AC-F26-6 新词取消前次）
+        if let Some(prev) = guard.replace(SearchJobHandle {
+            cancelled: cancelled.clone(),
+        }) {
+            prev.cancelled.store(true, Ordering::SeqCst);
+        }
+    }
+
+    let (tx, rx) = mpsc::channel::<SearchEvent>();
+    std::thread::spawn(move || {
+        super::watch::flush_loop(rx, move |batch| {
+            // Channel 发送失败（前端已销毁/切换）忽略：发送端随遍历线程结束而 drop
+            let _ = channel.send(batch);
+        });
+    });
+
+    let quota_hit = Arc::new(AtomicBool::new(false));
+    let remaining = Arc::new(AtomicU32::new(opts.max_results));
+    let scan_root = root_path;
+    let walk_cancelled = cancelled;
+    let quota = quota_hit.clone();
+    std::thread::spawn(move || {
+        ignore::WalkBuilder::new(scan_root)
+            // 显式跳过隐藏文件/目录（.git 等）；工作区 gitignore 默认生效（spec F26 行为）
+            .hidden(true)
+            .build_parallel()
+            .run(|| {
+                let tx = tx.clone();
+                let cancelled = walk_cancelled.clone();
+                let remaining = remaining.clone();
+                let quota = quota.clone();
+                let matcher = matcher.clone();
+                Box::new(move |entry| {
+                    // 取消检查（文件粒度）：置位即刻退出整轮遍历
+                    if cancelled.load(Ordering::SeqCst) {
+                        return ignore::WalkState::Quit;
+                    }
+                    let Ok(entry) = entry else {
+                        return ignore::WalkState::Continue;
+                    };
+                    if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+                        return ignore::WalkState::Continue;
+                    }
+                    let limit = remaining.load(Ordering::SeqCst);
+                    match scan_file(entry.path(), &matcher, limit) {
+                        Ok(Some(outcome)) => {
+                            let taken = outcome.matches.len() as u32;
+                            if taken > 0 {
+                                remaining.fetch_sub(taken, Ordering::SeqCst);
+                                let _ = tx.send(SearchEvent::Result {
+                                    file_path: entry.path().to_string_lossy().into_owned(),
+                                    file_name: entry.path().file_name().map_or_else(
+                                        || "未命名".to_string(),
+                                        |n| n.to_string_lossy().into_owned(),
+                                    ),
+                                    encoding: if outcome.encoding_name == "utf8" {
+                                        None
+                                    } else {
+                                        Some(outcome.encoding_name.to_string())
+                                    },
+                                    matches: outcome.matches,
+                                });
+                            }
+                            // 配额耗尽：置截断标志并停止整轮（约 50 条语义允许批内少量越界）
+                            if outcome.hit_limit || remaining.load(Ordering::SeqCst) == 0 {
+                                quota.store(true, Ordering::SeqCst);
+                                cancelled.store(true, Ordering::SeqCst);
+                                return ignore::WalkState::Quit;
+                            }
+                        }
+                        Ok(None) => {} // 二进制静默跳过
+                        Err(message) => {
+                            // 单文件失败上报 Error 不中断整体（spec §5.3① 契约）
+                            let _ = tx.send(SearchEvent::Error {
+                                path: entry.path().to_string_lossy().into_owned(),
+                                message,
+                            });
+                        }
+                    }
+                    ignore::WalkState::Continue
+                })
+            });
+        let _ = tx.send(SearchEvent::Done {
+            truncated: quota.load(Ordering::SeqCst),
+        });
+    });
+    Ok(())
+}
+
+/// 命令：取消当前全局搜索（幂等：无在途任务亦成功；面板关闭时调用）
+///
+/// 置位在途句柄的取消标志并清空槽位；扫描线程在下一个文件边界感知后退出。
+/// @returns 恒 Ok（幂等）；锁损坏时 Err
+#[tauri::command]
+pub fn cancel_search<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<(), String> {
+    let state = app.state::<crate::AppState>();
+    let mut guard = state
+        .search_job
+        .lock()
+        .map_err(|_| "搜索状态锁损坏".to_string())?;
+    if let Some(job) = guard.take() {
+        job.cancelled.store(true, Ordering::SeqCst);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -350,5 +539,225 @@ mod tests {
     fn scan_file_unreadable_path_errors() {
         let m = build_matcher("x", &opts(false, false, false)).unwrap();
         assert!(scan_file(Path::new("Z:/no-such-file-xyz.md"), &m, 50).is_err());
+    }
+
+    // —— 命令层测试（mock 运行时直呼命令，wire 契约不变）——
+
+    use std::time::{Duration, Instant};
+
+    /// 构造收集型 Channel（批量事件汇入共享容器，供断言）
+    ///
+    /// 最小适配：tauri 2.11 的 Channel::new 回调形态为 InvokeResponseBody（brief
+    /// 骨架按旧版 Vec<T> 直收形态书写）；send(Vec<SearchEvent>) 序列化为 Json
+    /// 载荷，此处反解还原事件集，顺带校验 wire 契约（camelCase tag/字段）可逆。
+    fn collect_channel() -> (
+        Channel<Vec<SearchEvent>>,
+        Arc<std::sync::Mutex<Vec<SearchEvent>>>,
+    ) {
+        let collected: Arc<std::sync::Mutex<Vec<SearchEvent>>> = Arc::default();
+        let sink = collected.clone();
+        let channel = Channel::<Vec<SearchEvent>>::new(move |body| {
+            if let tauri::ipc::InvokeResponseBody::Json(text) = body {
+                let mut batch: Vec<SearchEvent> =
+                    serde_json::from_str(&text).expect("SearchEvent 批次反序列化失败");
+                sink.lock().unwrap().append(&mut batch);
+            }
+            Ok(())
+        });
+        (channel, collected)
+    }
+
+    /// 轮询等待 Done 事件到达（最多 5s；异步线程收口）
+    fn wait_done(collected: &Arc<std::sync::Mutex<Vec<SearchEvent>>>) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if collected
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|e| matches!(e, SearchEvent::Done { .. }))
+            {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        false
+    }
+
+    /// 构造挂载 AppState 的 mock 应用（返回类型以 tauri::test::mock_app 实际形态为准）
+    fn managed_app() -> tauri::App<tauri::test::MockRuntime> {
+        let app = tauri::test::mock_app();
+        app.manage(crate::AppState {
+            watcher: std::sync::Mutex::new(std::collections::HashMap::new()),
+            search_job: std::sync::Mutex::new(std::option::Option::None),
+        });
+        app
+    }
+
+    #[test]
+    fn search_in_folder_streams_results_marks_encoding_and_skips_hidden_binary() {
+        let app = managed_app();
+        let handle = app.handle().clone();
+        let dir = temp_dir();
+        // UTF-8 命中文件须含查询词「目标」：brief 夹具仅含 ASCII「target」，与
+        // 查询词不匹配会令 nested/hit 断言必败；最小修正为补入中文命中词，
+        // 全部断言语义保持不变
+        fs::write(dir.join("hit.md"), "target line 目标\nplain\n").unwrap();
+        fs::create_dir_all(dir.join("sub")).unwrap();
+        fs::write(dir.join("sub").join("nested.md"), "deep target 目标\n").unwrap();
+        // GBK 文件：「目标」= C4 BF B1 EA
+        fs::write(dir.join("legacy.txt"), [0xC4, 0xBF, 0xB1, 0xEA]).unwrap();
+        fs::write(dir.join("blob.bin"), [0x61, 0x00, 0x62]).unwrap();
+        fs::write(dir.join(".hidden.md"), "目标 hidden\n").unwrap();
+
+        let (channel, collected) = collect_channel();
+        search_in_folder(
+            handle,
+            dir.to_string_lossy().into_owned(),
+            "目标".to_string(),
+            opts(false, false, false),
+            channel,
+        )
+        .unwrap();
+        assert!(wait_done(&collected));
+
+        let events = collected.lock().unwrap().clone();
+        let files: Vec<(String, Option<String>)> = events
+            .iter()
+            .filter_map(|e| match e {
+                SearchEvent::Result {
+                    file_path,
+                    encoding,
+                    ..
+                } => Some((file_path.clone(), encoding.clone())),
+                _ => None,
+            })
+            .collect();
+        // 嵌套命中（递归）+ GBK 转码标注（AC-F26-1/5）
+        assert!(files
+            .iter()
+            .any(|(p, enc)| p.ends_with("nested.md") && enc.is_none()));
+        let legacy = files
+            .iter()
+            .find(|(p, _)| p.ends_with("legacy.txt"))
+            .unwrap();
+        assert_eq!(legacy.1.as_deref(), Some("gbk"));
+        // 隐藏文件与二进制跳过（spec F26 行为）
+        assert!(!files.iter().any(|(p, _)| p.ends_with(".hidden.md")));
+        assert!(!files.iter().any(|(p, _)| p.ends_with("blob.bin")));
+        // 根目录 UTF-8 文件正常命中
+        assert!(files.iter().any(|(p, _)| p.ends_with("hit.md")));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, SearchEvent::Done { truncated: false })));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_in_folder_truncates_at_max_results_with_flag() {
+        let app = managed_app();
+        let handle = app.handle().clone();
+        let dir = temp_dir();
+        fs::write(dir.join("many.md"), b"t\nt\nt\nt\nt\n").unwrap(); // 5 行命中
+        let (channel, collected) = collect_channel();
+        search_in_folder(
+            handle,
+            dir.to_string_lossy().into_owned(),
+            "t".to_string(),
+            SearchOptions {
+                case_sensitive: false,
+                whole_word: false,
+                regexp: false,
+                max_results: 3,
+            },
+            channel,
+        )
+        .unwrap();
+        assert!(wait_done(&collected));
+        let events = collected.lock().unwrap().clone();
+        let hit_lines: usize = events
+            .iter()
+            .filter_map(|e| match e {
+                SearchEvent::Result { matches, .. } => Some(matches.len()),
+                _ => None,
+            })
+            .sum();
+        assert_eq!(hit_lines, 3); // 截断到上限
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, SearchEvent::Done { truncated: true }))); // AC-F26-3 标志
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn invalid_regex_rejects_fast_without_touching_job_slot() {
+        let app = managed_app();
+        let handle = app.handle().clone();
+        let dir = temp_dir();
+        let (channel, _collected) = collect_channel();
+        let err = search_in_folder(
+            handle,
+            dir.to_string_lossy().into_owned(),
+            "(".to_string(),
+            SearchOptions {
+                case_sensitive: false,
+                whole_word: false,
+                regexp: true,
+                max_results: 50,
+            },
+            channel,
+        )
+        .unwrap_err();
+        assert!(err.starts_with("无效的搜索表达式"));
+        // 未产出任何线程/句柄：槽位保持空
+        let state = app.state::<crate::AppState>();
+        assert!(state.search_job.lock().unwrap().is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cancel_search_clears_slot_idempotent_and_replace_cancels_previous() {
+        let app = managed_app();
+        let handle = app.handle().clone();
+
+        // 预置在途假任务 → cancel 置位并清槽
+        let flag_a = Arc::new(AtomicBool::new(false));
+        {
+            let state = app.state::<crate::AppState>();
+            *state.search_job.lock().unwrap() = Some(SearchJobHandle {
+                cancelled: flag_a.clone(),
+            });
+        }
+        cancel_search(handle.clone()).unwrap();
+        assert!(flag_a.load(Ordering::SeqCst));
+        let state = app.state::<crate::AppState>();
+        assert!(state.search_job.lock().unwrap().is_none());
+        // state 借用随最后一次使用自然结束（State 未实现 Drop，禁显式 drop——
+        // clippy::drop_non_drop）；后续 cancel_search 为不可变借用，无冲突
+        // 幂等：空槽再取消仍 Ok
+        cancel_search(handle.clone()).unwrap();
+
+        // 新搜索替换在途句柄：假句柄被置位，槽位指向新句柄
+        let flag_b = Arc::new(AtomicBool::new(false));
+        {
+            let state = app.state::<crate::AppState>();
+            *state.search_job.lock().unwrap() = Some(SearchJobHandle {
+                cancelled: flag_b.clone(),
+            });
+        }
+        let dir = temp_dir();
+        fs::write(dir.join("a.md"), b"x\n").unwrap();
+        let (channel, collected) = collect_channel();
+        search_in_folder(
+            handle,
+            dir.to_string_lossy().into_owned(),
+            "x".to_string(),
+            opts(false, false, false),
+            channel,
+        )
+        .unwrap();
+        assert!(flag_b.load(Ordering::SeqCst)); // 旧任务被新任务取消（AC-F26-6）
+        assert!(wait_done(&collected));
+        let _ = fs::remove_dir_all(&dir);
     }
 }
