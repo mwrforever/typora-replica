@@ -1,9 +1,13 @@
 // 跨文件搜索（06 搜索替换）：扫描纯函数层 + 命令层
 //
 // 职责：三开关 → regex 构建（regex crate 引擎线性时间无灾难回溯；\b 为 Unicode
-// 词界，中文字符属词字符，全词语义与官方前端侧一致）；单文件扫描（头 8KB NUL
-// 探测廉价跳二进制 → 全量读 + 全文 NUL 复查 → 复用 02 decode_text 编码探测
-// 转码 → 逐行匹配收集，含结果上限与行文本截断）；
+// 词界，中文字符属词字符）。全词包装 \b(?:...)\b——注意两侧引擎边界语义差异：
+// JS 侧（当前文件面板 prosemirror-search）判据为 \p{L} 字母词界，数字/下划线
+// 邻接视为边界（全词 cat 会命中 cat2）；Rust 侧（全局面板本文件）把数字/
+// 下划线当词字符（同查询不命中 cat2）；中文两侧一致。跨面板结果集在 ASCII
+// 数字/下划线邻接场景存在已知差异（spec §11 已披露）。
+// 单文件扫描（头 8KB NUL 探测廉价跳二进制 → 全量读 + 全文 NUL 复查 → 复用 02
+// decode_text 编码探测转码 → 逐行匹配收集，含结果上限与行文本截断）；
 // 命令层（Channel 流式推送/句柄替换取消/ignore 并行遍历）。
 use std::fs;
 use std::io::Read;
@@ -71,8 +75,11 @@ const LINE_TEXT_MAX_CHARS: usize = 500;
 
 /// 构建匹配器（三开关 → 正则）
 ///
-/// 字面模式经 regex::escape 转义；全词包 `\b(?:...)\b`。空查询与非法正则
-/// 返回 Err（中文消息，命令层原样作为 invoke 拒绝透传前端）。
+/// 字面模式经 regex::escape 转义；全词包装 `\b(?:...)\b`——注意两侧引擎边界
+/// 语义差异：JS 侧（当前文件面板）为 \p{L} 字母词界（数字/下划线邻接视为
+/// 边界，cat2 命中），本函数为 Rust regex \b（数字/下划线属词字符，cat2 不
+/// 命中）；中文两侧一致。空查询与非法正则返回 Err（中文消息，命令层原样作为
+/// invoke 拒绝透传前端）。
 pub fn build_matcher(query: &str, opts: &SearchOptions) -> Result<Regex, String> {
     if query.is_empty() {
         return Err("搜索词不能为空".to_string());
@@ -464,6 +471,23 @@ mod tests {
         assert_eq!(out.matches[0].line_text, "first target");
         assert!(!out.hit_limit);
         assert_eq!(out.encoding_name, "utf8");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn scan_file_multi_hit_line_reports_first_index_and_advances_across_lines() {
+        // 同行多命中只出一条且记该行首个命中序号；后续行的序号须按前行命中
+        // 总数推进（target target 两命中出条 first=0；later target 第三命中出
+        // 条 first=2）——前端 nthMatch 跨行取位的对齐依据，直接钉桩防回归
+        let dir = temp_dir();
+        let p = write_file(&dir, "multi.md", b"target target\nlater target\n");
+        let m = build_matcher("target", &opts(false, false, false)).unwrap();
+        let out = scan_file(&p, &m, 50).unwrap().unwrap();
+        assert_eq!(out.matches.len(), 2);
+        assert_eq!(out.matches[0].line_number, 1);
+        assert_eq!(out.matches[0].first_match_index, 0);
+        assert_eq!(out.matches[1].line_number, 2);
+        assert_eq!(out.matches[1].first_match_index, 2);
         let _ = fs::remove_dir_all(&dir);
     }
 
