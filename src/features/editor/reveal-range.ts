@@ -6,7 +6,7 @@ import { TextSelection } from "@milkdown/kit/prose/state";
 
 /** 临时高亮 CSS 类名 */
 const HIGHLIGHT_CLASS = "markwell-reveal-highlight";
-/** 高亮自动消退时长（毫秒） */
+/** 高亮自动消退缺省时长（毫秒）；大纲/toc 等既有调用方维持现状 */
 const HIGHLIGHT_DURATION = 1200;
 
 /**
@@ -14,8 +14,9 @@ const HIGHLIGHT_DURATION = 1200;
  * @param editor 目标编辑器实例
  * @param from 区间起点（文档偏移，可为 0）
  * @param to 区间终点（文档偏移，越界自动收敛）
+ * @param durationMs 临时高亮消退时长毫秒；缺省 1200 保持大纲/toc 现状（06 跨文件定位传 3000）
  */
-export function revealRange(editor: Editor, from: number, to: number): void {
+export function revealRange(editor: Editor, from: number, to: number, durationMs?: number): void {
   editor.action((ctx) => {
     const view = ctx.get(editorViewCtx);
     const docSize = view.state.doc.content.size;
@@ -36,7 +37,8 @@ export function revealRange(editor: Editor, from: number, to: number): void {
     const dom = (node?.nodeType === 1 ? node : (node?.parentElement ?? null)) as HTMLElement | null;
     if (dom) {
       dom.classList.add(HIGHLIGHT_CLASS);
-      setTimeout(() => dom.classList.remove(HIGHLIGHT_CLASS), HIGHLIGHT_DURATION);
+      // 缺省 1200 保持既有消费方观感；06 跨文件定位按 spec 传 3000（AC-F26-2）
+      setTimeout(() => dom.classList.remove(HIGHLIGHT_CLASS), durationMs ?? HIGHLIGHT_DURATION);
     }
   });
 }
