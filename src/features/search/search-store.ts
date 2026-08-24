@@ -102,7 +102,16 @@ export const useSearchStore = defineStore("search", {
     setReplacement(v: string): void {
       this.replacement = v;
     },
-    toggleOption(name: "caseSensitive" | "wholeWord" | "regexp"): void {
+    /** 三开关翻转（面板与全局搜索共用：六键联合覆盖两套开关） */
+    toggleOption(
+      name:
+        | "caseSensitive"
+        | "wholeWord"
+        | "regexp"
+        | "globalCaseSensitive"
+        | "globalWholeWord"
+        | "globalRegexp",
+    ): void {
       this[name] = !this[name];
     },
     setStatus(status: QueryStatus): void {

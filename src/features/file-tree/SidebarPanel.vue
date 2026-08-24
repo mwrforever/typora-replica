@@ -1,5 +1,6 @@
 <!-- 侧栏容器（03 文件树，F2 三面板切换）
-     面板：文件树/文件列表/最近位置/大纲（05 真实渲染，跨域消费 features/outline）；
+     面板：文件树/文件列表/最近位置/大纲（05 真实渲染，跨域消费 features/outline）/
+     全局搜索（06 真实渲染，跨域消费 features/search）；
      底部工具条：+ 新建文件（emit create-file）、⋯ 菜单（刷新/打开文件夹/最近位置/搜索/排序）。 -->
 <script setup lang="ts">
 import { ref } from "vue";
@@ -7,25 +8,33 @@ import FileListPanel from "./FileListPanel.vue";
 import FileTreePanel from "./FileTreePanel.vue";
 import OutlinePanel from "../outline/OutlinePanel.vue";
 import RecentLocationsPanel from "./RecentLocationsPanel.vue";
+import GlobalSearchPanel from "../search/GlobalSearchPanel.vue";
+import { useSearchStore } from "../search/search-store";
 import { useFileTreeStore, type PanelKey } from "./file-tree-store";
 import { createSearchEntry } from "./search-entry";
 
 const store = useFileTreeStore();
 
-/** 面板切换按钮组（F2：三面板） */
+/** 面板切换按钮组（F2：三面板 + 06 全局搜索 tab） */
 const panels: Array<{ key: PanelKey; label: string }> = [
   { key: "outline", label: "大纲" },
   { key: "list", label: "列表" },
   { key: "tree", label: "文件" },
+  { key: "search", label: "搜索" },
 ];
 
 /** 底部 ⋯ 菜单开关 */
 const moreOpen = ref(false);
 
-/** 搜索框输入值（03 阶段仅占位收集，搜索逻辑归 06 模块消费） */
+/** 搜索框输入值（逐键/回车透传 06 全局搜索消费） */
 const searchQuery = ref("");
-/** 搜索入口处理器（P3-7：AC-F12-1 侧栏搜索框 UI 落地，事件透传给 06） */
-const searchEntry = createSearchEntry();
+/** 搜索入口处理器（P3-7：AC-F12-1 侧栏搜索框 UI 落地）；
+ *  06 接线首次闭环消费：逐键切入搜索 tab 并防抖发起全局搜索 */
+const searchStore = useSearchStore();
+const searchEntry = createSearchEntry((req) => {
+  store.switchPanel("search"); // D-A：入口切入搜索 tab
+  searchStore.requestGlobalSearch(req.query); // 逐键防抖发起
+});
 
 /** 输入变化：透传查询事件（06 消费） */
 function onSearchInput(event: Event): void {
@@ -33,9 +42,10 @@ function onSearchInput(event: Event): void {
   searchEntry.handleInput(searchQuery.value);
 }
 
-/** 提交（Enter）：透传当前查询（06 消费） */
+/** 提交（Enter）：透传当前查询并直发全局搜索（不等防抖窗口） */
 function onSearchSubmit(): void {
   searchEntry.handleSubmit(searchQuery.value);
+  searchStore.flushGlobalSearch();
 }
 
 const emit = defineEmits<{
@@ -116,6 +126,11 @@ function onSort(by: "alpha" | "natural" | "mtime" | "ctime"): void {
         v-else-if="store.activePanel === 'recent'"
         class="sidebar-panel__recent"
         @open-folder="emit('open-folder', $event)"
+      />
+      <!-- 06 全局搜索面板：查询框 + 三开关 + 分组结果（点击定位链路在组件内闭环） -->
+      <GlobalSearchPanel
+        v-else-if="store.activePanel === 'search'"
+        class="sidebar-panel__global-search"
       />
       <OutlinePanel v-else class="sidebar-panel__outline" />
     </div>
