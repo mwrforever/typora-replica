@@ -149,6 +149,19 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 06 搜索核心纯逻辑 100%（查询构建纯函数 + 面板状态机；组件/装配层走全局 80% + E2E）
+        "src/features/search/search-query.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        "src/features/search/search-store.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },
