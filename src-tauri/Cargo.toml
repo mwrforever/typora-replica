@@ -30,6 +30,8 @@ regex = "1"
 walkdir = "2.5.0"
 notify = "8.2.0"
 trash = "5.2"
+# 07 图片粘贴存盘：相对路径计算（跨盘符返回 None）
+pathdiff = "0.2"
 tauri-plugin-dialog = "2"
 tauri-plugin-store = "2"
 
