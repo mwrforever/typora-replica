@@ -67,9 +67,13 @@ function waitForActiveView(tabId: string): Promise<EditorView | undefined> {
       if (view || tries >= POLL_MAX_TRIES) finish(view);
       tries += 1;
     }, POLL_INTERVAL_MS);
-    // 主路径：adopt 快照广播（05 终审 Important-1）——激活切换即收当前 doc
+    // 主路径：adopt 快照广播（05 终审 Important-1）——激活切换即收当前 doc。
+    // 广播是 200ms 防抖尾巴，可能先于 Vue watch 完成门面切换到达：此刻 grab()
+    // 必为 undefined，若照此决议会把「加速就绪」变成「加速放弃」（且连带取消
+    // 轮询兜底），故仅在命中时决议，未就绪交给轮询兜底直至超时口径统一
     const offDoc = editorManager.subscribeDocUpdated(() => {
-      finish(grab());
+      const view = grab();
+      if (view) finish(view);
     });
   });
 }

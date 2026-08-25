@@ -24,6 +24,8 @@ export default defineConfig(async () => ({
     // 仅按签名精确豁免：「removeEventListener is not defined」+ 栈指向 @milkdown/ctx；
     // 其余未处理错误照常记录失败，不掩盖真实回归。注意不可用 instanceof 判定：
     // 错误自 worker 经 RPC 序列化送达主进程，子类原型（ReferenceError）已丢失。
+    // TODO(milkdown-upgrade): 升级 @milkdown/ctx 时复验其 Timer 是否已改为可取消
+    // 句柄/限定接收者的调用；若上游已修复则移除本豁免（计划随下次 milkdown 升级）
     onUnhandledError(error) {
       const isMilkdownTimerRemoval =
         /removeEventListener is not defined/.test(error.message || "") &&

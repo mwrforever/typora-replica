@@ -92,6 +92,21 @@ describe("revealGlobalMatch 定位链路（序号对齐口径）", () => {
     expect(h.docCbs).toHaveLength(0); // 一次性订阅已注销
   });
 
+  it("广播先到但门面未切换：不提前放弃定位，轮询兜底至就绪后完成（PR 审查 Important-1 回归钉桩）", async () => {
+    vi.useFakeTimers();
+    useSearchStore().globalQuery = "目标";
+    const pending = revealGlobalMatch("C:/ws/race.md", "race.md", 1);
+    // 门面尚未就绪（view undefined）时 adopt 防抖尾巴广播先到：
+    // 不得以 undefined 提前决议并连带取消轮询兜底
+    h.docCbs[h.docCbs.length - 1]?.({});
+    h.nthMatch.mockReturnValue({ from: 3, to: 4 });
+    h.view = fakeView();
+    await vi.advanceTimersByTimeAsync(50); // 下一拍轮询命中完成定位
+    await pending;
+    expect(h.revealRange).toHaveBeenCalledOnce(); // 若提前放弃则恒不触发
+    expect(h.docCbs).toHaveLength(0); // 决议后订阅仍被正确注销
+  });
+
   it("残余①窗口期（广播被跳过）：有限轮询兜底至视图就绪", async () => {
     vi.useFakeTimers();
     useSearchStore().globalQuery = "目标";
