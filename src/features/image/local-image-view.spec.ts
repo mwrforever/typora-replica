@@ -77,6 +77,22 @@ describe("attachLocalImageView", () => {
     await vi.waitFor(() => expect(img.src.startsWith("http://asset.localhost/")).toBe(true));
     view.destroy();
   });
+  it("同 src 双 img 引用均被替换且只发一次 IPC（fan-out 防饿死）", async () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const deps = makeDeps();
+    const view = attachLocalImageView(root, deps);
+    // 同一图片文档内多处引用：初始去重会跳过第二个元素，job 完成须 fan-out 写回
+    const first = addImg(root, "dup.png");
+    const second = addImg(root, "dup.png");
+    await vi.waitFor(() => {
+      expect(first.src.startsWith("http://asset.localhost/")).toBe(true);
+      expect(second.src.startsWith("http://asset.localhost/")).toBe(true);
+    });
+    // 跨元素 IPC 去重语义保持：同一 src 只解析一次
+    expect(deps.invoke).toHaveBeenCalledTimes(1);
+    view.destroy();
+  });
   it("destroy 后不再解析新增节点", async () => {
     const root = document.createElement("div");
     document.body.appendChild(root);

@@ -53,9 +53,17 @@ export function attachLocalImageView(
           docDir: ctx.docDir,
           rootUrl,
         })) as string | null;
-        // 复位守卫：等待期间 src 可能又被 NodeView 改动，仅对仍为本目标的 img 生效
-        if (fsPath && img.isConnected && img.getAttribute("src") === src) {
-          img.src = convert(fsPath);
+        // 复位守卫 + fan-out 写回（I-1）：等待期间 DOM 可能变动，遍历根下全部 img，
+        // 仅写回仍持有本捕获 src 的已连接元素——同 src 多处引用时其余副本在初始
+        // 去重中被跳过，若只写触发元素会永久饿死第二张；asset:// 形态不会再次
+        // 命中 looksLocal，fan-out 写回不产生观察器自触发
+        if (fsPath) {
+          const assetUrl = convert(fsPath);
+          root.querySelectorAll<HTMLImageElement>("img[src]").forEach((candidate) => {
+            if (candidate.isConnected && candidate.getAttribute("src") === src) {
+              candidate.src = assetUrl;
+            }
+          });
         }
       } catch {
         // 解析失败静默保底：保留原 src（浏览器破损图标），不打断编辑
