@@ -63,12 +63,15 @@ where
 }
 
 /// 事件合并循环：窗口内累积事件，超时或 mpsc 断开（监视被替换）时批量投递，
-/// 断开前 flush 残余事件后退出（纯函数，供单测与命令层复用）
+/// 断开前 flush 残余事件后退出（纯函数，供单测与命令层复用；T 泛化供 06 搜索
+/// 事件流复用同一合并模式）
 ///
-/// @param rx 事件接收端（watch 回调投递；断开即退出）
+/// @param rx 事件接收端（生产者投递；断开即退出）
 /// @param send 批量投递回调（如 tauri Channel）
-fn flush_loop(rx: std::sync::mpsc::Receiver<WatchEvent>, send: impl Fn(Vec<WatchEvent>)) {
-    let mut pending: Vec<WatchEvent> = Vec::new();
+/// 注：pub(super) 供同属 io 模块树的 06 search.rs 复用（兄弟模块不可见私有项），
+/// 不扩大到 crate 级暴露
+pub(super) fn flush_loop<T>(rx: std::sync::mpsc::Receiver<T>, send: impl Fn(Vec<T>)) {
+    let mut pending: Vec<T> = Vec::new();
     loop {
         match rx.recv_timeout(MERGE_WINDOW) {
             Ok(ev) => pending.push(ev),
@@ -301,6 +304,7 @@ mod tests {
         let app = tauri::test::mock_app();
         app.manage(crate::AppState {
             watcher: std::sync::Mutex::new(std::collections::HashMap::new()),
+            search_job: std::sync::Mutex::new(std::option::Option::None),
         });
         let handle = app.handle().clone();
         let dir_a = temp_dir().to_string_lossy().into_owned();

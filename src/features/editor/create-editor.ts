@@ -21,6 +21,7 @@ import { latexEscapePlugin } from "./latex-escape";
 import { openLinkPlugin } from "./link/open-link";
 import { handleMermaidContextMenu } from "./mermaid/mermaid-menu";
 import { createMermaidRenderPreview } from "./mermaid/mermaid-preview";
+import { markwellSearchPlugin } from "./search-plugin";
 import {
   configureToc,
   createTocViewRegistry,
@@ -254,6 +255,8 @@ export function createMarkwellEditor(
   // Typora 式 heading 锚点 id（05 大纲 P1，AC-F23-2/3）：禁用内置 sync-heading-id
   // 并按 Typora「-1 起编号」重写 attrs.id，Task 3 collectHeadings 的读取来源
   crepe.editor.use(typoraHeadingIdPlugin);
+  // 官方查找高亮插件（06 搜索替换 P1），与产品行为同源
+  crepe.editor.use(markwellSearchPlugin);
   // E21 图表右键菜单：contextmenu 落在 mermaid 预览容器时弹出另存/复制菜单
   //（非图表区域返回 false 放行浏览器默认菜单；handleDOMEvents 由 ProseMirror
   // 在编辑器 DOM 上统一监听，预览面板位于编辑器内容 DOM 内故可命中）

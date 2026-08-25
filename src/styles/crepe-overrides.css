@@ -99,3 +99,27 @@
     transition: none !important;
   }
 }
+
+/* ===== 06 搜索替换：匹配高亮与定位高亮（基础可用版，08 主题精修） ===== */
+/* 官方 prosemirror-search 装饰类名（search-plugin spike 已钉桩） */
+.milkdown .ProseMirror-search-match {
+  background-color: rgba(255, 213, 0, 0.35);
+}
+.milkdown .ProseMirror-active-search-match {
+  background-color: rgba(255, 160, 0, 0.55);
+}
+.markwell-dark .milkdown .ProseMirror-search-match {
+  background-color: rgba(255, 213, 0, 0.22);
+}
+.markwell-dark .milkdown .ProseMirror-active-search-match {
+  background-color: rgba(255, 160, 0, 0.42);
+}
+/* 定位闪现高亮（revealRange 共用类；顺带补齐此前编辑器 DOM 侧缺失的规则，
+   大纲/TOC 点击跳转的高亮观感同步受益） */
+.milkdown .markwell-reveal-highlight {
+  background-color: rgba(59, 130, 246, 0.3);
+  transition: background-color 0.25s ease;
+}
+.markwell-dark .milkdown .markwell-reveal-highlight {
+  background-color: rgba(96, 165, 250, 0.35);
+}

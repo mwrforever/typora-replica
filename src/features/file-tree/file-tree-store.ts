@@ -9,7 +9,7 @@ import { defineStore } from "pinia";
 import { listDirDetailed, unwatchDir, watchDir, type DirEntry } from "../../services/file-io";
 import { SUPPORTED_TEXT_EXTENSIONS, buildTree, type TreeNode } from "./tree-utils";
 
-export type PanelKey = "outline" | "list" | "tree" | "recent";
+export type PanelKey = "outline" | "list" | "tree" | "recent" | "search";
 export type SortBy = "alpha" | "natural" | "mtime" | "ctime";
 
 /** 防抖窗口（spec §3：目录变更事件防抖如 300ms） */

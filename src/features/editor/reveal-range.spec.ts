@@ -57,4 +57,18 @@ describe("revealRange 定位", () => {
       vi.useRealTimers();
     }
   });
+
+  it("自定义时长：缺省 1200ms 消退；传 3000ms 时 1200ms 时点仍在、3000ms 消退", async () => {
+    vi.useFakeTimers();
+    try {
+      const te = await makeTestEditor("段落甲段落乙");
+      revealRange(te.editor, 0, 3, 3000);
+      vi.advanceTimersByTime(1200);
+      expect(document.querySelector(".markwell-reveal-highlight")).not.toBeNull(); // 自定义时长未到
+      vi.advanceTimersByTime(1800);
+      expect(document.querySelector(".markwell-reveal-highlight")).toBeNull(); // 3000ms 到点消退
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
