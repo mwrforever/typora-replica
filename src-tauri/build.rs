@@ -37,6 +37,9 @@ fn main() {
             // 权限不会生成，capabilities 引用即构建失败
             "save_image",
             "import_local_images",
+            // Task 3：显示解析 + asset 协议运行时动态授权（D-4）
+            "resolve_image_path",
+            "allow_asset_directory",
         ]))
         // 关闭 tauri-build 默认 manifest：改由下方 rustc-link-arg 统一嵌入，
         // 否则主程序出现两份 manifest 资源（winres 一份 + 链接器一份）冲突

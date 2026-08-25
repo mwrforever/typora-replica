@@ -25,6 +25,8 @@
     "allow-search-in-folder",
     "allow-cancel-search",
     "allow-save-image",
-    "allow-import-local-images"
+    "allow-import-local-images",
+    "allow-resolve-image-path",
+    "allow-allow-asset-directory"
   ]
 }

@@ -3,7 +3,8 @@
 // 职责：剪贴板/拖拽图片落盘（sanitize + mime→扩展名 + UTC 时间戳名 + 原子写字节版 +
 // 重名直接覆盖对齐 Typora）、对话框选中文件的批量复制导入、markdown src → 磁盘路径
 // 解析（http/data/blob/asset 合成协议排除、绝对透传、root_url 前缀拼接、doc_dir 相对
-// 拼接归一）、相对 src 计算（pathdiff，跨盘符 None → 前端降级绝对路径）。
+// 拼接归一）、相对 src 计算（pathdiff，跨盘符 None → 前端降级绝对路径）；另暴露
+// resolve_image_path 显示解析命令与 allow_asset_directory 运行时动态授权命令（D-4）。
 // 时间戳口径沿 drafts.rs 先例用 UTC（无 chrono 依赖；Typora 为本地时区，披露项）。
 // 线程安全：无共享状态，每次调用独立计算。
 use crate::io::atomic::atomic_write_bytes;
@@ -305,6 +306,50 @@ pub fn import_local_images(
         .collect()
 }
 
+/// markdown src → 磁盘路径解析命令（前端显示解析/Delete Image 共用）
+///
+/// 薄包装 resolve_fs_path 纯函数，分支语义见该函数文档。返回 None 表示
+/// 非磁盘可解析资源（远程/data/blob/asset 或无基准目录），前端原样放行按远程图处理；
+/// Err 仅为命令层 Result 契约保留（纯函数无失败分支），前端按降级路径处理。
+///
+/// @param src markdown 图片 src 原文
+/// @param doc_dir 文档所在目录；未保存文档传 None
+/// @param root_url 站点根路径前缀；None/空表示无
+/// @returns 磁盘可寻路径或 None；不返回 Err（恒 Ok）
+#[tauri::command]
+pub fn resolve_image_path(
+    src: String,
+    doc_dir: Option<String>,
+    root_url: Option<String>,
+) -> Result<Option<String>, String> {
+    Ok(resolve_fs_path(
+        &src,
+        doc_dir.as_deref(),
+        root_url.as_deref(),
+    ))
+}
+
+/// 打开文档/文件夹时把该目录动态加入 asset protocol 可读范围（07 D-4 动态授权裁决）
+///
+/// 单调允许不收回：多标签切换累积的授权面仅限用户主动打开过的目录，
+/// 暴露面小于静态全盘 scope。目录不存在也允许登记（scope 为纯 glob 模式登记，
+/// 不触盘校验存在性），后续该路径出现即可读。
+///
+/// @param app Tauri 应用句柄（泛型运行时，测试经 mock 运行时注入）
+/// @param dir 待授权目录绝对路径（用户主动打开的文档/文件夹）
+/// @returns Ok 授权成功；Err 模式登记失败（非法路径模式等）返回中文错误
+#[tauri::command]
+pub fn allow_asset_directory<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    dir: String,
+) -> Result<(), String> {
+    use tauri::Manager;
+    // recursive=true：子目录图片一并可读，对齐文档相对资源目录的访问语义
+    app.asset_protocol_scope()
+        .allow_directory(&dir, true)
+        .map_err(|e| format!("授权 asset 目录失败({dir}): {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -481,6 +526,36 @@ mod tests {
             None,
         );
         assert!(r.is_err());
+    }
+
+    // ---- resolve_image_path / allow_asset_directory 命令层（Task 3）----
+    #[test]
+    fn resolve_command_mirrors_pure_fn() {
+        // 命令层与纯函数同语义：doc_dir 相对拼接，分隔符形态锚定 normalize_join 实际输出
+        assert_eq!(
+            resolve_image_path("x.png".into(), Some("C:/docs".into()), None).unwrap(),
+            Some("C:\\docs\\x.png".to_string())
+        );
+        // 远程合成协议：None 不报错（前端按远程图原样放行）
+        assert_eq!(
+            resolve_image_path("https://a/x.png".into(), None, None).unwrap(),
+            None
+        );
+    }
+    #[test]
+    fn allow_asset_directory_extends_runtime_scope_monotonically() {
+        use tauri::Manager;
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let dir = temp_dir();
+        // 授权前不可读：scope 初始为空（静态配置未预置任何 asset 条目）
+        let probe = dir.join("pic.png");
+        assert!(!app.asset_protocol_scope().is_allowed(&probe));
+        // 授权后目录内文件可读（recursive=true 连子路径一并放行）
+        allow_asset_directory(handle, dir.to_string_lossy().into_owned()).unwrap();
+        assert!(app.asset_protocol_scope().is_allowed(&probe));
+        assert!(app.asset_protocol_scope().is_allowed(dir.join("sub/a.png")));
+        let _ = fs::remove_dir_all(&dir);
     }
 
     // ---- import_local_images 命令层 ----
