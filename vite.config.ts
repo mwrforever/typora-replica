@@ -14,6 +14,25 @@ export default defineConfig(async () => ({
     environment: "jsdom",
     include: ["src/**/*.spec.ts"],
     setupFiles: ["src/test/setup.ts"],
+    // 已知良性未处理错误过滤（CI 曾两次因此失败）：@milkdown/ctx 的 Timer 以裸全局
+    // addEventListener/removeEventListener 实现事件等待，其 3s 超时兜底回调在库内
+    // 无 clearTimeout 可取消——即使定时器早已正常 resolve，+3s 后仍会无条件调用
+    // 裸全局 removeEventListener。jsdom 环境按文件拆装（vitest 在文件间删除 window
+    // 派生全局键），跨文件存活的回调恰落拆除间隙即抛 ReferenceError，被计为未处理
+    // 错误使 vitest 退出码置 1（main 3cabaee 与 feat/06-search f015ff3 各复现一次，
+    // 均恰好 10 例）。环境存活期间该调用等价于移除不存在的事件监听，无任何副作用。
+    // 仅按签名精确豁免：「removeEventListener is not defined」+ 栈指向 @milkdown/ctx；
+    // 其余未处理错误照常记录失败，不掩盖真实回归。注意不可用 instanceof 判定：
+    // 错误自 worker 经 RPC 序列化送达主进程，子类原型（ReferenceError）已丢失。
+    onUnhandledError(error) {
+      const isMilkdownTimerRemoval =
+        /removeEventListener is not defined/.test(error.message || "") &&
+        /@milkdown[/\\]ctx[/\\]/.test(error.stack || "");
+      // vitest 仅对返回值严格等于 false 时忽略该错误，其余一律照常记录
+      if (isMilkdownTimerRemoval) {
+        return false;
+      }
+    },
     // 内存安全（2026-08-15 事故根治）：jsdom 测试每个 worker 需加载
     // Crepe/CodeMirror/KaTeX 等重依赖（单 worker 峰值约 1GB），若按 CPU 核数
     // （本机 24 核）全并发拉起 worker，总内存可达 20GB+ 触发系统 OOM。
