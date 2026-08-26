@@ -108,6 +108,24 @@ describe("registerImageFeature", () => {
     await vi.waitFor(() => expect(loadStoreMock.mock.calls.length).toBe(loadsBaseline + 1));
   });
 
+  it("目录授权联动：{dir} 参数契约钉死，无会话/无目录早退零 invoke", async () => {
+    const { authorizeActiveDocumentDir } = await import("./register");
+    // 无激活会话：守卫早退，不触发任何 IPC
+    authorizeActiveDocumentDir();
+    expect(invokeMock).not.toHaveBeenCalled();
+    // 会话无 currentDir（未命名标签）：同样早退
+    getActiveSessionMock.mockReturnValue({ notify: vi.fn() } as never);
+    authorizeActiveDocumentDir();
+    expect(invokeMock).not.toHaveBeenCalled();
+    // 有文档目录：以 {dir} 形状发起授权（D-4 安全路径；参数键名写错即红）
+    getActiveSessionMock.mockReturnValue({
+      currentDir: "C:\\docs",
+      notify: vi.fn(),
+    } as never);
+    authorizeActiveDocumentDir();
+    expect(invokeMock).toHaveBeenCalledWith("allow_asset_directory", { dir: "C:\\docs" });
+  });
+
   it("存盘失败经激活会话 notify 上报并回落 blob 占位（AC-P2-5 接线）", async () => {
     const { registerImageFeature } = await import("./register");
     const sessionNotify = vi.fn();
