@@ -94,7 +94,7 @@ describe("偏好设置（store 持久化）", () => {
 
   it("image 组缺失键逐层回落默认（四开关全关+目标目录空）", async () => {
     // 无存储键（beforeEach 已清空）→ image 组逐字段回落默认值：
-    // 四开关全关对齐 Typora 用户实测（AC-F23：不改变用户既有插入习惯）
+    // 四开关全关对齐 Typora 用户实测（07 spec P2/P3：不改变用户既有插入习惯）
     const s = await loadSettings();
     expect(s.image).toEqual(DEFAULT_SETTINGS.image);
     // 逐字段钉死五项默认，防止 toEqual 对 undefined 键的宽容造成静默漏字段

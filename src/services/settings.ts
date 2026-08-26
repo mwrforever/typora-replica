@@ -47,7 +47,7 @@ export interface ImageSettings {
   relativePathEnabled: boolean;
   /** ./ prefix 开关（相对引用前补 ./ 前缀） */
   dotSlashPrefixEnabled: boolean;
-  /** URL 转义开关（路径含空格/特殊字符时按 RFC 转义） */
+  /** URL 转义开关（路径含空格/特殊字符时按 JS escape() 语义转义，%XX/%uXXXX，非 RFC 3986 百分号编码） */
   urlEscapeEnabled: boolean;
 }
 

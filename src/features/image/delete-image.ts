@@ -74,7 +74,7 @@ export async function runDeleteFlow(src: string, deps: DeleteImageDeps): Promise
   if (!ok) return;
   const ctx = deps.getContext();
   // Typora 平价：root-url 作为相对路径解析基准参与 Rust 侧 fs 定位（与显示解析同一口径）
-  const rootUrl = readFrontMatterKey(ctx.frontMatter ?? "", "typora-root-url") ?? undefined;
+  const rootUrl = readFrontMatterKey(ctx.frontMatter ?? "", "typora-root-url");
   try {
     let fsPath: string | null;
     try {

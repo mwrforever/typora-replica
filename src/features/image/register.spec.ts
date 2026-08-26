@@ -49,10 +49,10 @@ describe("registerImageFeature", () => {
     getActiveSessionMock.mockReturnValue(undefined);
     getActiveFrontMatterMock.mockReturnValue(null);
     setUploadHandler(undefined);
-    // 清态：设置快照为 register.ts 模块级状态，跨用例残留会让「重拉」断言失真——
-    // 经真实失效事件清空并触发重拉（同时预热动态导入，用例内 import 命中缓存）
-    const { SETTINGS_INVALIDATED_EVENT } = await import("./register");
-    window.dispatchEvent(new Event(SETTINGS_INVALIDATED_EVENT));
+    // 预热动态导入（用例内 import 命中缓存）。注意：此处不代发失效事件——
+    // 「装配自身完成冷加载」的断言要求零事件生命周期（终审 I-1），需要刷新快照
+    // 的用例在用例体内显式 dispatch
+    await import("./register");
   });
 
   it("注册后 getUploadHandler 返回处理器（重复装配幂等不叠加）", async () => {
@@ -62,6 +62,32 @@ describe("registerImageFeature", () => {
     registerImageFeature();
     registerImageFeature();
     expect(getUploadHandler()).toBeTypeOf("function");
+  });
+
+  it("冷装配：全程零失效事件，装配入口自身完成设置加载并生效", async () => {
+    // 生产启动无任何 markwell-settings-updated 派发方（10 设置模块未建），
+    // 装配入口是唯一的加载触点。本用例从进入到断言零事件：store 返回非默认
+    // 全局目标，若装配未触发加载，快照恒空回落默认全关 → targetDir 恒 undefined，
+    // 断言必红（终审 I-1 回归钉）
+    loadStoreMock.mockResolvedValue({
+      get: vi.fn(async (key: string) =>
+        key === "image" ? { copyToFolderEnabled: true, copyTargetDir: "C:\\imgs" } : undefined,
+      ),
+    });
+    const { registerImageFeature, clearSettingsCacheForTest } = await import("./register");
+    // 排空前序用例遗留的预加载链（迟写会覆盖本用例快照），再模拟冷启动清态
+    await new Promise((r) => setTimeout(r, 0));
+    clearSettingsCacheForTest();
+    registerImageFeature();
+    // 预加载为 fire-and-forget：排空微任务后上传，读取的必须是持久化值而非默认值
+    await new Promise((r) => setTimeout(r, 0));
+    await getUploadHandler()!(pngFile());
+    expect(invokeMock).toHaveBeenCalledWith(
+      "save_image",
+      expect.objectContaining({ targetDir: "C:\\imgs" }),
+    );
+    // 收尾清空快照，避免非默认全局目标泄漏进后续用例的目标决策口径
+    clearSettingsCacheForTest();
   });
 
   it("Shift-Mod-i 插图键位随装配注册一次（重复装配不向注册表叠加）", async () => {
@@ -111,7 +137,7 @@ describe("registerImageFeature", () => {
       expect.objectContaining({ docDir: "C:\\docs", targetDir: "C:\\docs/assets" }),
     );
     // 快照为同步读取（01 注册表 getSettings 同步签名）：上传不触发 store 重拉；
-    // 失效事件清空快照并立刻重拉（beforeEach 的失效预加载已计入基线，取增量断言）
+    // 失效事件清空快照并立刻重拉（此前装配/失效路径的加载已计入基线，取增量断言）
     const loadsBaseline = loadStoreMock.mock.calls.length;
     await handler(pngFile());
     expect(loadStoreMock.mock.calls.length).toBe(loadsBaseline);

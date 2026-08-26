@@ -31,7 +31,7 @@ const INSERT_LOCAL_IMAGE_KEY = "Shift-Mod-i";
 let cachedImageSettings: ImageSettings | undefined;
 
 /**
- * 预加载图片设置快照（模块装载与每次失效事件后各触发一次）
+ * 预加载图片设置快照（装配入口与每次失效事件后各触发一次）
  *
  * 01 注册表的 getSettings 为同步签名，快照必须先于上传就绪；此处 fire-and-forget，
  * 加载窗口内（应用启动最初数毫秒）读取方回落默认偏好（全关语义，粘贴走临时目录
@@ -64,6 +64,11 @@ if (typeof window !== "undefined") {
  */
 function getSettingsSnapshot(): ImageSettings {
   return cachedImageSettings ?? DEFAULT_SETTINGS.image;
+}
+
+/** 测试专用：清空设置快照（模块级单例，用例间隔离；生产代码勿调） */
+export function clearSettingsCacheForTest(): void {
+  cachedImageSettings = undefined;
 }
 
 /**
@@ -119,6 +124,9 @@ function notifyActiveSession(message: string): void {
  * hasEditorKeymap 守卫只注册一次（registry 为 push 数组，重复 push 会叠加执行）。
  */
 export function registerImageFeature(): void {
+  // 冷启动装配：失效事件仅在用户改设置后才出现，生产启动的唯一加载触点在装配入口——
+  // 缺此调用快照恒空，用户持久化偏好被默认值静默覆盖（终审 I-1）
+  preloadSettings();
   // Ctrl+Shift+I 三路插图入口（Task 10）：App onMounted 先于首标签编辑器 create()，
   // applyEditorKeymaps 在 config 阶段消费 registry，故此处注册必然赶在首个实例生效前
   if (!hasEditorKeymap(INSERT_LOCAL_IMAGE_KEY)) {
