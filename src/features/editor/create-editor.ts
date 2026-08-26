@@ -15,6 +15,7 @@ import { configureFootnoteTooltip, footnoteTooltipPlugin } from "./footnote-tool
 import { configureHtmlMerge } from "./html/html-merge";
 import { setupHtmlNodeView } from "./html/html-node-view";
 import { getUploadHandler } from "./image-upload";
+import { markwellImageBlockSchema } from "./image-schema";
 import { registerEditorInputRules } from "./input-rules";
 import { applyEditorKeymaps } from "./keymaps";
 import { latexEscapePlugin } from "./latex-escape";
@@ -242,6 +243,9 @@ export function createMarkwellEditor(
   });
   // 代码围栏语言落盘小写归一化：以 extendSchema 扩展 codeBlockSchema（E6-4 Typora 平价）
   crepe.editor.use(lowerLanguageCodeBlockSchema);
+  // image-block schema 定制（07）：alt 位回归描述语义、缩放比例挪 title 位挂 zoom
+  // 命名空间（同 id upsertById 原地替换内置 schema，须紧随其后注册方能覆盖生效）
+  crepe.editor.use(markwellImageBlockSchema);
   // 脚注悬停预览浮层（E9 AC-E9-2）：tooltipFactory 形态插件 + config 阶段注入规格
   crepe.editor.use(footnoteTooltipPlugin);
   // TOC 目录（E12）：toc 节点 schema + `[toc]` 输入规则

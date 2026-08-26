@@ -13,6 +13,7 @@ import {
   configureFootnoteTooltip,
   footnoteTooltipPlugin,
 } from "../features/editor/footnote-tooltip";
+import { markwellImageBlockSchema } from "../features/editor/image-schema";
 import { configureHtmlMerge } from "../features/editor/html/html-merge";
 import { setupHtmlNodeView } from "../features/editor/html/html-node-view";
 import { registerEditorInputRules } from "../features/editor/input-rules";
@@ -105,6 +106,8 @@ export async function makeTestEditor(
   // 保证测试环境覆盖自定义行为
   // 代码围栏语言落盘小写归一化（E6-4），与产品工厂同源插件
   crepe.editor.use(lowerLanguageCodeBlockSchema);
+  // image-block schema 定制（07：alt 保真 + zoom title），与产品工厂同源插件
+  crepe.editor.use(markwellImageBlockSchema);
   // 脚注悬停预览浮层（E9），与产品工厂同源插件
   crepe.editor.use(footnoteTooltipPlugin);
   // TOC 目录（E12）：toc 节点 schema + `[toc]` 输入规则，与产品工厂同源插件
