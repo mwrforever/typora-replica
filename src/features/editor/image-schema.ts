@@ -17,7 +17,8 @@
 // zoom: 命名空间防止真实 title（如「画册」）被误读为缩放比例；rawTitle 保证真实
 // title roundtrip 保真而非静默丢弃（内置三 attrs 无法同时表达「描述在 alt 位」与
 // 「title 原样保留」，故必须扩展 attrs——nodeView 只消费 src/caption/ratio，不受影响）。
-import { imageBlockSchema } from "@milkdown/kit/component/image-block";
+import { IMAGE_DATA_TYPE, imageBlockSchema } from "@milkdown/kit/component/image-block";
+import { expectDomTypeError } from "@milkdown/kit/exception";
 
 /** zoom title 命名空间正则（仅匹配 zoom:<数值> 形态，真实 title 如「画册」不命中） */
 const ZOOM_TITLE_RE = /^zoom:(\d+(?:\.\d+)?)$/;
@@ -42,9 +43,10 @@ function normalizeRatio(value: number): number {
  * 以 extendSchema 原地替换内置定义（同 id "image-block" 经 upsertById 生效，
  * 本扩展后注册故覆盖库默认——沿 lowerLanguageCodeBlockSchema 先例）。相对内置：
  *   - attrs 增加 rawTitle（非 zoom 命名空间的原始 markdown title 保真载体）；
+ *   - parseDOM 追加读回 rawTitle（与内置逐字段同款 + 一项）；
  *   - parseMarkdown/toMarkdown 重写 alt↔caption、title↔(zoom|rawTitle) 双向映射。
  * 其余节点规格（inline/group/draggable/nodeView 绑定等）经 spread 全量继承；
- * toDOM 平铺 attrs 属剪贴板/导出路径，多出的 rawTitle 属性无害。
+ * toDOM 平铺 attrs 属剪贴板/导出 DOM 的产出侧，rawTitle 经定制 parseDOM 读回闭环。
  */
 export const markwellImageBlockSchema = imageBlockSchema.extendSchema((prev) => {
   return (ctx) => {
@@ -56,6 +58,25 @@ export const markwellImageBlockSchema = imageBlockSchema.extendSchema((prev) => 
         /** 非 zoom 形态的真实 markdown title（roundtrip 保真载体；缺省空串=无 title） */
         rawTitle: { default: "", validate: "string" },
       },
+      // parseDOM 覆写：toDOM 平铺 node.attrs 会把 rawTitle 写进剪贴板/拖拽 DOM，
+      // 但内置 getAttrs 只读 src/caption/ratio——不覆写则编辑器内复制粘贴/拖拽
+      // 图片块时 title 静默丢失（本次定制引入的回退，基线下 title 经 caption 存活）。
+      // 读回逻辑与内置逐字段同款，仅追加 rawTitle 一项。
+      parseDOM: [
+        {
+          tag: `img[data-type="${IMAGE_DATA_TYPE}"]`,
+          getAttrs: (dom) => {
+            if (!(dom instanceof HTMLElement)) throw expectDomTypeError(dom);
+            return {
+              src: dom.getAttribute("src") || "",
+              caption: dom.getAttribute("caption") || "",
+              ratio: Number(dom.getAttribute("ratio") ?? 1),
+              // 与 toDOM 平铺对称读回：缺属性回落空串（无 title）
+              rawTitle: dom.getAttribute("rawTitle") || "",
+            };
+          },
+        },
+      ],
       parseMarkdown: {
         match: baseSchema.parseMarkdown.match,
         runner: (state, node, type) => {

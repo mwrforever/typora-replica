@@ -5,7 +5,8 @@
 // （与产品工厂 create-editor.ts 同源一行 use），全部用例经标准入口获得定制行为；
 // 编程插入沿 T1 PIN-5 实证 API（tr.replaceSelectionWith）。
 import { editorViewCtx } from "@milkdown/kit/core";
-import { describe, expect, it } from "vitest";
+import { fireEvent } from "@testing-library/dom";
+import { describe, expect, it, vi } from "vitest";
 import { makeTestEditor, type TestEditor } from "../../test/editor-test-utils";
 
 describe("image-block schema 定制（07）", () => {
@@ -68,6 +69,35 @@ describe("image-block schema 定制（07）", () => {
     // 编程插入的 image-block 节点后随一个空段落（T1 PIN-4），序列化尾部多一换行，
     // trim 后做全等断言以聚焦 alt/title 位形态本身
     expect(te.getMarkdown().trim()).toBe('![图注](p.png "zoom:0.75")');
+  });
+
+  it("编辑器内 DOM 粘贴图片块 title 经 parseDOM 存活（审查 A 回归）", async () => {
+    // 编辑器内复制/拖拽图片块的 HTML 产物经 toDOM 平铺含 rawTitle；粘贴走 parseDOM
+    // 链，getAttrs 必须读回 rawTitle 否则 title 在编辑器内流转一次即静默丢失。
+    // ratio=1 场景（title 位无 zoom 占用）下 rawTitle 应原样还原到 markdown title 位
+    const te = await makeTestEditor("");
+    // jsdom 无 DataTransfer 构造入口（沿 e15 spec 手法以普通对象充当），
+    // getData 返回带 rawTitle 属性的图片块 HTML，files 置空避免误入文件上传路径
+    fireEvent.paste(te.view.dom, {
+      clipboardData: {
+        files: { length: 0, item: () => null },
+        types: ["text/html"],
+        getData: (type: string) =>
+          type === "text/html"
+            ? '<div><img data-type="image-block" src="p.png" caption="a" ratio="1" rawTitle="画册"></div>'
+            : "",
+      },
+    });
+    await vi.waitFor(() => expect(te.getMarkdown().trim()).toBe('![a](p.png "画册")'));
+  });
+
+  it('组合形态 ![0.75](p.png "图注") 数字 alt 迁移后图注让位 zoom（现状固化）', async () => {
+    // 旧版文档数字 alt 与真实 title 并存时，title 位双语义无法同时落盘（信息论固有限制）：
+    // 缩放比例优先占用 title 位，rawTitle 无处安放即随首次保存静默丢失。本用例固化该
+    // 现状取舍（PR 披露项）：数字 alt 无业务含义故迁移 ratio，真实图注文本让位于缩放保真；
+    // 若需保住此类图注，须在 title 位之外另立存储通道，超出本模块契约范围
+    const te = await makeTestEditor('![0.75](p.png "图注")');
+    expect(te.getMarkdown()).toBe('![](p.png "zoom:0.75")');
   });
 });
 
