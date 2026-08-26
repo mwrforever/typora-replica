@@ -99,6 +99,74 @@ describe("image-block schema 定制（07）", () => {
     const te = await makeTestEditor('![0.75](p.png "图注")');
     expect(te.getMarkdown()).toBe('![](p.png "zoom:0.75")');
   });
+
+  it("parseDOM 读回守卫：入参非 HTMLElement 时按约定抛类型错误", async () => {
+    // jsdom 真实粘贴链路恒传入 HTMLElement，守卫分支不可达；以裸对象直调 getAttrs
+    // 钉住该防御分支——非 DOM 节点必须显式抛错而非静默产出 undefined attrs
+    const te = await makeTestEditor("");
+    expect(() => getImageBlockSpec(te).getAttrs({})).toThrow();
+  });
+
+  it("parseDOM 读回缺属性回落：src/caption/rawTitle 回落空串、ratio 回落 1", async () => {
+    // 编辑器内流转的剪贴板/拖拽 DOM 可能被裁剪掉部分属性：四项读回必须逐项回落
+    // 默认值而非 undefined 入档（ratio 缺失回落 1 保证图片默认可见高度）
+    const te = await makeTestEditor("");
+    const attrs = getImageBlockSpec(te).getAttrs(document.createElement("img"));
+    expect(attrs).toEqual({ src: "", caption: "", ratio: 1, rawTitle: "" });
+  });
+
+  it("parseMarkdown 收窄脏 mdast 字段：url/alt/title 非 string 一律空串防脏数据入档", async () => {
+    // mdast 字段经索引签名访问均为 unknown（生产注释明示的防脏收窄）：合法 markdown
+    // 解析产物三字段恒为 string，脏值分支须经受控对象直调 runner 钉住——
+    // 三字段全非法时应走「常规形态」兜底支路且不产生 undefined attr
+    const te = await makeTestEditor("");
+    const nodeType = getImageBlockSpec(te).nodeType;
+    const added: unknown[] = [];
+    // 桩 ParserState.addNode 捕获 addNode(type, attrs) 落参
+    const fakeState = { addNode: (_type: unknown, attrs: unknown) => void added.push(attrs) };
+    nodeType.spec.parseMarkdown.runner(
+      fakeState as never,
+      { url: 42, alt: null, title: undefined } as never,
+      nodeType,
+    );
+    expect(added).toEqual([{ src: "", caption: "", ratio: 1, rawTitle: "" }]);
+  });
+
+  it("toMarkdown 防御序列化：非法 ratio 回落 1、caption/rawTitle/src 非 string 收窄空串", async () => {
+    // ratio attr 可能被外部置为非法值（生产注释明示「防御序列化出 zoom:NaN」）：
+    // NaN 钉 isFinite 失败回落支路、负数钉 >0 失败回落支路——两路均不得产出 zoom title；
+    // caption/rawTitle/src 的 typeof 收窄同理经脏 attr 直调钉住
+    const te = await makeTestEditor("");
+    const runner = getImageBlockSpec(te).nodeType.spec.toMarkdown.runner;
+    const images: unknown[][] = [];
+    let closed = false;
+    // 桩 SerializerState 三步编排，捕获 image 行落参
+    const fakeState = {
+      openNode: () => {},
+      addNode: (...args: unknown[]) => void images.push(args),
+      closeNode: () => {
+        closed = true;
+      },
+    };
+    runner(
+      fakeState as never,
+      { attrs: { ratio: NaN, caption: 123, rawTitle: null, src: {} } } as never,
+    );
+    // 全脏场景：ratio 回落 1 后 title 位取 rawTitle 收窄结果空串，无 zoom 残留
+    expect(images[0]).toEqual(["image", undefined, undefined, { title: "", url: "", alt: "" }]);
+    runner(
+      fakeState as never,
+      { attrs: { ratio: -0.5, caption: "图注", rawTitle: "画册", src: "p.png" } } as never,
+    );
+    // 合法字段透传场景：负数 ratio 回落 1 → 真实 title 原样回写（不产出 zoom）
+    expect(images[1]).toEqual([
+      "image",
+      undefined,
+      undefined,
+      { title: "画册", url: "p.png", alt: "图注" },
+    ]);
+    expect(closed).toBe(true);
+  });
 });
 
 /**
@@ -117,4 +185,26 @@ async function makeTestEditorWithInsertedImage(src: string): Promise<TestEditor>
     view.dispatch(view.state.tr.replaceSelectionWith(nodeType.create({ src })));
   });
   return te;
+}
+
+/**
+ * 直调 helper：取定制 schema 装配后的节点类型与 parseDOM 属性读回函数。
+ * @param te 已装配定制 schema 的测试编辑器句柄
+ * @returns nodeType：ProseMirror 节点类型（parseMarkdown/toMarkdown runner 挂其 spec）；
+ *          getAttrs：parseDOM 首规则的属性读回函数（接受任意对象，非 DOM 入参由生产守卫抛错）
+ */
+function getImageBlockSpec(te: TestEditor) {
+  const nodeType = te.view.state.schema.nodes["image-block"];
+  // 与 makeTestEditorWithInsertedImage 同款装配断言：schema 未注入即快速失败
+  if (!nodeType) throw new Error("image-block 节点类型不存在：定制 schema 未装配");
+  const rawGetAttrs = nodeType.spec.parseDOM[0]?.getAttrs;
+  if (!rawGetAttrs || !(rawGetAttrs instanceof Function)) {
+    throw new Error("parseDOM 首规则缺 getAttrs：定制 schema 结构漂移");
+  }
+  return {
+    nodeType,
+    // 生产签名收窄为 HTMLElement；直调场景放宽入参，交由生产守卫抛错
+    getAttrs: (dom: object): Record<string, unknown> =>
+      (rawGetAttrs as (d: HTMLElement) => Record<string, unknown>)(dom as HTMLElement),
+  };
 }
