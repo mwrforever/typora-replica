@@ -64,6 +64,17 @@ describe("registerImageFeature", () => {
     expect(getUploadHandler()).toBeTypeOf("function");
   });
 
+  it("Shift-Mod-i 插图键位随装配注册一次（重复装配不向注册表叠加）", async () => {
+    const { registerImageFeature } = await import("./register");
+    const { listEditorKeymaps } = await import("../editor/keymaps");
+    registerImageFeature();
+    registerImageFeature();
+    // keymap 注册表为 push 数组：无守卫时重复装配会叠加注册（T8 审查发现），
+    // 按键链对同一键位执行多次——含本用例之前各用例的装配调用在内恒为 1
+    const entries = listEditorKeymaps().filter((e) => e.key === "Shift-Mod-i");
+    expect(entries).toHaveLength(1);
+  });
+
   it("处理器经 getContext 拉取活动会话目录（未打开文档时 documentSaved=false）", async () => {
     const { registerImageFeature } = await import("./register");
     registerImageFeature();

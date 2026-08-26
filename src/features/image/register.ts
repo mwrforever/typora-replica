@@ -6,19 +6,26 @@
 // ② 图片设置快照缓存 + `markwell-settings-updated` 自定义事件失效——updateSettings
 //   调用方分散，不做推送式同步；10 设置模块保存设置后 dispatch 该事件即可刷新快照
 //   （登记为 10 的对接契约）；
-// ③ 活动文档目录 → asset protocol 运行时授权（fire-and-forget，供 EditorPage 挂载点调用）。
+// ③ 活动文档目录 → asset protocol 运行时授权（fire-and-forget，供 EditorPage 挂载点调用）；
+// ④ Ctrl+Shift+I 插图入口键位（Task 10 三路插入：剪贴板 URL 直写/对话框批量导入）。
 //
-// 本模块无 UI、不持编辑器引用；重复装配幂等：处理器覆盖注入无害，事件监听模块级仅注册一次。
+// 本模块无 UI、不持编辑器引用；重复装配幂等：处理器覆盖注入无害，事件监听模块级仅注册
+// 一次，keymap 注册表为 push 数组故以 hasEditorKeymap 守卫防重复叠加。
 import { invoke } from "@tauri-apps/api/core";
 import { DEFAULT_SETTINGS, loadSettings } from "../../services/settings";
 import type { ImageSettings } from "../../services/settings";
 import { getActiveFrontMatter, getActiveSession } from "../tabs/editor-registry";
+import { addEditorKeymap, hasEditorKeymap } from "../editor/keymaps";
 import { setUploadHandler } from "../editor/image-upload";
+import { insertLocalImagesAction } from "./insert-local-image";
 import { createImageUploadHandler } from "./upload-flow";
 import type { ImageDocContext } from "./upload-flow";
 
 /** 设置失效事件名（10 模块保存设置后 dispatch 即可刷新本模块设置快照） */
 export const SETTINGS_INVALIDATED_EVENT = "markwell-settings-updated";
+
+/** Ctrl+Shift+I 插图入口键位串（ProseMirror keymap 语法，Mod=i 的 Shift 修饰组合） */
+const INSERT_LOCAL_IMAGE_KEY = "Shift-Mod-i";
 
 /** 图片设置快照（undefined=尚未加载完成，读取方回落默认值） */
 let cachedImageSettings: ImageSettings | undefined;
@@ -92,23 +99,45 @@ export function authorizeActiveDocumentDir(): void {
 }
 
 /**
+ * 错误沿激活会话通知通道上浮（上传失败与插图入口共用同一出口）
+ *
+ * 与 02 会话提示同口径；无激活会话时兜底控制台（无 UI 可挂的错误去处）。
+ * @param message 用户可见的中文错误描述（不含敏感信息）
+ */
+function notifyActiveSession(message: string): void {
+  const session = getActiveSession();
+  if (session) session.notify({ level: "error", message });
+  else console.warn("[MarkWell]", message);
+}
+
+/**
  * 应用装配入口（App.vue onMounted 调一次）
  *
  * 执行流：createImageUploadHandler 组装真实处理器（上下文/设置/错误通道三个依赖
- * 均指向本模块闭包）→ setUploadHandler 覆盖注入 01 注册表。重复调用幂等：
- * 后注入覆盖前注入，处理器语义不变，不产生叠加副作用。
+ * 均指向本模块闭包）→ setUploadHandler 覆盖注入 01 注册表；同时注册 Ctrl+Shift+I
+ * 插图键位。重复调用幂等：后注入覆盖前注入，处理器语义不变；keymap 以
+ * hasEditorKeymap 守卫只注册一次（registry 为 push 数组，重复 push 会叠加执行）。
  */
 export function registerImageFeature(): void {
+  // Ctrl+Shift+I 三路插图入口（Task 10）：App onMounted 先于首标签编辑器 create()，
+  // applyEditorKeymaps 在 config 阶段消费 registry，故此处注册必然赶在首个实例生效前
+  if (!hasEditorKeymap(INSERT_LOCAL_IMAGE_KEY)) {
+    addEditorKeymap({
+      key: INSERT_LOCAL_IMAGE_KEY,
+      onRun: (ctx) =>
+        insertLocalImagesAction({
+          getContext: getActiveDocContext,
+          getSettings: getSettingsSnapshot,
+          notifyError: notifyActiveSession,
+        })(ctx),
+    });
+  }
   setUploadHandler(
     createImageUploadHandler({
       getContext: getActiveDocContext,
       getSettings: getSettingsSnapshot,
-      notifyError: (message) => {
-        // 错误沿激活会话通知通道上浮（与 02 会话提示同口径）；无会话时兜底控制台
-        const session = getActiveSession();
-        if (session) session.notify({ level: "error", message });
-        else console.warn("[MarkWell]", message);
-      },
+      // 错误沿激活会话通知通道上浮（与 02 会话提示同口径）
+      notifyError: notifyActiveSession,
     }),
   );
 }
