@@ -41,8 +41,9 @@ export interface DeleteImageDeps {
   notify(level: "error" | "info", message: string): void;
   /**
    * 从被右键的 img 元素反查文档模型中的原始 src
-   * 返回 undefined 表示非本模块管辖（不在编辑器 DOM 内/无 image-block 祖先/视图未就绪），
-   * 调用方据此放行事件——绝不以 DOM src 兜底（asset:// 写回文档属数据损坏红线）
+   * 返回 undefined 表示非本模块管辖（不在编辑器 DOM 内/位置边界无 image-block
+   * 邻接/视图未就绪），调用方据此放行事件——绝不以 DOM src 兜底
+   * （asset:// 写回文档属数据损坏红线）
    */
   resolveOriginalSrc(img: Element): string | undefined;
 }
@@ -148,23 +149,27 @@ function removeImageNodeBySrc(src: string): boolean {
 }
 
 /**
- * DOM→模型 src 反查生产实现：posAtDOM 定位后沿祖先链取 image-block attrs.src
+ * DOM→模型 src 反查生产实现：posAtDOM 定位后在位置边界双侧取 image-block attrs.src
  *
- * img 不在本视图 DOM 内（html 块内嵌图等外来元素）或无 image-block 祖先时返回
- * undefined 放行事件；posAtDOM 对不属于当前文档树的元素会抛错，按未命中处理。
+ * img 不在本视图 DOM 内（html 块内嵌图等外来元素）或位置边界两侧均非管辖图片时
+ * 返回 undefined 放行事件；posAtDOM 对不属于当前文档树的元素会抛错，按未命中处理。
  */
 function extractOriginalSrc(img: Element): string | undefined {
   const view = editorManager.getView();
   if (!view || !view.dom.contains(img)) return undefined;
   try {
-    // DOM 元素 → 文档位置 → 沿祖先链自内向外查找 image-block
+    // DOM 元素 → 文档位置。ProseMirror 边界语义：image-block 是 atom 原子节点，
+    // 自身不含任何内部位置，posAtDOM 落点解析（ResolvedPos.resolve）后该原子节点
+    // 只会以 nodeBefore / nodeAfter 形式贴在位置边界上——祖先链 $pos.node(depth)
+    // （depth≥1）必为含内容的容器节点，恒不可能是原子图片块。旧实现沿祖先链查找
+    // 因此在生产装配下永不命中（顶层块解析后 depth=0，循环条件 depth>0 连节点
+    // 自身都检查不到），改为边界双侧探测
     const $pos = view.state.doc.resolve(view.posAtDOM(img, 0));
-    for (let depth = $pos.depth; depth > 0; depth--) {
-      const node = $pos.node(depth);
-      if (node.type.name === IMAGE_NODE_TYPE) {
-        return typeof node.attrs.src === "string" ? node.attrs.src : undefined;
-      }
-    }
+    const hit = [$pos.nodeBefore, $pos.nodeAfter].find(
+      (node) => node?.type.name === IMAGE_NODE_TYPE,
+    );
+    // src 经 schema validate:"string" 约束，此处防御 attrs 被编程写入的非字符串脏值
+    return hit && typeof hit.attrs.src === "string" ? hit.attrs.src : undefined;
   } catch {
     // 元素不在文档树等边缘场景：按未命中处理，放行浏览器默认行为
   }

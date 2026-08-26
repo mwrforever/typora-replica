@@ -11,6 +11,7 @@ import { resolve } from "node:path";
 import { fireEvent } from "@testing-library/dom";
 import type { EditorView } from "@milkdown/kit/prose/view";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { makeTestEditor } from "../../test/editor-test-utils";
 import { editorManager } from "../editor/editor-manager";
 import {
   closeImageMenu,
@@ -269,58 +270,79 @@ describe("生产依赖集默认实现（假视图替身，不经真实编辑器�
     expect(deps.countReferences("a.png")).toBe(0);
   });
 
-  it("extractOriginalSrc 沿祖先链取 image-block attrs.src；不在编辑器 DOM 内返回 undefined", () => {
+  it("extractOriginalSrc 边界双侧探测取 image-block attrs.src；不在编辑器 DOM 内返回 undefined", () => {
     const img = document.createElement("img");
     const dom = document.createElement("div");
     dom.appendChild(img);
     const imageNode = { type: { name: "image-block" }, attrs: { src: "real/p.png" } };
-    const fake = {
+    const deps = createDefaultImageDeleteDeps();
+    // 后置边界命中：posAtDOM 落点解析后原子图片块贴在 nodeBefore 侧（bias 落节点内部）
+    vi.spyOn(editorManager, "getView").mockReturnValue({
       dom,
       posAtDOM: () => 7,
-      state: {
-        doc: {
-          resolve: () => ({
-            depth: 1,
-            node: (d: number) => (d === 1 ? imageNode : undefined),
-          }),
-        },
-      },
-    };
-    vi.spyOn(editorManager, "getView").mockReturnValue(fake as unknown as EditorView);
-    const deps = createDefaultImageDeleteDeps();
+      state: { doc: { resolve: () => ({ nodeBefore: imageNode, nodeAfter: null }) } },
+    } as unknown as EditorView);
     // 命中：以模型 attrs.src 为准（DOM src 可能已被 asset:// 替换）
     expect(deps.resolveOriginalSrc(img)).toBe("real/p.png");
+
+    // 前置边界命中：posAtDOM 落在原子块前置边界时该节点出现在 nodeAfter 侧
+    vi.spyOn(editorManager, "getView").mockReturnValue({
+      dom,
+      posAtDOM: () => 3,
+      state: { doc: { resolve: () => ({ nodeBefore: null, nodeAfter: imageNode }) } },
+    } as unknown as EditorView);
+    expect(deps.resolveOriginalSrc(img)).toBe("real/p.png");
+
     // img 不在本视图 DOM 内（外来元素）不接管
+    vi.restoreAllMocks();
+    vi.spyOn(editorManager, "getView").mockReturnValue({
+      dom,
+      posAtDOM: () => 7,
+      state: { doc: { resolve: () => ({ nodeBefore: imageNode, nodeAfter: null }) } },
+    } as unknown as EditorView);
     const outsider = document.createElement("img");
     document.body.appendChild(outsider);
     expect(deps.resolveOriginalSrc(outsider)).toBeUndefined();
   });
 
-  it("extractOriginalSrc 无 image-block 祖先或视图未就绪时返回 undefined，posAtDOM 抛错按未命中处理", () => {
+  it("extractOriginalSrc 边界两侧均非管辖图片/脏值 src/视图未就绪/posAtDOM 抛错时返回 undefined", () => {
     const img = document.createElement("img");
     const dom = document.createElement("div");
     dom.appendChild(img);
-    // 无 image-block 祖先（如 html 块内嵌图的段落祖先）
-    const noImage = {
+    const deps = createDefaultImageDeleteDeps();
+    // 无 image-block 边界邻接（如 html 块内嵌图的段落祖先）：放行事件
+    vi.spyOn(editorManager, "getView").mockReturnValue({
       dom,
       posAtDOM: () => 3,
       state: {
         doc: {
           resolve: () => ({
-            depth: 1,
-            node: (d: number) => (d === 1 ? { type: { name: "paragraph" }, attrs: {} } : undefined),
+            nodeBefore: { type: { name: "paragraph" }, attrs: {} },
+            nodeAfter: null,
           }),
         },
       },
-    };
-    vi.spyOn(editorManager, "getView").mockReturnValue(noImage as unknown as EditorView);
-    let deps = createDefaultImageDeleteDeps();
+    } as unknown as EditorView);
+    expect(deps.resolveOriginalSrc(img)).toBeUndefined();
+
+    // 命中节点的 attrs.src 为非字符串脏值（防御编程写入）：如实返回未命中
+    vi.spyOn(editorManager, "getView").mockReturnValue({
+      dom,
+      posAtDOM: () => 7,
+      state: {
+        doc: {
+          resolve: () => ({
+            nodeBefore: { type: { name: "image-block" }, attrs: { src: 42 } },
+            nodeAfter: null,
+          }),
+        },
+      },
+    } as unknown as EditorView);
     expect(deps.resolveOriginalSrc(img)).toBeUndefined();
 
     // 视图未就绪
     vi.restoreAllMocks();
     vi.spyOn(editorManager, "getView").mockReturnValue(undefined);
-    deps = createDefaultImageDeleteDeps();
     expect(deps.resolveOriginalSrc(img)).toBeUndefined();
 
     // posAtDOM 抛错（元素不属于当前文档树）
@@ -333,7 +355,6 @@ describe("生产依赖集默认实现（假视图替身，不经真实编辑器�
       state: {},
     };
     vi.spyOn(editorManager, "getView").mockReturnValue(throwing as unknown as EditorView);
-    deps = createDefaultImageDeleteDeps();
     expect(deps.resolveOriginalSrc(img)).toBeUndefined();
   });
 
@@ -342,5 +363,58 @@ describe("生产依赖集默认实现（假视图替身，不经真实编辑器�
     const deps = createDefaultImageDeleteDeps();
     deps.notify("error", "测试消息");
     expect(warn).toHaveBeenCalledWith("[MarkWell]", "测试消息");
+  });
+});
+
+describe("生产链路集成探针（真实编辑器装配，不经依赖桩替身）", () => {
+  /**
+   * jsdom 无布局命中测试桩（与 e15 spec 同款手法）：桩 document.elementFromPoint
+   * 使事件坐标解析到目标元素，返回还原函数。
+   */
+  function stubHitTarget(target: Element): () => void {
+    const prev = document.elementFromPoint;
+    document.elementFromPoint = () => target;
+    return () => {
+      document.elementFromPoint = prev;
+    };
+  }
+
+  afterEach(() => {
+    closeImageMenu();
+    vi.restoreAllMocks();
+  });
+
+  it("AC-P5-1 生产装配：右键顶层图片块经默认 extractOriginalSrc 反查 src 并弹出菜单", async () => {
+    // 真实编辑器装配：markdown 图片渲染为 doc 顶层原子块 image-block（T7 显示观察器
+    // 可省略——本用例断言文档模型原始 src，DOM src 是否被 asset:// 替换不影响结论）
+    const te = await makeTestEditor("![a](p.png)");
+    const img = te.view.dom.querySelector("img");
+    expect(img).not.toBeNull();
+    // 生产 extractOriginalSrc 经 editorManager.getView() 取当前视图；测试编辑器不走
+    // 多标签注册表，直接把真实 ProseMirror 视图接到同一访问器（视图来源语义等同生产）
+    vi.spyOn(editorManager, "getView").mockReturnValue(te.view);
+    const deps = createDefaultImageDeleteDeps();
+    // 生产默认反查实现（非桩替身）：必须取到文档模型原始 src
+    expect(deps.resolveOriginalSrc(img!)).toBe("p.png");
+    // 全链路：右键事件（鼠标次键 button:2）→ preventDefault + 删除菜单在点击处弹出
+    const restore = stubHitTarget(img!);
+    try {
+      const event = new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        button: 2,
+        clientX: 5,
+        clientY: 6,
+      });
+      img!.dispatchEvent(event);
+      expect(handleImageContext(event, deps)).toBe(true);
+      expect(event.defaultPrevented).toBe(true);
+      const menu = document.querySelector<HTMLElement>(".markwell-image-menu");
+      expect(menu?.textContent).toContain("删除图片");
+      expect(menu?.style.left).toBe("5px");
+      expect(menu?.style.top).toBe("6px");
+    } finally {
+      restore();
+    }
   });
 });
