@@ -12,6 +12,7 @@ import type { Options } from "remark-stringify";
 import "katex/contrib/mhchem";
 import { typoraHeadingIdPlugin } from "./anchor-id/typora-heading-id";
 import { configureFootnoteTooltip, footnoteTooltipPlugin } from "./footnote-tooltip";
+import { handleImageContext } from "../image/delete-image";
 import { configureHtmlMerge } from "./html/html-merge";
 import { setupHtmlNodeView } from "./html/html-node-view";
 import { getUploadHandler } from "./image-upload";
@@ -261,16 +262,22 @@ export function createMarkwellEditor(
   crepe.editor.use(typoraHeadingIdPlugin);
   // 官方查找高亮插件（06 搜索替换 P1），与产品行为同源
   crepe.editor.use(markwellSearchPlugin);
-  // E21 图表右键菜单：contextmenu 落在 mermaid 预览容器时弹出另存/复制菜单
-  //（非图表区域返回 false 放行浏览器默认菜单；handleDOMEvents 由 ProseMirror
-  // 在编辑器 DOM 上统一监听，预览面板位于编辑器内容 DOM 内故可命中）
+  // E21 图表右键菜单 + 07 图片删除菜单：contextmenu 顺序短路分发（handleDOMEvents 由
+  // ProseMirror 在编辑器 DOM 上统一监听，预览面板/图片均位于编辑器内容 DOM 内故可命中）
+  //（非命中区域返回 false 放行浏览器默认菜单）
   crepe.editor.use(
     $prose(
       () =>
         new Plugin({
           props: {
             handleDOMEvents: {
-              contextmenu: (_view, event) => handleMermaidContextMenu(event as MouseEvent),
+              contextmenu: (_view, event) => {
+                const me = event as MouseEvent;
+                // 图片右键优先（07 Delete Image）：命中编辑器管辖图片即拦截弹删除菜单；
+                // 未命中图片放行图表菜单，再未命中放行浏览器默认菜单
+                if (handleImageContext(me)) return true;
+                return handleMermaidContextMenu(me);
+              },
             },
           },
         }),

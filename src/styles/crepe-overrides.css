@@ -94,6 +94,37 @@
   color: #ffffff;
 }
 
+/* 图片右键菜单（07 Delete Image）：挂在 document.body（delete-image.ts），视觉与图表
+   菜单同款。类名独立成段而非选择器合并——mermaid-menu.spec 以
+   /\.markwell-mermaid-menu\s*\{/ 直读本文件钉桩守卫，合并会破坏该断言 */
+.markwell-image-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 128px;
+  padding: 4px;
+  background: var(--crepe-color-background, #ffffff);
+  border: 1px solid var(--crepe-color-outline, #cbd5e1);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.15);
+}
+
+.markwell-image-menu button {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  text-align: left;
+  color: var(--crepe-color-on-background, #1f2937);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.markwell-image-menu button:hover {
+  background: var(--crepe-color-primary, #0f766e);
+  color: #ffffff;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .milkdown * {
     transition: none !important;
