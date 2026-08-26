@@ -10,10 +10,11 @@ import { editorManager } from "./editor-manager";
 import { closeMermaidMenu } from "./mermaid/mermaid-menu";
 
 // 图片右键接线注桩（仅本文件生效）：handleImageContext 的缺省依赖经
-// editorManager.getView() 做模型反查，而 posAtDOM 对原子块恒落在节点前置边界
-// （resolve 后 depth=0，祖先链不含 image-block），真链路取不到 src——缺陷已单独
-// 记录待修。本文件只验证 create-editor 的「命中即拦截」分叉，故以受控 deps 包装
-// 真实现（与 delete-image.spec 的桩策略同构），未命中场景透传缺省行为不受影响。
+// editorManager.getView() 做模型反查。历史注：posAtDOM 对原子块恒落在节点前置
+// 边界曾致真链路取不到 src，该缺陷已由 05655b4 改 nodeBefore/nodeAfter 双侧探测
+// 修复（delete-image.spec 的 AC-P5-1 集成探针走的就是真链路）。本文件保留受控
+// deps 包装只为隔离验证 create-editor 的「命中即拦截」分叉（与 delete-image.spec
+// 的桩策略同构），未命中场景透传缺省行为不受影响。
 const imageCtxStubs = vi.hoisted(() => ({
   deps: undefined as DeleteImageDeps | undefined,
 }));
