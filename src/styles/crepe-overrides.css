@@ -154,3 +154,14 @@
 .markwell-dark .milkdown .markwell-reveal-highlight {
   background-color: rgba(96, 165, 250, 0.35);
 }
+
+/* ===== 07 P10 单图居中：库内置居中的守护性重申 ===== */
+/* T12 实测钉桩：Crepe 的 markdown 图片渲染为 doc 顶层块节点 div.milkdown-image-block
+   （不在 p 内），官方 `p .md-image:only-child` 选择器在 MarkWell DOM 不适用；库内置样式
+   已以 `.image-wrapper { width: fit-content; margin: 0 auto }` 满足单图水平居中。
+   本条按实测嵌套重申同一居中语义，定位为防库升级静默移除内置规则时的漂移守护
+   （亮色模式由内置规则兜底，暗色作用域遵守本文件全局样式约定） */
+.markwell-dark .milkdown .milkdown-image-block > .image-wrapper {
+  width: fit-content;
+  margin-inline: auto;
+}

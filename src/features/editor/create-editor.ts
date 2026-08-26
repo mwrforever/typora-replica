@@ -13,6 +13,7 @@ import "katex/contrib/mhchem";
 import { typoraHeadingIdPlugin } from "./anchor-id/typora-heading-id";
 import { configureFootnoteTooltip, footnoteTooltipPlugin } from "./footnote-tooltip";
 import { handleImageContext } from "../image/delete-image";
+import { zoomRenderPlugin } from "../image/zoom-render";
 import { configureHtmlMerge } from "./html/html-merge";
 import { setupHtmlNodeView } from "./html/html-node-view";
 import { getUploadHandler } from "./image-upload";
@@ -247,6 +248,9 @@ export function createMarkwellEditor(
   // image-block schema 定制（07）：alt 位回归描述语义、缩放比例挪 title 位挂 zoom
   // 命名空间（同 id upsertById 原地替换内置 schema，须紧随其后注册方能覆盖生效）
   crepe.editor.use(markwellImageBlockSchema);
+  // 缩放渲染视图（07 P11）：事务后把 image-block 的 ratio attr 映射到 DOM img
+  // 内联 zoom 样式（ratio 不落 DOM 属性，PluginView 按 pos→nodeDOM 反查）
+  crepe.editor.use(zoomRenderPlugin);
   // 脚注悬停预览浮层（E9 AC-E9-2）：tooltipFactory 形态插件 + config 阶段注入规格
   crepe.editor.use(footnoteTooltipPlugin);
   // TOC 目录（E12）：toc 节点 schema + `[toc]` 输入规则

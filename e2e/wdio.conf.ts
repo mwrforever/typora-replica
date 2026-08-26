@@ -24,6 +24,20 @@ mkdirSync(searchableDir, { recursive: true });
 const searchableFixturePath = path.join(searchableDir, "opening.md");
 writeFileSync(searchableFixturePath, "# 启动测试\n\n自动保存验证占位。\n", "utf8");
 
+/** 1x1 透明 PNG 字节（07 图片显示链路 fixture 的最小合法图片） */
+const PNG_1X1_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+/**
+ * 07 图片显示链路专用 fixture 目录：doc.md 引用同目录 pic.png。
+ * 必须在配置加载期落盘——--reopen-file 是应用启动参数，应用读取 doc.md
+ * 早于 mocha beforeAll 可执行的时点（与上方两目录同一时序约束）
+ */
+const imageFixtureDir = path.join(os.tmpdir(), "markwell-e2e-image");
+mkdirSync(imageFixtureDir, { recursive: true });
+writeFileSync(path.join(imageFixtureDir, "doc.md"), "# 图片显示\n\n![](pic.png)\n", "utf8");
+writeFileSync(path.join(imageFixtureDir, "pic.png"), Buffer.from(PNG_1X1_BASE64, "base64"));
+
 /** 共享 tauri:options（两 capability 仅 --reopen-file 启动参数不同） */
 function tauriOptions(reopenFile: string): Record<string, unknown> {
   return {
@@ -70,7 +84,7 @@ export const config: Options.Testrunner = {
     {
       maxInstances: 1,
       // 其余模块用例维持原启动链路（.fixtures 为侧栏数据源）
-      exclude: ["./specs/search.e2e.ts"],
+      exclude: ["./specs/search.e2e.ts", "./specs/image-display.e2e.ts"],
       "tauri:options": tauriOptions(fixturePath),
     } as unknown as Capabilities.Capability,
     {
@@ -79,6 +93,13 @@ export const config: Options.Testrunner = {
       // 全局搜索三场景在该目录上闭环（含点击定位回 opening.md 标签）
       specs: ["./specs/search.e2e.ts"],
       "tauri:options": tauriOptions(searchableFixturePath),
+    } as unknown as Capabilities.Capability,
+    {
+      maxInstances: 1,
+      // 07 图片显示链路专用：以临时目录 doc.md（引用同目录 pic.png）启动，
+      // 验证 asset 协议动态授权 + CSP + 显示观察器的端到端全链路
+      specs: ["./specs/image-display.e2e.ts"],
+      "tauri:options": tauriOptions(path.join(imageFixtureDir, "doc.md")),
     } as unknown as Capabilities.Capability,
   ],
 
