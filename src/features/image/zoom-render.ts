@@ -15,7 +15,7 @@
 //     （非法值回落 1），纵深防御外部 setAttr 写入脏值导致 zoom:NaN；
 //   - 无 destroy 清理钩子：本视图不挂载任何自有 DOM，编辑器销毁时节点 DOM
 //     随之拆除，无需回滚内联样式。
-import { Plugin, PluginKey } from "@milkdown/kit/prose/state";
+import { Plugin, PluginKey, type EditorState } from "@milkdown/kit/prose/state";
 import type { Node as ProseMirrorNode } from "@milkdown/kit/prose/model";
 import type { EditorView } from "@milkdown/kit/prose/view";
 import { $prose } from "@milkdown/kit/utils";
@@ -66,7 +66,11 @@ export const zoomRenderPlugin = $prose(
       view(editorView: EditorView) {
         syncAllZoom(editorView);
         return {
-          update(view: EditorView) {
+          update(view: EditorView, prevState: EditorState) {
+            // docChanged 早退（审查 Minor）：纯选区事务（移动光标/输入法组合）不改变
+            // 文档——ProseMirror 对无步骤事务复用原文档对象，引用相等即零成本判定，
+            // 免去选区高频路径上的全文档重扫
+            if (view.state.doc === prevState.doc) return;
             syncAllZoom(view);
           },
         };

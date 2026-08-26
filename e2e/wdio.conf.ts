@@ -52,6 +52,9 @@ function tauriOptions(reopenFile: string): Record<string, unknown> {
 /**
  * WebdriverIO 配置：连接 tauri-driver（WebDriver 服务）驱动 Tauri 应用窗口
  *
+ * 跑前必读：含 Rust 变更的分支须先 `cargo build` 重编 debug 二进制（capability 的
+ * application 指向 src-tauri/target/debug 旧产物时缺新命令会假红，详见 e2e/README.md §0）。
+ *
  * 前置条件（本地与 CI 相同）：
  *   1. `npm run dev` 启动 Vite dev server（端口 1420）
  *   2. `tauri-driver` 启动 WebDriver 服务（端口 4444）

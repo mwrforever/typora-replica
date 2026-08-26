@@ -150,12 +150,19 @@ describe("P10 单图居中（库内置行为 + 守护规则钉桩）", () => {
     }
   });
 
-  it("crepe-overrides.css 含实测选择器的单图居中守护规则", () => {
+  it("crepe-overrides.css 含实测选择器的单图居中守护规则（亮/暗两段）", () => {
     // 直读样式文件断言（mermaid-menu.spec 先例）：Crepe 内置已让 .image-wrapper 居中，
-    // 此规则按 MarkWell 实测 DOM 嵌套重申，防库升级静默移除内置居中时漂移
+    // 此规则按 MarkWell 实测 DOM 嵌套重申，防库升级静默移除内置居中时漂移。
+    // 亮色段是当前应用形态（markwell-dark 由 08 落地、现阶段恒亮色）下真实生效的守护；
+    // 暗色段保证 08 激活后行为不变（审查 I-1）
     const css = readFileSync(resolve("src/styles/crepe-overrides.css"), "utf8");
+    // 行首锚定：暗色选择器行含「.markwell-dark .milkdown …」前缀，无锚定时会
+    // 作为子串命中亮色正则造成假绿
     expect(css).toMatch(
-      /\.markwell-dark \.milkdown \.milkdown-image-block > \.image-wrapper\s*\{[^}]*margin-inline:\s*auto/,
+      /^\.milkdown \.milkdown-image-block > \.image-wrapper\s*\{[^}]*margin-inline:\s*auto/m,
+    );
+    expect(css).toMatch(
+      /^\.markwell-dark \.milkdown \.milkdown-image-block > \.image-wrapper\s*\{[^}]*margin-inline:\s*auto/m,
     );
   });
 

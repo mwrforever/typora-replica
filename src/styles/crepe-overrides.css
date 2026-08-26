@@ -159,8 +159,13 @@
 /* T12 实测钉桩：Crepe 的 markdown 图片渲染为 doc 顶层块节点 div.milkdown-image-block
    （不在 p 内），官方 `p .md-image:only-child` 选择器在 MarkWell DOM 不适用；库内置样式
    已以 `.image-wrapper { width: fit-content; margin: 0 auto }` 满足单图水平居中。
-   本条按实测嵌套重申同一居中语义，定位为防库升级静默移除内置规则时的漂移守护
-   （亮色模式由内置规则兜底，暗色作用域遵守本文件全局样式约定） */
+   本条按实测嵌套重申同一居中语义，定位为防库升级静默移除内置规则时的漂移守护。
+   亮/暗两段并存（同 reveal-highlight 先例）：markwell-dark 由 08 主题模块激活，
+   其落地前应用恒亮色，仅写暗色段会使守护现阶段运行时恒惰性（审查 I-1） */
+.milkdown .milkdown-image-block > .image-wrapper {
+  width: fit-content;
+  margin-inline: auto;
+}
 .markwell-dark .milkdown .milkdown-image-block > .image-wrapper {
   width: fit-content;
   margin-inline: auto;

@@ -47,5 +47,17 @@ describe("图片显示链路（07 asset 协议端到端）", () => {
       return el instanceof HTMLImageElement ? el.naturalWidth : -1;
     });
     expect(naturalWidth).toBe(1);
+
+    // P10 单图居中证据（守护规则真实生效）：image-wrapper 两侧计算外边距相等
+    // （margin-inline: auto 在布局后解析为对称像素值；若守护/内置居中失效，
+    // fit-content 的 wrapper 会靠左，左侧恒为 0 而右侧为剩余空间）
+    const margins = await browser.execute(() => {
+      const wrapper = document.querySelector(".milkdown-image-block > .image-wrapper");
+      if (!(wrapper instanceof HTMLElement)) return null;
+      const style = getComputedStyle(wrapper);
+      return { left: style.marginLeft, right: style.marginRight };
+    });
+    expect(margins).not.toBeNull();
+    expect(margins!.left).toBe(margins!.right);
   });
 });
