@@ -197,7 +197,9 @@ function getImageBlockSpec(te: TestEditor) {
   const nodeType = te.view.state.schema.nodes["image-block"];
   // 与 makeTestEditorWithInsertedImage 同款装配断言：schema 未注入即快速失败
   if (!nodeType) throw new Error("image-block 节点类型不存在：定制 schema 未装配");
-  const rawGetAttrs = nodeType.spec.parseDOM[0]?.getAttrs;
+  // NodeSpec.parseDOM 在 prosemirror-model 类型中为可选字段，索引前须收窄；
+  // 缺失时走下方结构漂移守卫快速失败
+  const rawGetAttrs = nodeType.spec.parseDOM?.[0]?.getAttrs;
   if (!rawGetAttrs || !(rawGetAttrs instanceof Function)) {
     throw new Error("parseDOM 首规则缺 getAttrs：定制 schema 结构漂移");
   }
