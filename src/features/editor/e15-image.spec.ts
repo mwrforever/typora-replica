@@ -128,7 +128,8 @@ describe("E15 图片", () => {
       if (!input) throw new Error("alt 编辑输入框未出现");
       return input;
     });
-    // 修改 alt（caption 落盘为 markdown title）并失焦确认：落盘同步更新
+    // 修改 alt 并失焦确认：07 定制后 caption attr ↔ markdown alt 位双向映射
+    //（T9 定制前库内置为 caption↔title 位），落盘同步更新
     fireEvent.input(captionInput, { target: { value: "新描述" } });
     fireEvent.blur(captionInput);
     await vi.waitFor(() => expect(te.getMarkdown()).toContain("新描述"));

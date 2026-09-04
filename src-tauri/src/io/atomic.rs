@@ -53,6 +53,50 @@ pub fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 原子写二进制文件（同目录临时文件 + rename 覆盖，图片字节专用）
+///
+/// 与 atomic_write 同一原子性保证（tmp fsync 后 rename）；区别仅在内容为原始字节，
+/// 不做行尾归一。失败清理临时文件并返回中文错误。
+///
+/// @param path 目标文件路径（父目录必须已存在）
+/// @param content 原始图片字节
+/// @returns 成功返回 ()；任一步失败清理临时文件并返回中文错误
+pub fn atomic_write_bytes(path: &Path, content: &[u8]) -> Result<(), String> {
+    assert_safe_path(path)?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "目标路径无父目录".to_string())?;
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "目标文件名非法".to_string())?;
+    // 临时文件名与 atomic_write 同构：点前缀 + 进程号 + 纳秒时间戳，同目录保证 rename 原子性
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp_path = parent.join(format!(".{file_name}.{}.{}.tmp", std::process::id(), nanos));
+    let write_result = (|| -> std::io::Result<()> {
+        let mut tmp = fs::File::create(&tmp_path)?;
+        tmp.write_all(content)?;
+        // 字节落盘（fsync）后再替换：断电/崩溃时目标文件保持旧内容不损坏
+        tmp.sync_all()?;
+        drop(tmp);
+        // 保留原文件权限（只读属性等），目标不存在时跳过——与 atomic_write 同策略
+        if let Ok(meta) = fs::metadata(path) {
+            let _ = fs::set_permissions(&tmp_path, meta.permissions());
+        }
+        fs::rename(&tmp_path, path)?;
+        Ok(())
+    })();
+    if let Err(e) = write_result {
+        // 任一步失败清理临时文件再上报（不留部分内容的垃圾 tmp）
+        let _ = fs::remove_file(&tmp_path);
+        return Err(format!("原子写失败: {e}"));
+    }
+    Ok(())
+}
+
 /// 路径安全校验：拒绝含 `..` 组件的路径（逃逸注入防线）
 ///
 /// 绝对路径允许（用户可打开任意路径）；仅拦截路径穿越组件。
@@ -140,6 +184,16 @@ mod tests {
         let dir = temp_dir();
         let target = dir.join("sub").join("doc.md"); // 父目录不存在：创建 tmp 即失败
         assert!(atomic_write(&target, "x").is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn atomic_write_bytes_roundtrip_and_overwrite() {
+        let dir = temp_dir();
+        let target = dir.join("img.bin");
+        atomic_write_bytes(&target, &[1, 2, 3]).unwrap();
+        atomic_write_bytes(&target, &[9]).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), vec![9]);
         let _ = fs::remove_dir_all(&dir);
     }
 

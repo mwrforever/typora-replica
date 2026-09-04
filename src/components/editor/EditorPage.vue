@@ -12,6 +12,8 @@ import { defineComponent, onBeforeUnmount } from "vue";
 import { createMarkwellEditor } from "../../features/editor/create-editor";
 import { parseFrontMatter } from "../../features/editor/frontmatter/frontmatter";
 import { editorManager } from "../../features/editor/editor-manager";
+import { attachLocalImageView } from "../../features/image/local-image-view";
+import { authorizeActiveDocumentDir, getActiveDocContext } from "../../features/image/register";
 
 /** 组件属性 */
 const props = withDefaults(
@@ -25,6 +27,9 @@ const props = withDefaults(
   }>(),
   { initialDoc: "", adopt: true, onInstanceReady: undefined },
 );
+
+/** 本地图片显示观察器句柄（编辑器创建时挂载，组件卸载时断开防泄漏） */
+let imageViewHandle: { destroy(): void } | undefined;
 
 /**
  * 编辑器装配子组件
@@ -45,9 +50,16 @@ const EditorSurface = defineComponent({
       if (props.adopt) {
         editorManager.adopt(crepe, frontMatter);
       } else {
-        // 被动挂载：实例归调用方（tabs 注册表）管理，门面在激活时 adopt
+        // 被动挂载：实例归调用方（tabs 注册表）管理，门面在激活时 adopt。
+        // 上缴为同步链路（TabHost → controller.onInstanceReady → 登记+激活），
+        // 返回后活动会话即指向本实例，其后的目录授权才能读到正确 currentDir
         props.onInstanceReady?.({ crepe, frontMatter });
       }
+      // 07：本地图片显示观察器——DOM 层把本地 src 换 asset://（绝不写回文档模型），
+      // 上下文与上传链路共用同一快照口径；句柄随组件卸载销毁
+      imageViewHandle = attachLocalImageView(root, { getContext: getActiveDocContext });
+      // 打开目录 → asset protocol 动态授权（fire-and-forget，失败仅告警不阻断装配）
+      authorizeActiveDocumentDir();
       return crepe;
     });
     return () => slots.default?.();
@@ -55,6 +67,9 @@ const EditorSurface = defineComponent({
 });
 
 onBeforeUnmount(() => {
+  // 观察器先于编辑器销毁：避免销毁过程中的 DOM 变更再触发无谓解析
+  imageViewHandle?.destroy();
+  imageViewHandle = undefined;
   // 被动模式不销毁门面（实例销毁由 @milkdown/vue 集成层在卸载时负责；
   // 门面可能已指向另一标签，误 destroy 会杀掉其他实例）
   if (props.adopt) editorManager.destroy();

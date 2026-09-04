@@ -183,6 +183,22 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 07 图片粘贴核心纯逻辑 100%（escape() 等价转义/P3 三开关路径组合/合成剪贴板名判定；
+        // 组件与装配层走全局 80% + E2E）
+        "src/features/image/image-src-policy.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        // 07 编排层 100%（onUpload 工厂：目标决策序/合成名分流/策略拼装/失败 blob 回落；
+        // pickTargetDir 为 Task 10 对话框链路复用的公共决策口）
+        "src/features/image/upload-flow.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },

@@ -40,6 +40,15 @@ export function getActiveSession(): DocumentSession | undefined {
 }
 
 /**
+ * 当前激活标签的 front matter 内文（07 图片链路消费：typora-root-url /
+ * typora-copy-images-to 解析基准；无激活标签或无 FM 返回 null）
+ * 只增不改的补充读取器，与 getActiveSession 同源（adopted 实例表）。
+ */
+export function getActiveFrontMatter(): string | null {
+  return adoptedTabId ? (instances.get(adoptedTabId)?.frontMatter ?? null) : null;
+}
+
+/**
  * 激活标签：停旧起新（autoSave 订阅切换）+ adopt 门面
  *
  * 执行序（已锁定）：停旧 autoSave → adopt（事件桥定向解绑旧实例并挂新实例）→

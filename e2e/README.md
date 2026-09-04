@@ -2,6 +2,21 @@
 
 本项目有两套端到端验证，覆盖相同的验证目标（应用启动、前端渲染、编辑器挂载）：
 
+## 0. 跑前必读：debug 二进制时效
+
+拉取（或切换到）含 **Rust 侧变更**（新增/修改 Tauri command、插件接线等）的分支后，
+必须先重编 debug 二进制再跑 WebDriver E2E，否则 tauri-driver 拉起的是
+`src-tauri/target/debug/typora-replica.exe` 旧产物——缺新命令时前端 invoke 静默降级
+（catch 后保底），用例表现为「元素在但状态不更新」的假红：
+
+```bash
+cd src-tauri && cargo build && cd ..   # 先于 npm run test:e2e 执行
+```
+
+事故案例（2026-08-26，07 模块 T12）：image-display E2E 首轮断言 img.src 未解析为
+asset 协议 URL——二进制落后两天提交，缺 `resolve_image_path` 运行时授权链路；
+`cargo build` 重编后同一用例即绿。
+
 ## 1. CI 冒烟测试（GitHub Actions，确定性验证）
 
 - 脚本：`e2e/smoke-ci.mjs`

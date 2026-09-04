@@ -91,4 +91,28 @@ describe("偏好设置（store 持久化）", () => {
     expect(s.outline.collapsible).toBe(true); // 空 patch 深合并保持存量值
     expect(memory.get("outline")).toEqual({ collapsible: true }); // 写回不丢存量
   });
+
+  it("image 组缺失键逐层回落默认（四开关全关+目标目录空）", async () => {
+    // 无存储键（beforeEach 已清空）→ image 组逐字段回落默认值：
+    // 四开关全关对齐 Typora 用户实测（07 spec P2/P3：不改变用户既有插入习惯）
+    const s = await loadSettings();
+    expect(s.image).toEqual(DEFAULT_SETTINGS.image);
+    // 逐字段钉死五项默认，防止 toEqual 对 undefined 键的宽容造成静默漏字段
+    expect(s.image.copyToFolderEnabled).toBe(false);
+    expect(s.image.copyTargetDir).toBe("");
+    expect(s.image.relativePathEnabled).toBe(false);
+    expect(s.image.dotSlashPrefixEnabled).toBe(false);
+    expect(s.image.urlEscapeEnabled).toBe(false);
+  });
+
+  it("updateSettings 增量合并 image 字段且不影响其他组", async () => {
+    // 只开 copy to folder 总开关（单字段增量）——其余四字段回落当前值，
+    // autoSave 等其他组不被波及；整组写回独立键 image（与 loadSettings 读取键对称）
+    const s = await updateSettings({ image: { copyToFolderEnabled: true } });
+    expect(s.image.copyToFolderEnabled).toBe(true);
+    expect(s.image.relativePathEnabled).toBe(false); // 未触及键保持默认关
+    expect(s.autoSave.enabled).toBe(true); // 其他组不受影响
+    const reloaded = await loadSettings();
+    expect(reloaded.image).toEqual({ ...DEFAULT_SETTINGS.image, copyToFolderEnabled: true }); // 已写回 store
+  });
 });

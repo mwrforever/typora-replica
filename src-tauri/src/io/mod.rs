@@ -9,5 +9,6 @@ pub mod drafts;
 pub mod encoding;
 pub mod file_ops;
 pub mod fs;
+pub mod images;
 pub mod search;
 pub mod watch;

@@ -75,6 +75,19 @@ describe("编辑器实例管理", () => {
     expect(document.querySelector(".markwell-mermaid-menu")).toBeNull();
   });
 
+  it("destroy 关闭已打开的图片删除菜单（07 T11 移交，不残留 body 挂载）", async () => {
+    await editorManager.create("# 标题");
+    // 模拟菜单打开状态：图片删除菜单由 delete-image 弹于 body（showImageMenu 为模块
+    // 私有，与 FIX-10 图表菜单同款手法直挂同类名验证销毁路径的 closeImageMenu 调用）
+    const menu = document.createElement("div");
+    menu.className = "markwell-image-menu";
+    document.body.appendChild(menu);
+    expect(document.querySelector(".markwell-image-menu")).not.toBeNull();
+    editorManager.destroy();
+    // 销毁路径同步关闭图片菜单，不残留至下一次任意点击
+    expect(document.querySelector(".markwell-image-menu")).toBeNull();
+  });
+
   it("连续 create 两次无重叠（先完成旧实例销毁再创建新实例）", async () => {
     await editorManager.create("第一份");
     const afterFirst = document.body.querySelectorAll("div").length;

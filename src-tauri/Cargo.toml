@@ -19,7 +19,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# protocol-asset：asset:// 本地图片协议与 asset_protocol_scope 运行时授权 API
+# （07 D-4 动态授权依赖；未启用时 allow_asset_directory 无法编译，协议也不注册）
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -30,6 +32,8 @@ regex = "1"
 walkdir = "2.5.0"
 notify = "8.2.0"
 trash = "5.2"
+# 07 图片粘贴存盘：相对路径计算（跨盘符返回 None）
+pathdiff = "0.2"
 tauri-plugin-dialog = "2"
 tauri-plugin-store = "2"
 

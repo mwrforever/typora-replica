@@ -3,9 +3,31 @@ import { Crepe } from "@milkdown/crepe";
 import { codeBlockConfig } from "@milkdown/kit/component/code-block";
 import { editorViewCtx } from "@milkdown/kit/core";
 import { describe, expect, it, vi } from "vitest";
+import type { DeleteImageDeps } from "../image/delete-image";
 import { makeTestEditor } from "../../test/editor-test-utils";
 import { createMarkwellEditor, markwellRemarkHandlers } from "./create-editor";
+import { editorManager } from "./editor-manager";
 import { closeMermaidMenu } from "./mermaid/mermaid-menu";
+
+// 图片右键接线注桩（仅本文件生效）：handleImageContext 的缺省依赖经
+// editorManager.getView() 做模型反查。历史注：posAtDOM 对原子块恒落在节点前置
+// 边界曾致真链路取不到 src，该缺陷已由 05655b4 改 nodeBefore/nodeAfter 双侧探测
+// 修复（delete-image.spec 的 AC-P5-1 集成探针走的就是真链路）。本文件保留受控
+// deps 包装只为隔离验证 create-editor 的「命中即拦截」分叉（与 delete-image.spec
+// 的桩策略同构），未命中场景透传缺省行为不受影响。
+const imageCtxStubs = vi.hoisted(() => ({
+  deps: undefined as DeleteImageDeps | undefined,
+}));
+vi.mock("../image/delete-image", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../image/delete-image")>();
+  return {
+    ...actual,
+    handleImageContext: (event: MouseEvent) =>
+      imageCtxStubs.deps
+        ? actual.handleImageContext(event, imageCtxStubs.deps)
+        : actual.handleImageContext(event),
+  };
+});
 
 describe("createMarkwellEditor 工厂", () => {
   it("onUpload 回调注入 ImageBlock 特性配置（构造不抛错）", async () => {
@@ -54,6 +76,43 @@ describe("createMarkwellEditor 工厂（E21 mermaid 接线）", () => {
     chart.remove();
     await new Promise((r) => setTimeout(r, 0));
     await crepe.destroy();
+  });
+
+  it("contextmenu 命中编辑器管辖图片：拦截事件弹出删除菜单（07 图片右键优先于图表菜单）", async () => {
+    // create-editor 的 contextmenu 分发序：图片右键优先命中即 return true 拦截，
+    // 未命中才轮到图表菜单。此前仅图表支路有用例，「return true 拦截」支路缺接线
+    // 验证——经文件顶部的受控 deps 注桩使真实现判定命中（缺陷说明见顶部注桩注释）
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const crepe = createMarkwellEditor(root, "![图注](p.png)");
+    await crepe.create();
+    editorManager.adopt(crepe);
+    const img = root.querySelector("img");
+    expect(img).not.toBeNull();
+    // 受控反查：仅编辑器 DOM 内的图片返回模型原始 src（与生产 extractOriginalSrc 语义对齐）
+    imageCtxStubs.deps = {
+      getContext: () => ({}) as never,
+      confirm: async () => false,
+      invoke: async () => undefined,
+      countReferences: () => 1,
+      removeNodeBySrc: () => true,
+      notify: () => {},
+      resolveOriginalSrc: (el) =>
+        crepe.editor.action((ctx) => ctx.get(editorViewCtx)).dom.contains(el) ? "p.png" : undefined,
+    };
+    const event = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 3,
+      clientY: 4,
+    });
+    img!.dispatchEvent(event);
+    // 拦截生效的两项可观察产物：preventDefault 已调用 + 图片删除菜单挂载 body
+    expect(event.defaultPrevented).toBe(true);
+    expect(document.querySelector(".markwell-image-menu")?.textContent).toContain("删除图片");
+    // 收尾：摘桩防泄漏进后续用例；门面 destroy 统一关闭菜单/解绑事件桥/销毁实例
+    imageCtxStubs.deps = undefined;
+    editorManager.destroy();
   });
 
   it("调用方提供的 CodeMirror renderPreview 被 mermaid 钩子链式包裹（非图表语言透传）", async () => {

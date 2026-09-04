@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   activateInstance,
   clearRegistryForTest,
+  getActiveFrontMatter,
   getActiveSession,
   getInstance,
   recycleLeastRecent,
@@ -93,5 +94,42 @@ describe("editorRegistry 实例注册表", () => {
     activateInstance("nope");
     expect(a.autoSave.start).not.toHaveBeenCalled();
     expect(getActiveSession()).toBeUndefined();
+  });
+
+  it("getActiveFrontMatter：从未激活任何标签时返回 null", () => {
+    // 07 图片链路在无激活标签时不得拿到 undefined（契约：null 表示「无」）
+    const a = fakeInstance(1);
+    registerInstance("a", a);
+    expect(getActiveFrontMatter()).toBeNull();
+  });
+
+  it("getActiveFrontMatter：激活标签的 FM 内文原样返回（图片路径解析基准）", () => {
+    // typora-root-url / typora-copy-images-to 解析依赖激活标签的 FM 原文，
+    // 直呼真实现验证 adopt 后读取器与登记实例同源
+    const fm = "---\ntypora-root-url: docs\n---";
+    const a = { ...fakeInstance(1), frontMatter: fm };
+    registerInstance("a", a);
+    activateInstance("a");
+    expect(getActiveFrontMatter()).toBe(fm);
+  });
+
+  it("getActiveFrontMatter：无 front matter 的文档返回 null 而非 undefined", () => {
+    // frontMatter 为 null 的实例经 ?? 回落后仍须是 null（调用方按 null 判空）
+    const a = fakeInstance(1); // fakeInstance 默认 frontMatter: null
+    registerInstance("a", a);
+    activateInstance("a");
+    expect(getActiveFrontMatter()).toBeNull();
+  });
+
+  it("注销激活中的标签后 getActiveFrontMatter 同步回落 null", () => {
+    // 同时钉住 unregisterInstance 对激活中标签的 adoptedTabId 清除分支：
+    // 注销后读取器不得再返回已关闭文档的 FM 残留
+    const fm = "---\nkey: value\n---";
+    const a = { ...fakeInstance(1), frontMatter: fm };
+    registerInstance("a", a);
+    activateInstance("a");
+    expect(getActiveFrontMatter()).toBe(fm);
+    unregisterInstance("a");
+    expect(getActiveFrontMatter()).toBeNull();
   });
 });

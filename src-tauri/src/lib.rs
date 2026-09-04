@@ -29,7 +29,9 @@ pub fn run() {
         // Task 13 get_cli_args；
         // 03 Task 2 create_file/create_dir/rename_path/duplicate_path/delete_to_trash（file_ops.rs）；
         // D2 前置 unwatch_dir（watch.rs，与 watch_dir 同模块）；
-        // 06 P3 search_in_folder/cancel_search（search.rs）
+        // 06 P3 search_in_folder/cancel_search（search.rs）；
+        // 07 save_image/import_local_images + Task 3 resolve_image_path/
+        // allow_asset_directory（asset 协议运行时授权，images.rs）
         .invoke_handler(tauri::generate_handler![
             io::commands::get_cli_args,
             io::commands::read_file,
@@ -46,7 +48,11 @@ pub fn run() {
             io::watch::watch_dir,
             io::watch::unwatch_dir,
             io::search::search_in_folder,
-            io::search::cancel_search
+            io::search::cancel_search,
+            io::images::save_image,
+            io::images::import_local_images,
+            io::images::resolve_image_path,
+            io::images::allow_asset_directory
         ])
         .run(tauri::generate_context!())
     {

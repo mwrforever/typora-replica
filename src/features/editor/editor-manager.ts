@@ -11,6 +11,7 @@ import type { Selection } from "@milkdown/kit/prose/state";
 import { editorViewCtx } from "@milkdown/kit/core";
 import type { Crepe } from "@milkdown/crepe";
 import { createMarkwellEditor } from "./create-editor";
+import { closeImageMenu } from "../image/delete-image";
 import { parseFrontMatter, reinsertFrontMatter } from "./frontmatter/frontmatter";
 import { closeMermaidMenu } from "./mermaid/mermaid-menu";
 import { destroyEditorEvents, setupEditorEvents } from "./editor-events";
@@ -127,6 +128,10 @@ class EditorManager {
     // 图表右键菜单挂载于 document.body，关闭路径仅菜单项点击与一次性 click 监听——
     // 销毁路径不主动关闭会残留菜单 div 直至下一次任意点击（FIX-10）。幂等：无菜单时 no-op
     closeMermaidMenu();
+    // 图片删除菜单（07 T11 移交）同挂 document.body，销毁路径同步关闭防残留；
+    // 幂等 no-op。此处构成 editor-manager ↔ delete-image 循环 import：双方顶层均不
+    // 求值对方导出（仅函数体内使用），ESM live binding 下安全（mermaid-menu 先例同构）
+    closeImageMenu();
     if (this.crepe) {
       // 定向解绑当前实例的事件桥（04 多标签：per-Crepe 清理，不影响其他实例）
       destroyEditorEvents(this.crepe);
