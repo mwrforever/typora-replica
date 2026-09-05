@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { resolveLaunch } from "./launch-behavior";
 import type { AppSettings } from "./settings";
 
-/** 构造测试设置（默认 restore-folder；outline/image 为 05/07 新增必选键，补基准值） */
+/** 构造测试设置（默认 restore-folder；outline/image/theme 为 05/07/08 新增必选键，补基准值） */
 function makeSettings(over: Partial<AppSettings> = {}): AppSettings {
   return {
     autoSave: { enabled: true, timerMinutes: 5 },
@@ -17,6 +17,7 @@ function makeSettings(over: Partial<AppSettings> = {}): AppSettings {
       dotSlashPrefixEnabled: false,
       urlEscapeEnabled: false,
     },
+    theme: { lightTheme: "markwell-light", darkTheme: "markwell-dark" },
     ...over,
   };
 }
