@@ -18,6 +18,7 @@ import type { QuickItem } from "./features/open-quickly/fuzzy";
 import { DraftRecovery } from "./features/document/draft-recovery";
 import { editorManager } from "./features/editor/editor-manager";
 import { registerImageFeature } from "./features/image/register";
+import { registerThemeFeature } from "./features/theme/register";
 import TabHost from "./features/tabs/TabHost.vue";
 import TabBar from "./features/tabs/TabBar.vue";
 import ConfirmCloseDialog from "./features/tabs/ConfirmCloseDialog.vue";
@@ -204,6 +205,8 @@ onMounted(async () => {
   // 07 图片功能装配（幂等，仅启动调一次）：onUpload 真实实现注入 01 注册表 +
   // 设置快照预加载/失效订阅。先于启动决策执行，保证首标签挂载前注册表就绪
   registerImageFeature();
+  // 08 主题装配：内置主题注入 + 后续热刷新/明暗联动（失败经 store 内日志降级）
+  registerThemeFeature();
   // 启动链路：cli 参数 + 偏好 → 决策 → 多标签装配（失败回退新建，提示不崩溃）
   const [cli, settings] = await Promise.all([getCliArgs(), loadSettings()]);
   // 路径存在性探测（I-1 修复）：listDir 优先——readFile 对目录必失败，
