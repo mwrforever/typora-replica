@@ -88,6 +88,15 @@ describe("themeStore 基座", () => {
     expect(document.getElementById("markwell-theme-link")).not.toBeNull();
   });
 
+  it("init 时设置读取失败仅记录错误且 init 恒 resolve（不产生 unhandled rejection）", async () => {
+    // register.ts 以 void 调 init：设置/扫描任一腿拒绝都必须在 init 内部接管，
+    // 否则启动期 unhandled promise rejection（批审 Important-1）
+    mocks.loadSettings.mockRejectedValueOnce(new Error("store 插件异常"));
+    const store = useThemeStore();
+    await expect(store.init()).resolves.toBeUndefined();
+    expect(mocks.errorSpy).toHaveBeenCalled();
+  });
+
   it("selectTheme 持久化并立即重挂（AC-T1-2）", async () => {
     const store = useThemeStore();
     await store.init();

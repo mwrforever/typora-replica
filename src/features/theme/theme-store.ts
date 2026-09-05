@@ -66,22 +66,30 @@ export const useThemeStore = defineStore("theme", () => {
   }
 
   /**
-   * 初始化（App 装配调一次）：设置 + 目录扫描并行 → 镜像状态 → asset 授权 → 首次注入。
-   * 授权失败仅记录（主题 CSS 将被 asset 协议拒绝，界面回落默认样式），不中断编辑主链路。
+   * 初始化（App 装配经 register 以 void 调一次）：设置 + 目录扫描并行 → 镜像状态 →
+   * asset 授权 → 首次注入。任一环节失败均在本函数内接管拒绝（init 恒 resolve，
+   * 调用方永不产生 unhandled rejection）：
+   * - 授权失败仅记录并继续注入（主题 CSS 将被 asset 协议拒绝，界面回落默认样式）；
+   * - 设置读取/目录扫描失败（store 插件异常、主题目录创建失败等）无数据可注入，
+   *   仅记录并整体降级（跳过注入），不中断编辑主链路。
    */
   async function init(): Promise<void> {
-    const [settings, list] = await Promise.all([loadSettings(), listThemes()]);
-    lightTheme.value = settings.theme.lightTheme;
-    darkTheme.value = settings.theme.darkTheme;
-    themes.value = list.themes;
-    hasBaseUserCss.value = list.hasBaseUserCss;
-    assetBase.value = convertFileSrc(list.dir).replace(/[/\\]+$/, "");
     try {
-      await allowThemeAssetDirectory(list.dir);
+      const [settings, list] = await Promise.all([loadSettings(), listThemes()]);
+      lightTheme.value = settings.theme.lightTheme;
+      darkTheme.value = settings.theme.darkTheme;
+      themes.value = list.themes;
+      hasBaseUserCss.value = list.hasBaseUserCss;
+      assetBase.value = convertFileSrc(list.dir).replace(/[/\\]+$/, "");
+      try {
+        await allowThemeAssetDirectory(list.dir);
+      } catch (e) {
+        console.error("[MarkWell] 主题目录 asset 授权失败（主题降级为默认样式）", e);
+      }
+      applyCurrent();
     } catch (e) {
-      console.error("[MarkWell] 主题目录 asset 授权失败（主题降级为默认样式）", e);
+      console.error("[MarkWell] 主题初始化失败（设置读取/目录扫描，主题降级为默认样式）", e);
     }
-    applyCurrent();
   }
 
   /**
