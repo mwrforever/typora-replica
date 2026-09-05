@@ -1,7 +1,7 @@
 // src/features/theme/theme-store.spec.ts
 // 主题状态机基座（08 spec §5 themeStore）：初始化装配/明暗选择持久化/内置回落。
 // theme-io/settings/@tauri-apps/api core 三层 mock；applyThemeCss 走真实 DOM（jsdom head）。
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 
 const mocks = vi.hoisted(() => ({
@@ -124,5 +124,109 @@ describe("themeStore 基座", () => {
     // 内置也缺失 → undefined（主题层移除，默认样式兜底；宪法 A.1.2.3 新增 API 用 undefined）
     store.themes = [];
     expect(store.resolveActiveTheme("light")).toBeUndefined();
+  });
+});
+
+describe("themeStore 热刷新（Task 10）", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    setActivePinia(createPinia());
+    document.head.innerHTML = "";
+    document.documentElement.className = "";
+    vi.clearAllMocks();
+    mocks.listThemes.mockResolvedValue(LIST);
+    mocks.loadSettings.mockResolvedValue(SETTINGS);
+    mocks.updateSettings.mockImplementation(
+      async (patch: { theme?: Partial<{ lightTheme: string; darkTheme: string }> }) => ({
+        theme: { ...SETTINGS.theme, ...patch.theme },
+      }),
+    );
+    vi.spyOn(console, "error").mockImplementation(mocks.errorSpy);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("目录变更事件 → 300ms 防抖后重扫并更新列表（AC-T3-1 数据侧）", async () => {
+    const store = useThemeStore();
+    await store.init();
+    expect(store.themes).toHaveLength(3);
+    // 捕获 watchThemes 订阅的批量回调
+    const onEvents = mocks.watchThemes.mock.calls[0]?.[0] as
+      ((events: unknown[]) => void) | undefined;
+    expect(onEvents).toBeDefined(); // init 必须已订阅 watchThemes（RED：未订阅时此处失败）
+    // 新主题落盘（模拟用户复制 css）→ 事件批量到达
+    mocks.listThemes.mockResolvedValue({
+      ...LIST,
+      themes: [
+        ...LIST.themes,
+        {
+          name: "solar-amber",
+          fileName: "solar-amber.css",
+          label: "Solar Amber",
+          hasUserCss: false,
+        },
+      ],
+    });
+    onEvents?.([{ kind: "create", path: "C:\\t\\solar-amber.css" }]);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(mocks.listThemes).toHaveBeenCalledTimes(2); // init 一次 + 刷新一次
+    expect(store.themes.some((t) => t.name === "solar-amber")).toBe(true);
+  });
+
+  it("事件风暴合并为单次刷新（防抖尾沿重置）", async () => {
+    const store = useThemeStore();
+    await store.init();
+    const onEvents = mocks.watchThemes.mock.calls[0]?.[0] as
+      ((events: unknown[]) => void) | undefined;
+    expect(onEvents).toBeDefined(); // init 必须已订阅 watchThemes（RED：未订阅时此处失败）
+    onEvents?.([{ kind: "modify", path: "C:\\t\\a.css" }]);
+    await vi.advanceTimersByTimeAsync(200);
+    onEvents?.([{ kind: "modify", path: "C:\\t\\b.css" }]);
+    await vi.advanceTimersByTimeAsync(200); // 距上次事件 200ms < 300ms，未触发
+    expect(mocks.listThemes).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(100); // 尾沿到点
+    expect(mocks.listThemes).toHaveBeenCalledTimes(2);
+  });
+
+  it("修改激活主题 → link href ?t= 更新（AC-T3-2）", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_000);
+    const store = useThemeStore();
+    await store.init();
+    const before = (document.getElementById("markwell-theme-link") as HTMLLinkElement).getAttribute(
+      "href",
+    );
+    const onEvents = mocks.watchThemes.mock.calls[0]?.[0] as
+      ((events: unknown[]) => void) | undefined;
+    expect(onEvents).toBeDefined(); // init 必须已订阅 watchThemes（RED：未订阅时此处失败）
+    vi.spyOn(Date, "now").mockReturnValue(2_000);
+    onEvents?.([{ kind: "modify", path: `${LIST.dir}\\markwell-light.css` }]);
+    await vi.advanceTimersByTimeAsync(300);
+    const after = (document.getElementById("markwell-theme-link") as HTMLLinkElement).getAttribute(
+      "href",
+    );
+    expect(after).not.toBe(before);
+    expect(after).toContain("?t=2000");
+  });
+
+  it("dispose 清理待触发定时器（悬挂回调不再刷新）", async () => {
+    const store = useThemeStore();
+    await store.init();
+    const onEvents = mocks.watchThemes.mock.calls[0]?.[0] as
+      ((events: unknown[]) => void) | undefined;
+    expect(onEvents).toBeDefined(); // init 必须已订阅 watchThemes（RED：未订阅时此处失败）
+    onEvents?.([{ kind: "create", path: "C:\\t\\x.css" }]);
+    store.dispose();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(mocks.listThemes).toHaveBeenCalledTimes(1); // 仅 init 那次
+  });
+
+  it("watchThemes 订阅失败仅记录并降级（热刷新退化为重启可见——官方基线）", async () => {
+    mocks.watchThemes.mockRejectedValueOnce(new Error("订阅失败"));
+    const store = useThemeStore();
+    await store.init();
+    expect(mocks.errorSpy).toHaveBeenCalled();
+    expect(document.getElementById("markwell-theme-link")).not.toBeNull(); // 首次注入不受影响
   });
 });

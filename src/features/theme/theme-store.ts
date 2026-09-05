@@ -8,7 +8,7 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { allowThemeAssetDirectory, listThemes } from "../../services/theme-io";
+import { allowThemeAssetDirectory, listThemes, watchThemes } from "../../services/theme-io";
 import type { ThemeMeta } from "../../services/theme-io";
 import { loadSettings, updateSettings } from "../../services/settings";
 import { applyThemeCss } from "./theme-css";
@@ -87,6 +87,12 @@ export const useThemeStore = defineStore("theme", () => {
         console.error("[MarkWell] 主题目录 asset 授权失败（主题降级为默认样式）", e);
       }
       applyCurrent();
+      // 热刷新订阅（AC-T3-1/2）：失败仅记录——降级为重启可见（官方基线行为，D-5）
+      try {
+        await watchThemes(scheduleRefresh);
+      } catch (e) {
+        console.error("[MarkWell] 主题热刷新订阅失败（降级为重启可见）", e);
+      }
     } catch (e) {
       console.error("[MarkWell] 主题初始化失败（设置读取/目录扫描，主题降级为默认样式）", e);
     }
@@ -105,6 +111,36 @@ export const useThemeStore = defineStore("theme", () => {
     applyCurrent();
   }
 
+  /** 防抖定时器（目录事件风暴合并；dispose 清理防悬挂回调；undefined=无待触发定时器） */
+  let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** 目录事件 → 300ms 尾沿防抖刷新（Rust 侧另有 100ms 合并窗口，此处合并前端风暴） */
+  function scheduleRefresh(): void {
+    if (refreshTimer !== undefined) {
+      clearTimeout(refreshTimer);
+    }
+    refreshTimer = setTimeout(() => {
+      refreshTimer = undefined;
+      void refresh();
+    }, 300);
+  }
+
+  /** 重扫目录 + 重挂链（?t= 取当前时间戳穿透 WebView 缓存；AC-T3-1/2） */
+  async function refresh(): Promise<void> {
+    const list = await listThemes();
+    themes.value = list.themes;
+    hasBaseUserCss.value = list.hasBaseUserCss;
+    applyCurrent();
+  }
+
+  /** 清理可释放资源（App 卸载/测试收尾调用；Rust 监视槽位随应用生命周期存活） */
+  function dispose(): void {
+    if (refreshTimer !== undefined) {
+      clearTimeout(refreshTimer);
+      refreshTimer = undefined;
+    }
+  }
+
   return {
     themes,
     lightTheme,
@@ -114,6 +150,8 @@ export const useThemeStore = defineStore("theme", () => {
     hasBaseUserCss,
     init,
     selectTheme,
+    refresh,
+    dispose,
     resolveActiveTheme,
   };
 });
