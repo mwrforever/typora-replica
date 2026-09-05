@@ -74,7 +74,9 @@ jobs:
         with:
           fetch-depth: 0
       - name: gitleaks 密钥泄露扫描
-        uses: gitleaks/gitleaks-action@v2
+        # v3：GitHub 2026-09-16 起移除 Node 20 action 运行时，v2（Node 20）届时失效；
+        # v2→v3 仅运行时迁移，输入/输出/行为无变化（官方 README 迁移指引）
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: npm audit 依赖漏洞扫描
