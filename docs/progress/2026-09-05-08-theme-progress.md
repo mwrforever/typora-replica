@@ -21,7 +21,7 @@
 | P1 | 实施计划撰写 | ✅ 完成 | 计划 7f7b442 已提交；16 条 AC 全映射；18 任务全标注；7 批次合规；自审三查留痕（附录 C） |
 | P2 | SDD 预检与批次登记 | ✅ 完成 | ledger 首行为本计划标识；pre-flight 6 冲突主控裁决→计划修订 27a2d04；批次表已登记 ledger |
 | P3 | 分批 TDD 实现与批审 | ✅ 完成 | B1~B7 全 complete（3 修复轮）；16 AC 证据齐全；三阶段验收门过；七项门禁全绿（2026-09-06 取证） |
-| P4 | 全分支终审 | ⬜ 未开始 | — |
+| P4 | 全分支终审 | ✅ 完成 | Ready to merge = Yes；fix wave 1 次（51a4790）+ scoped re-review 过；deferred minors triage 留痕（must-fix 0） |
 | P5 | 端到端验收 | ⬜ 未开始 | — |
 | P6 | PR 与 code-review 插件审核 | ⬜ 未开始 | — |
 | P7 | 终验与收尾 | ⬜ 未开始 | — |
@@ -141,3 +141,15 @@
 - 测试规模：Vitest 92 文件 860 用例（含 theme 域 27 Vitest + E2E 2 用例）；Rust 124（含 io::themes 14）。
 - spec 三阶段验收门：基座（AC-T1/T2 数据链路）✅、管理增强（AC-T4/T6 ✅ + AC-T3 数据链路）✅、明暗字体（AC-T5/T7/T8 披露降级段除外）✅。
 - deferred minors 与 parked：全部入 ledger（`.superpowers/sdd/2026-09-05-08-theme/progress.md`），无 parked 裁决（全部 findings 经修复轮闭环或列 deferred）。
+
+## P4 全分支终审结论（2026-09-06）
+
+- 终审专员（最强档）审查 2b77db6..232c5f0（29 commits，5451 行新增）：**Ready to merge = Yes**。Critical 0；Important 1（docs force-add 入库治理项——需用户在 PR 把关时二选一：接受入库（同步更新 .gitignore 注释）或 revert 改本地留痕，见决策日志）；Minor 5（2 条已进 fix wave，其余留迭代/披露）。
+- **ONE fix wave**（51a4790）：F1 大小写夹具折叠注释修正 + F2 e2e/README §0.1 亮色前置说明（含事实校准：还原主体为 shell 层）。scoped re-review：All findings addressed, no new Critical/Important breakage。
+- **合并前取证**：`cargo check --release` exit 0（devtools 降级分支编译，终审 Minor-2 要求）。
+- **Deferred minors triage**（终审裁决，must-fix = 0）：
+  - PR 披露 6 条：T2-1 内置主题被改名大写时静默不再预置（触发苛刻）；T9-1 dispose 不退订 watchThemes（Channel 无退订 API，单窗口无影响，12 模块重装配/多窗口前必须先裁决）；T13-1 重复 init 泄漏首次色系订阅（同上触发条件）；T14-1 DevTools 可视断言无自动化（debug 手动）；T18-1 E2E 用例 1 兜底值 vacuous 窄窗口（用例 2 哨兵断言闭合）；T18-2 wdio 强杀遗留默认 theme 组（与回落等价）。
+  - 留迭代：T2-2/T3-1/T4-1/T4-3/T7-1/T7-2/T8-1/T8-2/T8-4/T9-2/T13-2/T15-1/T15-2/T15-3/T18-3（全部 ledger 在案，SDD 工作区删除后以本节与本记录为凭）。
+  - 已消化：T4-2（Task 9 落地）、T8-3（Task 16 登记）、T17-1（无需动作）。
+  - TASK.md 登记建议（P7 收尾）：①T9-1/T13-1 生命周期两项（触发条件：12 模块重装配/多窗口）②spec 勘误两项（§7 18→16 条、§3 22→23 变量，宪法 B.2.2 待用户同意）③T18-4 已随 fix wave 完成无需登记。
+- **PR 披露补充（终审建议 5）**：Typora 用户主题（仅 :root/#write 定义变量）在暗色系统下，其映射变量（0,1,0）被 crepe-overrides 暗色段（0,2,0）压制——暗色系统下 Typora 亮色主题显示为暗色默认而非自定义色，属 spec §3「映射尽力而为 + 还原度损失如实接受」既定折衷。
