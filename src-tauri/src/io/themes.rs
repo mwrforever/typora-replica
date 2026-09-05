@@ -114,6 +114,34 @@ pub fn scan_themes(dir: &Path) -> Result<ThemeListDto, String> {
     })
 }
 
+/// 内置主题表（词干, CSS 全文）：include_str! 编译期嵌入二进制，打包零配置（D-1）
+pub const BUILT_IN_THEMES: &[(&str, &str)] = &[
+    (
+        "markwell-light",
+        include_str!("../../assets/themes/markwell-light.css"),
+    ),
+    (
+        "markwell-dark",
+        include_str!("../../assets/themes/markwell-dark.css"),
+    ),
+];
+
+/// 预置内置主题到主题目录（T1：亮/暗各一套起步）
+///
+/// 仅缺失才写——用户对内置主题的修改不被启动覆盖；目录缺失则建。
+/// @returns 失败返回中文错误（setup 钩子调用方记录日志并降级，不阻断启动）
+pub fn ensure_builtin_themes(dir: &Path) -> Result<(), String> {
+    fs::create_dir_all(dir).map_err(|e| format!("创建主题目录失败: {e}"))?;
+    for (name, css) in BUILT_IN_THEMES {
+        let target = dir.join(format!("{name}.css"));
+        if target.exists() {
+            continue;
+        }
+        fs::write(&target, css).map_err(|e| format!("预置内置主题失败({name}): {e}"))?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,6 +256,42 @@ mod tests {
         );
         assert_eq!(json["themes"][0]["hasUserCss"], serde_json::json!(true));
         assert!(json["dir"].is_string());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ---- ensure_builtin_themes ----
+    #[test]
+    fn builtin_seeded_when_missing() {
+        let dir = temp_dir();
+        ensure_builtin_themes(&dir).unwrap();
+        for (name, css) in BUILT_IN_THEMES {
+            let path = dir.join(format!("{name}.css"));
+            assert!(path.is_file(), "内置主题 {name} 未预置");
+            assert_eq!(fs::read_to_string(&path).unwrap(), *css);
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn builtin_existing_file_not_overwritten() {
+        // 用户可能修改内置主题（Typora 惯例）：已存在不覆盖
+        let dir = temp_dir();
+        fs::write(dir.join("markwell-light.css"), "/* 用户自定义 */").unwrap();
+        ensure_builtin_themes(&dir).unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.join("markwell-light.css")).unwrap(),
+            "/* 用户自定义 */"
+        );
+        // 另一套（缺失）仍正常预置
+        assert!(dir.join("markwell-dark.css").is_file());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn builtin_ensure_creates_missing_dir() {
+        let dir = temp_dir().join("nested/themes");
+        ensure_builtin_themes(&dir).unwrap();
+        assert!(dir.join("markwell-light.css").is_file());
         let _ = fs::remove_dir_all(&dir);
     }
 }
