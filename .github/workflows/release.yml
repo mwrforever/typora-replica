@@ -11,13 +11,17 @@ on:
   push:
     tags: ["v*"]
 
+# 权限最小化：workflow 级仅授只读；创建 Release 需要的写权限下沉到 job 级单独授予
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release:
     name: 构建签名并发布
     runs-on: windows-latest
+    # softprops/action-gh-release 创建 Release 必需 contents: write
+    permissions:
+      contents: write
     env:
       # 自签名测试阶段的固定密码（正式证书接入后改为读取 Secrets）
       SIGNING_PASSWORD: typora-replica-dev-signing-2026
