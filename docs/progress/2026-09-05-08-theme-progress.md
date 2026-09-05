@@ -19,7 +19,7 @@
 | --- | --- | --- | --- |
 | P0 | 环境与分支准备 | ✅ 完成 | worktree 就绪；基线四项全绿；gh 可用；进度文件已提交 |
 | P1 | 实施计划撰写 | ✅ 完成 | 计划 7f7b442 已提交；16 条 AC 全映射；18 任务全标注；7 批次合规；自审三查留痕（附录 C） |
-| P2 | SDD 预检与批次登记 | ⬜ 未开始 | — |
+| P2 | SDD 预检与批次登记 | ✅ 完成 | ledger 首行为本计划标识；pre-flight 6 冲突主控裁决→计划修订 27a2d04；批次表已登记 ledger |
 | P3 | 分批 TDD 实现与批审 | ⬜ 未开始 | — |
 | P4 | 全分支终审 | ⬜ 未开始 | — |
 | P5 | 端到端验收 | ⬜ 未开始 | — |
@@ -57,6 +57,13 @@
 - 计划锁定裁决 D-1~D-10（内置主题 Rust 资产+setup 预置 / opener open_path / 系统跟随不钉死 setTheme / 双选择器作用域 / notify 静默 unwatch 接受披露 / 命令层 mock 直呼豁免 / ?t= 防缓存 / read_dir 精确匹配大小写 / media query 零改写 / URL 安全由命名规则保证）——按推荐方案执行，PR 把关可否决。
 - 主控对计划的两处修订：①AC 映射表加勘误注（spec §7「18 条」实为 16 条）；②Task 17 改为更新主仓本地 README.md、不入库不做空提交。
 
+## P2 预检证据（2026-09-05）
+
+- SDD 工作区：`.worktrees/08-theme/.superpowers/sdd/2026-09-05-08-theme/`（`scripts/sdd-workspace` 建立，git-ignored 已验证）；ledger `progress.md` 首行 `# SDD ledger — plan: docs/superpowers/plans/2026-09-05-08-theme.md`。
+- pre-flight 冲突扫描（派遣扫描专员通读 3082 行计划）：**6 项冲突 + 8 条提示**，主控逐项裁决（全部为 L1 可推出的技术层修订，不涉 spec 行为/范围，故不升级用户——红线 7），续派计划专员修订落地，提交 `27a2d04`（计划 3224 行）。
+- 批次表 B1~B7 已登记 ledger（BASE 开批时回填）。
+- todo 映射：TodoWrite 以批次为粒度（B1~B7），任务级进度由 ledger 承担（SDD 恢复地图）。
+
 ## 决策日志
 
 | 时间 | 阶段 | 层级 | 决策 | 依据 |
@@ -67,6 +74,15 @@
 | 2026-09-05 | P1 | L1 | **README.md 不入库**：Task 17 改为更新主仓本地 README.md（7 行模板 → 追加主题节），宪法 B.5.6 以工作树同步满足 | 1a44a76 裁决明确含 README.md；主仓已有同名未跟踪文件，入库会致合入后 `git pull` 拒绝覆盖；DoD「README 已随 PR 同步」在 P7 终验如实记录为「工作树同步 + 披露」 |
 | 2026-09-05 | P1 | L1 | spec §7「AC 共 18 条」实为 16 条（AC 表逐条计数），实现以 16 条为准全覆盖；spec 计数勘误待用户同意后回改 | 宪法 B.2.2 改 spec 须用户同意；不影响功能行为，列 PR 披露 |
 | 2026-09-05 | P1 | L1 | 采纳计划 D-6：命令层不 mock 直呼（偏离宪法 A.6.5 先例），核心函数显式 `dir` 参数 100% 单测 + DTO 序列化钉桩 + E2E 实证 wire | 计划专员源码实证：mock 运行时 identifier 为空串，`app_data_dir()` 解析到真实 %APPDATA%，直呼会触达真实用户数据；列 PR 披露 |
+| 2026-09-05 | P2 | L1 | pre-flight A-1：Task 10 四处 `const [, args] = mock.calls[0]` 解构笔误 → 统一为 `mock.calls[0]?.[0]` + `toBeDefined` 守卫（Task 13 同款） | 单参调用 index 1 恒 undefined，strict 下编译错；计划内两种写法互证 |
+| 2026-09-05 | P2 | L1 | pre-flight A-2：Task 13 App.vue cleanup 句柄在 onMounted 回调内声明对 onBeforeUnmount 不可见 → setup 顶层 `let cleanupThemeFeature: (() => void) \| undefined`，onMounted 赋值、onBeforeUnmount `?.()`，三处同落 Task 13 | 作用域可见性；最少改动原则避免 Task 8 阶段 void 赋值类型错 |
+| 2026-09-05 | P2 | L1 | pre-flight A-3：Task 7 `upsertLink` 移除后重建 appendChild 致层序倒置 → 采纳方案③按 `LAYER_ORDER` 定位 insertBefore/append，新增顺序守卫 RED 用例 | spec T6 四层顺序为契约；边缘路径（主题目录一度为空 + base.user.css 存在）真实可达 |
+| 2026-09-05 | P2 | L1 | pre-flight B-1：新增 API 全部 `undefined` 表「无」（resolveActiveTheme / ActiveThemeRefs.theme / upsertLink href / 各 timer 与 stop 句柄）；保留 null 仅 DOM 原生签名对齐处并附中文注释 | 宪法 A.1.2.3 + 计划 Global Constraints 行 19 |
+| 2026-09-05 | P2 | L1 | pre-flight B-2：Task 15 为钉桩任务（无生产代码可转绿）显式豁免 RED 并声明；断言失败按 bug 流程回修 Task 3/7 | TDD 铁律适用于有实现体的任务；豁免须明示，列 PR 披露 |
+| 2026-09-05 | P2 | L1 | pre-flight C-1：Task 9 `start_theme_watch` 与 watch.rs:109-119 约 12 行接线胶水重复——**接受**，不重构 02 命令；docstring 留痕 + 附录 A 预登记 | 全局「精准修改」约束优先于 12 行胶水 DRY；核心件 watch_dir_inner/flush_loop 已复用 |
+| 2026-09-05 | P2 | L1 | pre-flight D8-①：Crepe 变量实为 23 个（含 `--crepe-base-font-size`），spec §3 / 调研「22 个」为漏计；实现按 23 个断言，spec 勘误待用户同意 | node_modules crepe/style.css:1-23 实证；宪法 B.2.2 |
+| 2026-09-05 | P2 | L1 | pre-flight D8-②：Task 18 E2E 前置补「wdio.conf 配置加载期经 store 文件重置 settings.theme 为默认、onComplete 还原原字节」 | themeStore.init 仅启动读一次设置，spec before 钩子晚于装载；07 E2E fixtures 配置加载期预生成为既有先例 |
+| 2026-09-05 | P2 | L1 | pre-flight D4/D5/D6：同步命令内同步 IO / `Result<T,String>` / `std::thread::spawn` 三项与宪法字面张力——延续 02 既有形态不新引入模式，附录 A 汇总披露 | 宪法 A.1.1 既有风格优先；commands.rs/watch.rs/search.rs 实证 |
 
 ## 派遣日志
 
@@ -75,6 +91,8 @@
 | 2026-09-05 | P1 | 计划专员（首派） | spec / 调研 / 宪法 / 执行文档 / writing-plans | 无（600s 无活动超时，无半成品） | 空返回，按防崩溃约束重派 |
 | 2026-09-05 | P1 | 调研专员（Explore） | 16 项依赖面核查清单 | 结构化核查报告（路径:行号证据） | 完成；关键结论：12 菜单/10 设置未落地、CSP style/font-src 缺 asset:、.markwell-dark 激活 JS 空白、watch.rs 三件套可复用 |
 | 2026-09-05 | P1 | 计划专员（重派，携核查结论） | spec / 调研 / 宪法 / 执行文档 / writing-plans / 07 计划先例 / 核查报告 | `docs/superpowers/plans/2026-09-05-08-theme.md` | 完成；自审三查通过；主控复核后两处修订并提交 7f7b442 |
+| 2026-09-05 | P2 | pre-flight 扫描专员 | 计划全文 / 宪法 / 全局规范 / task-reviewer rubric | 6 冲突 + 8 提示结构化报告 | 完成；主控逐项裁决（见决策日志） |
+| 2026-09-05 | P2 | 计划专员（续派修订） | 主控 8 项裁决 | 计划修订（3224 行）+ 类型一致性重跑通过 | 完成；主控抽查验证后提交 27a2d04 |
 
 ## AC 证据核对区（16 条——spec §7「18 条」为计数笔误；P3 起逐条回填）
 
