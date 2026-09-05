@@ -1,13 +1,16 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-/// 应用级共享状态（02：目录监视句柄持有；06：全局搜索在途任务句柄）
+/// 应用级共享状态（02：目录监视句柄持有；06：全局搜索在途任务句柄；08：主题目录监视槽位）
 pub struct AppState {
     /// 按路径的多槽监视句柄 Map（watch_dir 持活，防 drop 停止监视；
     /// key = 监视根目录路径；unwatch_dir 移除槽位即停止对应目录监视）
     pub watcher: Mutex<HashMap<String, notify::RecommendedWatcher>>,
     /// 06 全局搜索在途任务（search_in_folder 替换持活；cancel_search 置位清槽）
     pub search_job: Mutex<Option<io::search::SearchJobHandle>>,
+    /// 08 主题目录监视槽位（单槽：watch_themes 重复调用替换旧句柄即停旧监视；
+    /// 与文档监视多槽 Map 隔离——用户把 themes 目录当工作区打开时互不干扰）
+    pub theme_watcher: Mutex<Option<notify::RecommendedWatcher>>,
 }
 
 pub mod io;
@@ -23,6 +26,7 @@ pub fn run() {
         .manage(AppState {
             watcher: Mutex::new(HashMap::new()),
             search_job: Mutex::new(None),
+            theme_watcher: Mutex::new(None),
         })
         .setup(|app| {
             // 08 主题：预置内置主题到数据目录 themes/（缺失才写，D-1）。
@@ -65,7 +69,8 @@ pub fn run() {
             io::images::resolve_image_path,
             io::images::allow_asset_directory,
             io::themes::list_themes,
-            io::themes::open_theme_folder
+            io::themes::open_theme_folder,
+            io::themes::watch_themes
         ])
         .run(tauri::generate_context!())
     {

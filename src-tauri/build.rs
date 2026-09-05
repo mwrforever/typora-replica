@@ -44,6 +44,7 @@ fn main() {
             // 权限不会生成，capabilities 引用即构建失败
             "list_themes",
             "open_theme_folder",
+            "watch_themes",
         ]))
         // 关闭 tauri-build 默认 manifest：改由下方 rustc-link-arg 统一嵌入，
         // 否则主程序出现两份 manifest 资源（winres 一份 + 链接器一份）冲突

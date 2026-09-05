@@ -305,6 +305,7 @@ mod tests {
         app.manage(crate::AppState {
             watcher: std::sync::Mutex::new(std::collections::HashMap::new()),
             search_job: std::sync::Mutex::new(std::option::Option::None),
+            theme_watcher: std::sync::Mutex::new(std::option::Option::None),
         });
         let handle = app.handle().clone();
         let dir_a = temp_dir().to_string_lossy().into_owned();

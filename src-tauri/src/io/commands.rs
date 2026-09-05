@@ -58,8 +58,8 @@ pub struct DraftEntry {
     pub date: String,
 }
 
-/// 目录监视事件
-#[derive(Debug, Clone, Serialize)]
+/// 目录监视事件（Deserialize 供测试端对 Channel 载荷做类型化反解，search.rs 先例）
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WatchEvent {
     /// create / remove / modify / other（rename 事件由 notify 以 modify 形态到达）

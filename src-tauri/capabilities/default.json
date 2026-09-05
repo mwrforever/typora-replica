@@ -29,6 +29,7 @@
     "allow-resolve-image-path",
     "allow-allow-asset-directory",
     "allow-list-themes",
-    "allow-open-theme-folder"
+    "allow-open-theme-folder",
+    "allow-watch-themes"
   ]
 }

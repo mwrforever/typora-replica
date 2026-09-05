@@ -2,13 +2,17 @@
 //
 // 职责：命名规则校验与菜单标签转换（T4 纯函数）、目录扫描（T1）、
 // 内置主题预置（T1，clean-room 原创 CSS）、主题命令薄壳。
-// 线程安全：纯函数无共享状态；监视句柄生命周期见 watch_themes（Task 9）。
+// 线程安全：纯函数无共享状态；监视句柄生命周期见 watch_themes。
 // 命名规则保证的附带性质：合法文件名 URL 安全（小写字母+连字符），拼接
 // asset 协议 URL 无需编码（D-10）。
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
+use tauri::ipc::Channel;
+
+use crate::io::commands::WatchEvent;
+use crate::io::watch::{flush_loop, watch_dir_inner};
 
 /// 主题文件名合法性（AC-T4-2/3，官方规则对齐：非字母字符仅连字符、数字禁用）
 ///
@@ -196,6 +200,55 @@ pub fn open_theme_folder<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<
         .map_err(|e| format!("打开主题目录失败: {e}"))
 }
 
+/// 建立主题目录监视（显式 dir 可测面；事件经 mpsc + 合并窗口批量投递）
+///
+/// 与 io::watch::watch_dir 同一接线形态（mpsc 汇集 + flush_loop 批量），
+/// 独立实现而非重构 watch_dir——有意取舍（C-1）：核心件 watch_dir_inner/flush_loop
+/// 已复用，命令侧约 12 行胶水（watch.rs:109-119 同构）不值得为此重构 02 命令
+/// （精准修改约束：不改工作正常的既有实现体）。
+/// @returns 须持活的监视句柄（drop 即停止）
+fn start_theme_watch(
+    dir: &Path,
+    channel: Channel<Vec<WatchEvent>>,
+) -> Result<notify::RecommendedWatcher, String> {
+    let (tx, rx) = std::sync::mpsc::channel::<WatchEvent>();
+    let watcher = watch_dir_inner(dir, move |ev| {
+        // 合并器已断开（监视被替换、线程退出）后忽略
+        let _ = tx.send(ev);
+    })?;
+    std::thread::spawn(move || {
+        flush_loop(rx, move |batch| {
+            // Channel 发送失败（前端已销毁）忽略：监视继续直到被替换
+            let _ = channel.send(batch);
+        });
+    });
+    Ok(watcher)
+}
+
+/// 命令：订阅主题目录变更（AC-T3-1/2 热刷新事件源）
+///
+/// 单槽替换：重复订阅替换旧句柄（旧句柄 drop 即停旧监视）——前端重订阅自愈。
+/// 与文档监视（AppState.watcher 多槽）隔离：用户把 themes 目录当工作区打开时，
+/// watch_dir/unwatch_dir 不影响主题监视。
+/// 注：app 参数经 mock 运行时直呼会解析真实 %APPDATA%（D-6），命令层不直测。
+#[tauri::command]
+pub fn watch_themes<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    channel: Channel<Vec<WatchEvent>>,
+) -> Result<(), String> {
+    use tauri::Manager;
+    let dir = themes_dir(&app)?;
+    let watcher = start_theme_watch(&dir, channel)?;
+    // State 为临时值须先 let 绑定再取锁（watch.rs 同款 E0716 规避）
+    let state = app.state::<crate::AppState>();
+    let mut guard = state
+        .theme_watcher
+        .lock()
+        .map_err(|_| "主题监视状态锁损坏".to_string())?;
+    *guard = Some(watcher);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -376,5 +429,52 @@ mod tests {
         // identifier 为空 → 目录为 data_dir 本身 + "themes"；仅断言尾部段拼接关系
         assert!(dir.ends_with("themes"));
         assert!(dir.to_string_lossy().ends_with("themes"));
+    }
+
+    use std::time::{Duration, Instant};
+
+    // ---- start_theme_watch（显式 dir 可测面；命令层按 D-6 豁免 mock 直呼）----
+    #[test]
+    fn start_theme_watch_delivers_batches() {
+        let dir = temp_dir();
+        let got: std::sync::Arc<std::sync::Mutex<Vec<Vec<WatchEvent>>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = got.clone();
+        // 最小适配：tauri 2.11 的 Channel::new 回调形态为 InvokeResponseBody
+        // （search.rs 同款——brief 骨架按旧版 Vec<T> 直收形态书写）；send(Vec<WatchEvent>)
+        // 序列化为 Json 载荷，此处反解还原事件批次，顺带校验 wire 契约可逆
+        let channel = Channel::<Vec<WatchEvent>>::new(move |body| {
+            if let tauri::ipc::InvokeResponseBody::Json(text) = body {
+                let batch: Vec<WatchEvent> =
+                    serde_json::from_str(&text).expect("WatchEvent 批次反序列化失败");
+                sink.lock().unwrap().push(batch);
+            }
+            Ok(())
+        });
+        let watcher = start_theme_watch(&dir, channel).unwrap();
+        fs::write(dir.join("new-theme.css"), "x").unwrap();
+        // 事件经 100ms 合并窗口异步到达，轮询等待（沿 watch.rs 先例）
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let batches = got.lock().unwrap().clone();
+            if batches
+                .iter()
+                .any(|b| b.iter().any(|ev| ev.path.contains("new-theme.css")))
+            {
+                break;
+            }
+            if Instant::now() >= deadline {
+                panic!("等待主题目录变更事件超时");
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        drop(watcher); // 句柄持活语义：drop 即停止（测试收尾）
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn start_theme_watch_missing_dir_rejected() {
+        let channel = Channel::<Vec<WatchEvent>>::new(|_| Ok(()));
+        assert!(start_theme_watch(std::path::Path::new("Z:/no-such-dir-xyz"), channel).is_err());
     }
 }

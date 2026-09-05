@@ -668,6 +668,7 @@ mod tests {
         app.manage(crate::AppState {
             watcher: std::sync::Mutex::new(std::collections::HashMap::new()),
             search_job: std::sync::Mutex::new(std::option::Option::None),
+            theme_watcher: std::sync::Mutex::new(std::option::Option::None),
         });
         app
     }
