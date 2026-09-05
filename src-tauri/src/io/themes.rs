@@ -81,9 +81,26 @@ pub fn scan_themes(dir: &Path) -> Result<ThemeListDto, String> {
     let entries = fs::read_dir(dir).map_err(|e| format!("读取主题目录失败: {e}"))?;
     let mut names: Vec<String> = Vec::new();
     for entry in entries {
-        let Ok(entry) = entry else { continue };
-        // 仅普通文件（用户误放子目录/符号链接不参与匹配）
-        if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+        // 单个目录项读取失败（权限/占用抖动）：跳过并告警，不让坏条目中断整次扫描
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                eprintln!("[MarkWell] warn: 读取主题目录条目失败，已跳过: {e}");
+                continue;
+            }
+        };
+        // 仅普通文件（用户误放子目录/符号链接不参与匹配）；类型探测失败同样保守跳过并告警
+        let file_type = match entry.file_type() {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!(
+                    "[MarkWell] warn: 主题目录条目类型探测失败，已跳过: {}（{e}）",
+                    entry.file_name().to_string_lossy()
+                );
+                continue;
+            }
+        };
+        if !file_type.is_file() {
             continue;
         }
         names.push(entry.file_name().to_string_lossy().into_owned());
@@ -97,6 +114,8 @@ pub fn scan_themes(dir: &Path) -> Result<ThemeListDto, String> {
         let Some(name) = file_name.strip_suffix(".css") else {
             continue;
         };
+        // D-8：read_dir 收集的磁盘真实文件名做精确字符串比对，禁 Path::exists()
+        // （Windows 大小写不敏感，exists() 会误命中大小写不同的 {theme}.user.css）
         let has_user_css = names.iter().any(|n| n == &format!("{name}.user.css"));
         themes.push(ThemeDto {
             name: name.to_string(),
@@ -229,6 +248,21 @@ mod tests {
         assert!(dto.has_base_user_css);
         let mint = dto.themes.iter().find(|t| t.name == "solar-mint").unwrap();
         assert!(mint.has_user_css); // 精确命中
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn scan_ignores_uppercase_user_css_variant_ac_t6_3() {
+        // 判别力钉桩：大写名按创建时大小写独立落盘（Windows 保留大小写），read_dir
+        // 只见大写名，精确比对不命中；若实现回退为 Path::exists()（D-8 禁用形态），
+        // 大小写不敏感文件系统必误命中大写文件——本用例必红（上一用例对 exists() 无感）
+        let dir = temp_dir();
+        fs::write(dir.join("solar-mint.css"), "x").unwrap();
+        fs::write(dir.join("SOLAR-MINT.USER.CSS"), "x").unwrap();
+        let dto = scan_themes(&dir).unwrap();
+        let mint = dto.themes.iter().find(|t| t.name == "solar-mint").unwrap();
+        assert!(!mint.has_user_css); // 大小写不同即视为不存在（D-8）
+        assert!(!dto.has_base_user_css);
         let _ = fs::remove_dir_all(&dir);
     }
 
