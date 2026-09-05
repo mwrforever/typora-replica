@@ -1,6 +1,11 @@
 # 本地 git hook 配置（AGENTS.md 八、CI/CD 强制集成）
 # 每次提交前执行通用文本检查 + 前端 lint/format + Rust 格式化；
 # 全量测试（cargo test / vitest / clippy）走 pre-push 钩子，避免拖慢每次提交。
+# default_install_hook_types：固化两级钩子安装，避免新环境只执行
+# `pre-commit install` 时漏装 pre-push 重量级门禁（J8）。
+default_install_hook_types:
+  - pre-commit
+  - pre-push
 repos:
   # 通用钩子：尾随空白、行尾、yaml 校验、大文件拦截、合并冲突检测
   - repo: https://github.com/pre-commit/pre-commit-hooks
