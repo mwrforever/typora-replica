@@ -17,6 +17,17 @@ cd src-tauri && cargo build && cd ..   # 先于 npm run test:e2e 执行
 asset 协议 URL——二进制落后两天提交，缺 `resolve_image_path` 运行时授权链路；
 `cargo build` 重编后同一用例即绿。
 
+## 0.1 theme.e2e.ts 的系统色系前提
+
+theme E2E 依赖系统亮色（D-3「系统跟随」注入：默认激活 markwell-light，本机系统为
+暗色时用例假红）。WebView2 152 起忽略 `WEBVIEW2_*` 环境变量通道（宪法 C.6.5 同类
+先例），置亮只能走注册表；跑完须还原原值（已实测）：
+
+```bash
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v AppsUseLightTheme /t REG_DWORD /d 1 /f   # 运行前临时置亮
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v AppsUseLightTheme /t REG_DWORD /d 0 /f   # 同一 shell finally 还原为暗色原值 0
+```
+
 ## 1. CI 冒烟测试（GitHub Actions，确定性验证）
 
 - 脚本：`e2e/smoke-ci.mjs`

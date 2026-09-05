@@ -330,8 +330,7 @@ mod tests {
         fs::write(dir.join("solar-mint.css"), "x").unwrap();
         fs::write(dir.join("solar-mint.user.css"), "x").unwrap();
         fs::write(dir.join("base.user.css"), "x").unwrap();
-        // 大小写不匹配（Windows 文件系统不敏感，扫描必须精确字符串比对——AC-T6-3）
-        fs::write(dir.join("SOLAR-MINT.USER.CSS"), "x").unwrap();
+        // 大写变体在 Windows 上与同名小写文件折叠为同一文件，独立判别力由 scan_ignores_uppercase_user_css_variant_ac_t6_3 专用用例承担（AC-T6-3）
         let dto = scan_themes(&dir).unwrap();
         assert!(dto.has_base_user_css);
         let mint = dto.themes.iter().find(|t| t.name == "solar-mint").unwrap();
