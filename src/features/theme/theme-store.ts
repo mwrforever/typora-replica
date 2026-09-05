@@ -125,12 +125,21 @@ export const useThemeStore = defineStore("theme", () => {
     }, 300);
   }
 
-  /** 重扫目录 + 重挂链（?t= 取当前时间戳穿透 WebView 缓存；AC-T3-1/2） */
+  /**
+   * 重扫目录 + 重挂链（?t= 取当前时间戳穿透 WebView 缓存；AC-T3-1/2）。
+   * 恒 resolve（对齐 init 同形态）：目录扫描拒绝（瞬时 IO 异常等）仅记录降级，
+   * 保持当前主题与列表不变——防抖回调 void 消费与后续模块 await 均不产生
+   * unhandled rejection。
+   */
   async function refresh(): Promise<void> {
-    const list = await listThemes();
-    themes.value = list.themes;
-    hasBaseUserCss.value = list.hasBaseUserCss;
-    applyCurrent();
+    try {
+      const list = await listThemes();
+      themes.value = list.themes;
+      hasBaseUserCss.value = list.hasBaseUserCss;
+      applyCurrent();
+    } catch (e) {
+      console.error("[MarkWell] 热刷新失败（主题列表扫描），保持当前主题与列表不变", e);
+    }
   }
 
   /** 清理可释放资源（App 卸载/测试收尾调用；Rust 监视槽位随应用生命周期存活） */

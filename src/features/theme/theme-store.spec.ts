@@ -222,6 +222,29 @@ describe("themeStore 热刷新（Task 10）", () => {
     expect(mocks.listThemes).toHaveBeenCalledTimes(1); // 仅 init 那次
   });
 
+  it("热刷新目录扫描失败恒 resolve 并降级保持旧列表（不产生 unhandled rejection）", async () => {
+    const store = useThemeStore();
+    await store.init();
+    expect(store.themes).toHaveLength(3);
+    // init 腿已消费成功值；刷新腿持续拒绝（模拟目录瞬时 IO 异常）
+    mocks.listThemes.mockRejectedValue(new Error("目录瞬时 IO 异常"));
+    const onEvents = mocks.watchThemes.mock.calls[0]?.[0] as
+      ((events: unknown[]) => void) | undefined;
+    expect(onEvents).toBeDefined();
+    // 防抖回调 void 消费路径：刷新腿必须被尝试且拒绝被内部接管（否则 vitest 计 unhandled rejection）
+    onEvents?.([{ kind: "modify", path: "C:\\t\\a.css" }]);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(mocks.listThemes).toHaveBeenCalledTimes(2); // init 一次 + 刷新一次（刷新腿已尝试）
+    expect(store.themes).toHaveLength(3); // 降级语义：旧列表原样保持
+    // [MarkWell] 中文降级日志（经 console.error spy 接管断言）
+    expect(mocks.errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[MarkWell] 热刷新失败"),
+      expect.anything(),
+    );
+    // 导出 API 恒 resolve（与 init 的 940a1f4 同形态断言；Task 13/14 直接 await 消费路径）
+    await expect(store.refresh()).resolves.toBeUndefined();
+  });
+
   it("watchThemes 订阅失败仅记录并降级（热刷新退化为重启可见——官方基线）", async () => {
     mocks.watchThemes.mockRejectedValueOnce(new Error("订阅失败"));
     const store = useThemeStore();
