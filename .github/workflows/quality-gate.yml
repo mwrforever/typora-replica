@@ -88,9 +88,21 @@ jobs:
         # （GHSA-jmr9-qjv8-65gv，仅影响解压不可信 zip；E2E 仅解压微软官方驱动，
         #   风险可控，待上游 @puppeteer/browsers 修复后自动转绿）
         run: npm audit --audit-level=critical
-      - name: cargo-deny 许可证与依赖审查
+      - name: cargo-deny 依赖审查（bans/licenses/sources 严格阻断）
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
+          # 许可证/禁用依赖/来源三检查严格失败（任一违规红门禁）；
+          # advisories 拆分到下一步（官方推荐管道：防新安全公告突袭打断 CI）
+          arguments: --all-features bans licenses sources
           # Cargo 清单位于 src-tauri/ 子目录（Tauri 项目结构）
           manifest-path: src-tauri/Cargo.toml
+      - name: cargo-deny 安全公告（advisories 不阻断，仅报告）
+        # 官方推荐的 advisories 矩阵拆分：新公告发布时此步标红但不阻断合入，
+        # 供人工评估升级时机；bans/licenses/sources 的严格性不受影响
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --all-features advisories
+          manifest-path: src-tauri/Cargo.toml
+        continue-on-error: true
