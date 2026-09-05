@@ -106,14 +106,14 @@
 | AC-T4-1 | my-first-theme.css → "My First Theme" | Rust 单测 | Task 1 | `label_splits_and_capitalizes_ac_t4_1` ok | ✅ |
 | AC-T4-2 | theme2.css（含数字）不入菜单 | Rust 单测 | Task 1/2 | `digit_in_name_rejected_ac_t4_2` ok | ✅ |
 | AC-T4-3 | MyTheme.css（大写）不入菜单 | Rust 单测 | Task 1/2 | `uppercase_rejected_ac_t4_3` ok | ✅ |
-| AC-T5-1 | 亮/暗主题分设，系统明暗切换自动应用 | Vitest（真实系统切换不可 E2E，披露） | Task 12/13 | | ⬜ |
-| AC-T5-2 | 主题内 media query 自适应生效 | Vitest 注入零改写钉桩 + 设计保证 D-3/D-9（披露） | Task 7 | | ⬜ |
+| AC-T5-1 | 亮/暗主题分设，系统明暗切换自动应用 | Vitest（真实系统切换不可 E2E，披露） | Task 12/13 | Vitest change→mode 解析→注入+根类双证据断言（theme 域 27 用例内）；真实系统切换披露 D-3/D-9 | ◐ Vitest ✅ |
+| AC-T5-2 | 主题内 media query 自适应生效 | Vitest 注入零改写钉桩 + 设计保证 D-3/D-9（披露） | Task 7 | theme-css 注入仅重挂 link 零改写内容钉桩；E2E 哨兵色真实生效佐证注入链路 | ✅（披露） |
 | AC-T6-1 | base.user.css 对所有主题生效 | Rust 单测 + Vitest | Task 2/7 | Rust hasBaseUserCss 扫描 + Vitest 第 3 层挂载用例 | ✅ |
 | AC-T6-2 | {theme}.user.css 仅该主题生效 | Rust 单测 + Vitest | Task 2/7 | Rust hasUserCss 扫描 + Vitest 第 4 层挂载/随主题移除用例 | ✅ |
 | AC-T6-3 | 文件名大小写不匹配不生效 | Rust 单测（read_dir 精确匹配 D-8） | Task 2 | `scan_detects_user_css_case_sensitive_ac_t6_1_2_3` + B1 修复轮判别力增强用例（exists() 形态必红实证） | ✅ |
-| AC-T7-1 | debug 构建 Shift+F12 开合 DevTools | Vitest + Rust cfg 编译验证（可视断言手动，披露） | Task 14 | | ⬜ |
-| AC-T8-1 | 主题引用 ./fonts/x.woff2 正确加载 | Vitest 组合证据（披露） | Task 15 | | ⬜ |
-| AC-T8-2 | 内置主题 rem 字号跟随字号偏好 | Vitest rem 钉桩（偏好联动待 10，披露） | Task 3/15 | | ⬜ |
+| AC-T7-1 | debug 构建 Shift+F12 开合 DevTools | Vitest + Rust cfg 编译验证（可视断言手动，披露） | Task 14 | devtools.spec 4 用例（真实 KeyboardEvent + preventDefault + 注销幂等）；cfg 双分支 cargo check 通过；可视断言 debug 手动 | ◐ 自动化面 ✅ |
+| AC-T8-1 | 主题引用 ./fonts/x.woff2 正确加载 | Vitest 组合证据（披露） | Task 15 | builtin-theme 钉桩 href 目录基准（变异测试自证判别力）+ 07 授权递归复用 + CSP font-src 放行；真实 woff2 不在仓库披露 | ✅（披露） |
+| AC-T8-2 | 内置主题 rem 字号跟随字号偏好 | Vitest rem 钉桩（偏好联动待 10，披露） | Task 3/15 | rem 基准 + 无 px 字号钉桩（变异 1rem→16px 双用例转红）；偏好 UI 待 10 落地后复验 | ✅（披露） |
 
 ## spec 三阶段验收门
 
@@ -121,7 +121,7 @@
 | --- | --- | --- |
 | P1 主题基座 | AC-T1 / AC-T2 | ◐ 数据/注入/命令面 ✅（B3 收批核验），E2E 段随 Task 18 补全 |
 | P2 管理增强 | AC-T3 / AC-T4 / AC-T6 | ◐ T4/T6 ✅；T3 数据链路 ✅（E2E 段随 Task 18 补全） |
-| P3 明暗与字体 | AC-T5 / AC-T7 / AC-T8 | ⬜ |
+| P3 明暗与字体 | AC-T5 / AC-T7 / AC-T8 | ✅（B7 收批核验；T5-1/T7-1 真实系统切换与可视断言段按披露降级） |
 
 ## 七项全量门禁记录（P3 末首跑 / P5 复跑为最终证据）
 
