@@ -24,6 +24,17 @@ pub fn run() {
             watcher: Mutex::new(HashMap::new()),
             search_job: Mutex::new(None),
         })
+        .setup(|app| {
+            // 08 主题：预置内置主题到数据目录 themes/（缺失才写，D-1）。
+            // 预置失败仅记录不阻断启动（主题降级为空列表，编辑主链路不受影响；
+            // 宪法 A.5.7：setup 返回 Err 表启动失败，此处属可降级路径不失败）
+            let seeded = io::themes::themes_dir(app.handle())
+                .and_then(|dir| io::themes::ensure_builtin_themes(&dir));
+            if let Err(e) = seeded {
+                eprintln!("[MarkWell] 内置主题预置失败（主题功能降级）: {e}");
+            }
+            Ok(())
+        })
         // 命令随实现任务注册：Task 5 read_file/write_file/list_dir；
         // Task 6 save_draft/list_drafts/recover_draft（drafts.rs）；Task 7 watch_dir；
         // Task 13 get_cli_args；
@@ -52,7 +63,9 @@ pub fn run() {
             io::images::save_image,
             io::images::import_local_images,
             io::images::resolve_image_path,
-            io::images::allow_asset_directory
+            io::images::allow_asset_directory,
+            io::themes::list_themes,
+            io::themes::open_theme_folder
         ])
         .run(tauri::generate_context!())
     {

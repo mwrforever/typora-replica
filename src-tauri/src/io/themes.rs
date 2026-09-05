@@ -6,7 +6,7 @@
 // 命名规则保证的附带性质：合法文件名 URL 安全（小写字母+连字符），拼接
 // asset 协议 URL 无需编码（D-10）。
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
@@ -159,6 +159,41 @@ pub fn ensure_builtin_themes(dir: &Path) -> Result<(), String> {
         fs::write(&target, css).map_err(|e| format!("预置内置主题失败({name}): {e}"))?;
     }
     Ok(())
+}
+
+/// 主题目录名（app 数据目录下相对路径）
+pub const THEMES_DIR_NAME: &str = "themes";
+
+/// 主题目录定位：app_data_dir/themes（不触盘创建；创建职责在 scan/open 内）
+pub fn themes_dir<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBuf, String> {
+    use tauri::Manager;
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("解析应用数据目录失败: {e}"))?;
+    Ok(base.join(THEMES_DIR_NAME))
+}
+
+/// 命令：扫描主题列表（Themes 菜单数据源；目录缺失自动创建）
+#[tauri::command]
+pub fn list_themes<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<ThemeListDto, String> {
+    scan_themes(&themes_dir(&app)?)
+}
+
+/// 命令：资源管理器打开主题目录（AC-T2-1）
+///
+/// UI 触发入口（Appearance 分区按钮）归 10/12——本命令为预留接口（见 TODO）。
+/// 目录缺失先建（首启未扫描即点开的边缘）；open_path 打开目录本身对齐
+/// Typora「打开主题目录」语义（D-2）。
+#[tauri::command]
+pub fn open_theme_folder<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    // TODO(theme-ui): open_theme_folder 由 10 设置页 Appearance 分区 / 12 菜单装配消费，计划于 10/12 模块接入
+    let dir = themes_dir(&app)?;
+    fs::create_dir_all(&dir).map_err(|e| format!("创建主题目录失败: {e}"))?;
+    app.opener()
+        .open_path(dir.to_string_lossy(), None::<&str>)
+        .map_err(|e| format!("打开主题目录失败: {e}"))
 }
 
 #[cfg(test)]
@@ -327,5 +362,19 @@ mod tests {
         ensure_builtin_themes(&dir).unwrap();
         assert!(dir.join("markwell-light.css").is_file());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ---- themes_dir ----
+    // 命令层（list_themes/open_theme_folder）含 app.path().app_data_dir() 路径解析，
+    // mock 运行时 identifier 为空串会解析到真实 %APPDATA%（D-6 已核验），禁直呼——
+    // wire 契约由 dto_serializes_camel_case_wire_shape（Task 2）+ E2E（Task 18）实证。
+    // 此处仅钉 themes_dir 的相对拼接规则（借 mock 运行时验证 join 逻辑、不触盘）：
+    #[test]
+    fn themes_dir_joins_themes_under_app_data() {
+        let app = tauri::test::mock_app();
+        let dir = themes_dir(app.handle()).unwrap();
+        // identifier 为空 → 目录为 data_dir 本身 + "themes"；仅断言尾部段拼接关系
+        assert!(dir.ends_with("themes"));
+        assert!(dir.to_string_lossy().ends_with("themes"));
     }
 }
