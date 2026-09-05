@@ -5,6 +5,10 @@
 // 线程安全：纯函数无共享状态；监视句柄生命周期见 watch_themes（Task 9）。
 // 命名规则保证的附带性质：合法文件名 URL 安全（小写字母+连字符），拼接
 // asset 协议 URL 无需编码（D-10）。
+use std::fs;
+use std::path::Path;
+
+use serde::Serialize;
 
 /// 主题文件名合法性（AC-T4-2/3，官方规则对齐：非字母字符仅连字符、数字禁用）
 ///
@@ -40,9 +44,80 @@ pub fn theme_menu_label(name: &str) -> String {
         .join(" ")
 }
 
+/// 主题条目 DTO（camelCase 供前端消费；name=文件名词干，为 settings 持久化键）
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeDto {
+    /// 主题名（文件名词干，settings.theme 存储键）
+    pub name: String,
+    /// 文件名（含 .css；asset link 拼接用）
+    pub file_name: String,
+    /// 菜单标签（连字符分词首字母大写，Themes 菜单直接展示）
+    pub label: String,
+    /// 同名词干 .user.css 是否存在（4 层第 4 层开关）
+    pub has_user_css: bool,
+}
+
+/// 目录扫描结果 DTO
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeListDto {
+    /// 主题目录绝对路径（前端 convertFileSrc 基准；asset 授权与 link 拼接共用）
+    pub dir: String,
+    /// 合法主题列表（按名称升序，菜单展示序）
+    pub themes: Vec<ThemeDto>,
+    /// base.user.css 是否存在（4 层第 3 层开关）
+    pub has_base_user_css: bool,
+}
+
+/// 目录扫描（T1：合法 .css 过滤 + 排序 + user.css 探测）
+///
+/// 目录缺失则创建（首启预置/打开目录前的边缘兜底）。
+/// 大小写敏感：Windows 文件系统大小写不敏感，`Path::exists()` 会误命中
+/// 大小写不同的 {theme}.user.css（AC-T6-3）——一次 read_dir 收集文件名后
+/// 精确字符串比对（D-8）。
+pub fn scan_themes(dir: &Path) -> Result<ThemeListDto, String> {
+    fs::create_dir_all(dir).map_err(|e| format!("创建主题目录失败: {e}"))?;
+    let entries = fs::read_dir(dir).map_err(|e| format!("读取主题目录失败: {e}"))?;
+    let mut names: Vec<String> = Vec::new();
+    for entry in entries {
+        let Ok(entry) = entry else { continue };
+        // 仅普通文件（用户误放子目录/符号链接不参与匹配）
+        if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+            continue;
+        }
+        names.push(entry.file_name().to_string_lossy().into_owned());
+    }
+    let mut themes: Vec<ThemeDto> = Vec::new();
+    for file_name in &names {
+        if !is_valid_theme_file_name(file_name) {
+            continue;
+        }
+        // 命名规则已保证 .css 后缀存在，match 兜底防御性跳过（禁 unwrap）
+        let Some(name) = file_name.strip_suffix(".css") else {
+            continue;
+        };
+        let has_user_css = names.iter().any(|n| n == &format!("{name}.user.css"));
+        themes.push(ThemeDto {
+            name: name.to_string(),
+            file_name: file_name.clone(),
+            label: theme_menu_label(name),
+            has_user_css,
+        });
+    }
+    themes.sort_by(|a, b| a.name.cmp(&b.name));
+    let has_base_user_css = names.iter().any(|n| n == "base.user.css");
+    Ok(ThemeListDto {
+        dir: dir.to_string_lossy().into_owned(),
+        themes,
+        has_base_user_css,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     // ---- is_valid_theme_file_name ----
     #[test]
@@ -84,5 +159,75 @@ mod tests {
         assert_eq!(theme_menu_label("my-first-theme"), "My First Theme");
         assert_eq!(theme_menu_label("github"), "Github");
         assert_eq!(theme_menu_label("a-b-c"), "A B C");
+    }
+
+    // ---- scan_themes（测试模块顶部先加 tempdir 助手）----
+    fn temp_dir() -> std::path::PathBuf {
+        static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("markwell-themes-{}-{n}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn scan_filters_and_sorts_valid_css_ac_t1_1() {
+        let dir = temp_dir();
+        fs::write(dir.join("zeta.css"), "x").unwrap();
+        fs::write(dir.join("alpha.css"), "x").unwrap();
+        fs::write(dir.join("my-first-theme.css"), "x").unwrap();
+        // 非法项：数字/大写/非 css/子目录，均不得出现在列表（AC-T4-2/3 的扫描侧证据）
+        fs::write(dir.join("theme2.css"), "x").unwrap();
+        fs::write(dir.join("NoUpper.css"), "x").unwrap();
+        fs::write(dir.join("readme.txt"), "x").unwrap();
+        fs::create_dir(dir.join("dir.css")).unwrap();
+        let dto = scan_themes(&dir).unwrap();
+        let names: Vec<&str> = dto.themes.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, vec!["alpha", "my-first-theme", "zeta"]); // 升序 + 过滤
+        assert_eq!(dto.themes[1].label, "My First Theme"); // 标签一并输出
+        assert_eq!(dto.themes[1].file_name, "my-first-theme.css");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn scan_detects_user_css_case_sensitive_ac_t6_1_2_3() {
+        let dir = temp_dir();
+        fs::write(dir.join("solar-mint.css"), "x").unwrap();
+        fs::write(dir.join("solar-mint.user.css"), "x").unwrap();
+        fs::write(dir.join("base.user.css"), "x").unwrap();
+        // 大小写不匹配（Windows 文件系统不敏感，扫描必须精确字符串比对——AC-T6-3）
+        fs::write(dir.join("SOLAR-MINT.USER.CSS"), "x").unwrap();
+        let dto = scan_themes(&dir).unwrap();
+        assert!(dto.has_base_user_css);
+        let mint = dto.themes.iter().find(|t| t.name == "solar-mint").unwrap();
+        assert!(mint.has_user_css); // 精确命中
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn scan_creates_missing_dir_and_returns_empty() {
+        let dir = temp_dir().join("not-yet");
+        let dto = scan_themes(&dir).unwrap();
+        assert!(dir.is_dir()); // 缺失即建（open_theme_folder 首启边缘依赖）
+        assert!(dto.themes.is_empty());
+        assert!(!dto.has_base_user_css);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dto_serializes_camel_case_wire_shape() {
+        // wire 契约钉桩（D-6：命令层不 mock 直呼，序列化形态在此锁死）
+        let dir = temp_dir();
+        fs::write(dir.join("solar-mint.css"), "x").unwrap();
+        fs::write(dir.join("solar-mint.user.css"), "x").unwrap();
+        let json = serde_json::to_value(scan_themes(&dir).unwrap()).unwrap();
+        assert_eq!(json["hasBaseUserCss"], serde_json::json!(false));
+        assert_eq!(
+            json["themes"][0]["fileName"],
+            serde_json::json!("solar-mint.css")
+        );
+        assert_eq!(json["themes"][0]["hasUserCss"], serde_json::json!(true));
+        assert!(json["dir"].is_string());
+        let _ = fs::remove_dir_all(&dir);
     }
 }
