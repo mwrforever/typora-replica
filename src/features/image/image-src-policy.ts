@@ -21,7 +21,8 @@ export function escapeImageUrl(url: string): string {
   let out = "";
   for (let i = 0; i < url.length; i++) {
     const unit = url.charCodeAt(i);
-    const ch = url[i];
+    // charAt 与索引访问等价（i 恒在界内）且类型天然 string，规避索引访问的 undefined 联合
+    const ch = url.charAt(i);
     if (ESCAPE_KEEP_RE.test(ch)) {
       out += ch;
     } else if (unit < 0x100) {

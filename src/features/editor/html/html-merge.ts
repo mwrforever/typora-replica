@@ -44,7 +44,8 @@ function escapeHtmlText(text: string): string {
  * @returns 合并后的 html 节点与消耗位置（含闭标签）；无法合并时返回 null
  */
 function tryMergeAt(children: MdastNode[], i: number): { node: MdastNode; next: number } | null {
-  const open = children[i];
+  // 唯一调用方 walk 循环以 i < children.length 为上界，开标签候选恒在界内（! 仅作类型收窄）
+  const open = children[i]!;
   // 仅行内开标签参与合并（文本/标记/块级节点直接跳过）
   if (open.type !== "html") return null;
   const raw = open.value as string;
@@ -54,7 +55,8 @@ function tryMergeAt(children: MdastNode[], i: number): { node: MdastNode; next: 
   if (!openMatch) return null;
   let text = "";
   for (let j = i + 1; j < children.length; j++) {
-    const child = children[j];
+    // 内循环条件 j < children.length 保证子节点恒在界内（! 仅作类型收窄）
+    const child = children[j]!;
     // 中间纯文本：累加进合并值
     if (child.type === "text") {
       text += child.value as string;
@@ -62,12 +64,18 @@ function tryMergeAt(children: MdastNode[], i: number): { node: MdastNode; next: 
     }
     if (child.type === "html") {
       const closeMatch = CLOSE_TAG_RE.exec(child.value as string);
+      // 两个正则各含一个捕获组，命中后 [1] 恒存在（! 仅作类型收窄）；
       // 同名闭标签且中间确有文本才合并；空元素（`<span></span>`）与
       // 不配对（`<b>文字</i>`）保持拆分形态，不吞并
-      if (closeMatch && closeMatch[1].toLowerCase() === openMatch[1].toLowerCase() && text !== "") {
-        // 已解码文本反转义后拼入 html 原始值（P1-3：防渲染/重解析二次解码）
+      if (
+        closeMatch &&
+        closeMatch[1]!.toLowerCase() === openMatch[1]!.toLowerCase() &&
+        text !== ""
+      ) {
+        // 已解码文本反转义后拼入 html 原始值（P1-3：防渲染/重解析二次解码）；
+        // html 节点 value 业务上必有（与上文 as string 同一口径）
         return {
-          node: { type: "html", value: raw + escapeHtmlText(text) + child.value },
+          node: { type: "html", value: raw + escapeHtmlText(text) + (child.value as string) },
           next: j + 1,
         };
       }
@@ -91,7 +99,8 @@ function remarkMergeInlineHtml() {
           out.push(merged.node);
           i = merged.next;
         } else {
-          out.push(node.children[i]);
+          // 循环条件 i < children.length 保证取值恒在界内（! 仅作类型收窄）
+          out.push(node.children[i]!);
           i++;
         }
       }

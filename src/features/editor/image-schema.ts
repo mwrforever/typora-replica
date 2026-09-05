@@ -86,11 +86,12 @@ export const markwellImageBlockSchema = imageBlockSchema.extendSchema((prev) => 
           const mdTitle = typeof node.title === "string" ? node.title : "";
           const zoomMatch = ZOOM_TITLE_RE.exec(mdTitle);
           if (zoomMatch) {
-            // zoom 命名空间 title：数值回归 ratio，alt 位回归描述语义（AC-P11-3/4 正向读取）
+            // zoom 命名空间 title：数值回归 ratio，alt 位回归描述语义（AC-P11-3/4 正向读取）；
+            // 正则含捕获组且命中才取 [1]，恒有值（! 仅作类型收窄）
             state.addNode(type, {
               src,
               caption: alt,
-              ratio: normalizeRatio(Number.parseFloat(zoomMatch[1])),
+              ratio: normalizeRatio(Number.parseFloat(zoomMatch[1]!)),
               rawTitle: "",
             });
             return;

@@ -48,9 +48,10 @@ export const useOutlineStore = defineStore("outline", {
       // 祖先栈：文档序入栈；遇到 level ≤ 栈顶的条目时弹出已闭合层级
       const ancestorStack: Array<{ level: number; id: string }> = [];
       for (const heading of state.headings) {
+        // length > 0 守卫在先，栈顶条目必存在（! 仅作类型收窄）
         while (
           ancestorStack.length > 0 &&
-          ancestorStack[ancestorStack.length - 1].level >= heading.level
+          ancestorStack[ancestorStack.length - 1]!.level >= heading.level
         ) {
           ancestorStack.pop();
         }

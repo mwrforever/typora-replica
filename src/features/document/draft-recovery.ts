@@ -32,7 +32,8 @@ export function extractDraftName(md: string): string {
   const firstLine = md.split(/\r?\n/).find((line) => line.trim().length > 0);
   if (!firstLine) return "未命名";
   const heading = /^#{1,6}\s+(.+)$/.exec(firstLine.trim());
-  const base = heading ? heading[1] : firstLine.trim();
+  // 正则含捕获组且命中才取 [1]，恒有值（! 仅作类型收窄）
+  const base = heading ? heading[1]! : firstLine.trim();
   const cleaned = base.replace(/[\\/:*?"<>|]/g, "_").trim();
   const truncated = Array.from(cleaned).slice(0, 30).join("");
   // 注：原实现为 truncated || "未命名"（用户裁定删除）——该回落分支不可达：

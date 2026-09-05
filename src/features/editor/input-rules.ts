@@ -90,7 +90,8 @@ export function trailingSpacesHardBreakCommand(state: EditorState, dispatch?: Di
   if ($from.parentOffset !== $from.parent.content.size) return false;
   if (!dispatch) return true;
   // 在行尾两空格之后插入 hardBreak 节点；光标随插入映射到换行之后
-  dispatch(state.tr.insert($from.pos, state.schema.nodes.hardbreak.create()).scrollIntoView());
+  // hardbreak 节点由 commonmark preset 注册进 schema，必有定义（! 仅作类型收窄）
+  dispatch(state.tr.insert($from.pos, state.schema.nodes.hardbreak!.create()).scrollIntoView());
   return true;
 }
 
@@ -138,12 +139,14 @@ export function createNestedBlockquoteInputRule(): InputRule {
     // blockquote 对任意块都是合法包裹节点，findWrapping 恒非空。
     // `!` 仅作类型收窄，运行时不可达 null（与 wrappingInputRule 行为等价）
     const range = $start.blockRange()!;
-    const wrapping = findWrapping(range, state.schema.nodes.blockquote)!;
+    // blockquote 节点由 commonmark preset 注册进 schema，必有定义（! 仅作类型收窄）
+    const blockquoteType = state.schema.nodes.blockquote!;
+    const wrapping = findWrapping(range, blockquoteType)!;
     tr.wrap(range, wrapping);
     // 与紧邻的前置引用块合并（等价 wrappingInputRule 的 join 步骤，避免断开的同级引用）。
     // 前置节点已是 blockquote 时两者必然可合并，无需 canJoin 再判
     const before = tr.doc.resolve(start - 1).nodeBefore;
-    if (before && before.type === state.schema.nodes.blockquote) {
+    if (before && before.type === blockquoteType) {
       tr.join(start - 1);
     }
     return tr;
@@ -193,7 +196,8 @@ export function createSetextH2InputRule(): InputRule {
     // 块起始位置（如文档首块位置 0）nodesBetween 不会访问任何节点（pos < to 循环条件），
     // 导致转换静默失效；内容起点 = 节点起点 + 1（块开始标签恒宽 1），恒在块内
     const beforePos = start - 1 - before.nodeSize;
-    tr.setBlockType(beforePos + 1, beforePos + 1, state.schema.nodes.heading, { level: 2 });
+    // heading 节点由 commonmark preset 注册进 schema，必有定义（! 仅作类型收窄）
+    tr.setBlockType(beforePos + 1, beforePos + 1, state.schema.nodes.heading!, { level: 2 });
     // 删除触发段落（含 `---` 文本）；end 为光标位置（= 段落内容末尾），
     // 段落节点范围 = [start - 1, end + 1]（nodeSize 比内容长 2）
     tr.delete(start - 1, end + 1);
@@ -239,20 +243,23 @@ export function createLenientAtxHeadingInputRule(): InputRule {
     // parentOffset 0 守卫同构，见 input-rules.spec 的 500 字窗口用例）
     const $start = state.doc.resolve(start);
     if ($start.parentOffset !== 0) return null;
-    // # 号串长度即标题级别（正则 {1,6} 已钳制上限，match[1] 恒为命中的 # 串）
-    const level = match[1].length;
+    // 正则含一个捕获组且整体命中才进入 handler，match[1] 恒存在（! 仅作类型收窄）；
+    // # 号串长度即标题级别（正则 {1,6} 已钳制上限）
+    const hashes = match[1]!;
+    const level = hashes.length;
     // 内容起点：$from.start() = 父块（段落）内容起点（= 段落节点起点 + 1，开标签恒宽 1）；
     // 文本宽度取 textContent 长度——text 节点 nodeSize 含闭标签宽度，不能直接用于坐标换算
     const contentStart = $from.start();
     const textLength = $from.parent.textContent.length;
     const tr = state.tr;
     // 整段转标题：from/to 取内容起点（节点起点位置 nodesBetween 不访问任何节点，
-    // 转换会静默失效——与 setext 规则的既有结论一致）
-    tr.setBlockType(contentStart, contentStart, state.schema.nodes.heading, { level });
+    // 转换会静默失效——与 setext 规则的既有结论一致）；
+    // heading 节点由 commonmark preset 注册进 schema，必有定义（! 仅作类型收窄）
+    tr.setBlockType(contentStart, contentStart, state.schema.nodes.heading!, { level });
     // 删除行首 # 标记，仅保留标题文本（`###Header` → `Header`）
-    tr.delete(contentStart, contentStart + match[1].length);
+    tr.delete(contentStart, contentStart + hashes.length);
     // 光标落至转换后的行尾（标题内容末尾，位于标题节点内部）
-    tr.setSelection(TextSelection.create(tr.doc, contentStart + textLength - match[1].length));
+    tr.setSelection(TextSelection.create(tr.doc, contentStart + textLength - hashes.length));
     return tr;
   });
 }
@@ -271,24 +278,29 @@ export function createLenientAtxHeadingInputRule(): InputRule {
  * @param cells 单元格文本列表（至少 1 个，由触发正则保证）
  */
 function buildTyporaTable(schema: Schema, cells: string[]): Node {
+  // 表格族节点均由项目 schema（commonmark/表格 preset）注册，必有定义；
+  // 集中取用一次完成类型收窄（! 仅作类型收窄，运行时不可达 undefined）
+  const headerType = schema.nodes.table_header!;
+  const paragraphType = schema.nodes.paragraph!;
+  const headerRowType = schema.nodes.table_header_row!;
+  const cellType = schema.nodes.table_cell!;
+  const rowType = schema.nodes.table_row!;
+  const tableType = schema.nodes.table!;
   const headerCells = cells.map((text) =>
     // 表头单元格：段落 + 文本；全空白单元格（trim 后为空串）退化为空段落
     text
-      ? schema.nodes.table_header.create(
-          null,
-          schema.nodes.paragraph.create(null, schema.text(text)),
-        )
-      : schema.nodes.table_header.create(null, schema.nodes.paragraph.create()),
+      ? headerType.create(null, paragraphType.create(null, schema.text(text)))
+      : headerType.create(null, paragraphType.create()),
   );
-  const headerRow = schema.nodes.table_header_row.create(null, headerCells);
+  const headerRow = headerRowType.create(null, headerCells);
   // 数据行：与表头同列数的空单元格；createAndFill 自动填充必填段落，
   // 单元格内容模型恒可填充，null 仅作类型收窄不可达（与内置 createTable 同一写法）
-  const bodyCell = schema.nodes.table_cell.createAndFill()!;
-  const bodyRow = schema.nodes.table_row.create(
+  const bodyCell = cellType.createAndFill()!;
+  const bodyRow = rowType.create(
     null,
     Array.from({ length: cells.length }, () => bodyCell),
   );
-  return schema.nodes.table.create(null, [headerRow, bodyRow]);
+  return tableType.create(null, [headerRow, bodyRow]);
 }
 
 /**
@@ -321,11 +333,12 @@ const typoraTableRule = new InputRule(TYPORA_TABLE_INPUT_PATTERN, (state, match,
   // 光标必须在父块内容末尾（行尾无未消费文本才建表）
   const $end = state.doc.resolve(end);
   if ($end.parentOffset !== $end.parent.content.size) return null;
-  // 表格必须能替换父块对应子节点区间（doc 可容纳块级表格；列表项/单元格内拒绝转换）
+  // 表格必须能替换父块对应子节点区间（doc 可容纳块级表格；列表项/单元格内拒绝转换）；
+  // table 节点由表格 preset 注册进 schema，必有定义（! 仅作类型收窄）
   if (
     !$start
       .node(-1)
-      .canReplaceWith($start.index(-1), $start.indexAfter(-1), state.schema.nodes.table)
+      .canReplaceWith($start.index(-1), $start.indexAfter(-1), state.schema.nodes.table!)
   ) {
     return null;
   }

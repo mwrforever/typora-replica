@@ -43,8 +43,11 @@ let highlightTimer: ReturnType<typeof setTimeout> | undefined;
 const hasChildrenById = computed(() => {
   const flags = new Set<string>();
   const list = store.headings;
-  for (let i = 0; i < list.length; i++) {
-    if (i + 1 < list.length && list[i + 1].level > list[i].level) flags.add(list[i].id);
+  for (let i = 0; i < list.length - 1; i++) {
+    // 循环上界 list.length - 1 保证 i 与 i + 1 均在数组界内（! 仅作类型收窄）
+    const current = list[i]!;
+    const next = list[i + 1]!;
+    if (next.level > current.level) flags.add(current.id);
   }
   return flags;
 });
