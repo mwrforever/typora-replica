@@ -15,6 +15,11 @@ concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
+# 权限最小化：构建与冒烟均为只读操作；artifact 上传走 Actions 运行时内部凭证，
+# 不依赖 GITHUB_TOKEN 的写权限
+permissions:
+  contents: read
+
 jobs:
   # ── Windows 构建 ─────────────────────────────────────────────
   tauri-build:

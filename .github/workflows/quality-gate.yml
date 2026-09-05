@@ -20,6 +20,10 @@ concurrency:
   group: quality-gate-${{ github.ref }}
   cancel-in-progress: true
 
+# 权限最小化：三个 job 均为只读检查（gitleaks 仅扫描报告，不做 PR 评论/写入）
+permissions:
+  contents: read
+
 jobs:
   # ── 前端质量检查 ──────────────────────────────────────────────
   frontend:
