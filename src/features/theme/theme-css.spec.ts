@@ -125,6 +125,21 @@ describe("applyThemeCss 四层注入", () => {
     );
   });
 
+  it("href 以目录基准拼接——主题 CSS 内相对 url(./fonts/x) 以主题目录解析（AC-T8-1）", () => {
+    // 浏览器语义：<link href="<base>/theme.css"> 内的相对 url() 以 base 目录为基准；
+    // 本断言钉住「link href = 主题目录/文件名」形态（fonts/ 子目录可达的前提），
+    // 子目录路径 + 尾随分隔符下亦不得出现双斜杠
+    applyThemeCss({
+      themesAssetBase: "http://asset.localhost/C%3A%5Cthemes%5Csub/",
+      theme: light,
+      hasBaseUserCss: false,
+      cacheBust: 3,
+    });
+    const href = hrefOf(THEME_LINK_ID);
+    expect(href).toBe("http://asset.localhost/C%3A%5Cthemes%5Csub/markwell-light.css?t=3");
+    expect(href).not.toContain("//markwell"); // 无重复分隔符
+  });
+
   it("重复 apply 同 href 幂等不新增节点", () => {
     // hasUserCss=false：单层最小形态隔离幂等语义（light.hasUserCss=true 会连带挂第 4 层，
     // 简报原 fixture 与期望数组自相矛盾，此处按实现语义修正）
