@@ -138,7 +138,7 @@ describe("requestGlobalSearch 防抖与取消（AC-F26-6）", () => {
       expect(h.startCalls).toHaveLength(1);
       expect(h.startCalls[0]).toMatchObject({ root: "C:/ws", query: "关键词" });
       // 三开关快照透传；maxResults 由 service 层固定注入（store 不重复携带）
-      expect(h.startCalls[0].opts).toEqual({
+      expect(h.startCalls[0]!.opts).toEqual({
         caseSensitive: false,
         wholeWord: false,
         regexp: false,
@@ -197,7 +197,7 @@ describe("applyStreamEvents 聚合与代次守卫", () => {
       const s = useSearchStore();
       s.requestGlobalSearch("词");
       await vi.advanceTimersByTimeAsync(300);
-      const batch = h.startCalls[0].onBatch;
+      const batch = h.startCalls[0]!.onBatch;
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
       try {
         batch([
@@ -232,11 +232,11 @@ describe("applyStreamEvents 聚合与代次守卫", () => {
         warnSpy.mockRestore();
       }
       expect(s.globalResults).toHaveLength(2); // 同文件分批合并为一条
-      expect(s.globalResults[0].matches).toHaveLength(2);
+      expect(s.globalResults[0]!.matches).toHaveLength(2);
       // 合并不覆盖首批判定：a.md 维持首批的 gbk 标注（AC-F26-5）
-      expect(s.globalResults[0].encoding).toBe("gbk");
+      expect(s.globalResults[0]!.encoding).toBe("gbk");
       // 新文件组的 null 编码归一为 undefined（utf8 缺省不标注）
-      expect(s.globalResults[1].encoding).toBeUndefined();
+      expect(s.globalResults[1]!.encoding).toBeUndefined();
       expect(s.globalTruncated).toBe(true);
       expect(s.globalSearching).toBe(false);
     } finally {
@@ -251,13 +251,13 @@ describe("applyStreamEvents 聚合与代次守卫", () => {
       const s = useSearchStore();
       s.requestGlobalSearch("一");
       await vi.advanceTimersByTimeAsync(300);
-      const firstBatch = h.startCalls[0].onBatch;
+      const firstBatch = h.startCalls[0]!.onBatch;
       s.requestGlobalSearch("二"); // 第二次发起 → 第一次代次过期
       s.flushGlobalSearch();
       await vi.advanceTimersByTimeAsync(0);
       firstBatch([{ type: "done", truncated: false }]);
       expect(s.globalSearching).toBe(true); // 旧 done 被丢弃，仍在搜索
-      const secondBatch = h.startCalls[h.startCalls.length - 1].onBatch;
+      const secondBatch = h.startCalls[h.startCalls.length - 1]!.onBatch;
       secondBatch([{ type: "done", truncated: false }]);
       expect(s.globalSearching).toBe(false);
     } finally {
@@ -301,7 +301,7 @@ describe("applyStreamEvents 聚合与代次守卫", () => {
       await vi.advanceTimersByTimeAsync(0);
       expect(s.globalSearching).toBe(true); // 过期失败不得复位新一代的搜索中态
       expect(s.globalError).toBeUndefined(); // 过期失败不得写入错误
-      const secondBatch = h.startCalls[h.startCalls.length - 1].onBatch;
+      const secondBatch = h.startCalls[h.startCalls.length - 1]!.onBatch;
       secondBatch([{ type: "done", truncated: false }]);
       expect(s.globalSearching).toBe(false);
     } finally {

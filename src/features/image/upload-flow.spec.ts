@@ -78,7 +78,7 @@ describe("createImageUploadHandler", () => {
   it("AC-P2-1a 默认开关下已保存文档 → 目标目录正确且 src 为绝对路径", async () => {
     const deps = makeDeps();
     const src = await createImageUploadHandler(deps)(makeFile("photo.jpg", "image/jpeg"));
-    const args = vi.mocked(deps.invoke).mock.calls[0][1] as Record<string, unknown>;
+    const args = vi.mocked(deps.invoke).mock.calls[0]![1] as Record<string, unknown>;
     // 未开 copy-to-folder：target_dir 走 Rust 临时目录缺省（undefined）
     expect(args.targetDir).toBeUndefined();
     expect(args.docDir).toBe("C:\\docs");
@@ -95,20 +95,20 @@ describe("createImageUploadHandler", () => {
       })),
     });
     const src = await createImageUploadHandler(deps)(makeFile("photo.jpg"));
-    const args = vi.mocked(deps.invoke).mock.calls[0][1] as Record<string, unknown>;
+    const args = vi.mocked(deps.invoke).mock.calls[0]![1] as Record<string, unknown>;
     expect(args.targetDir).toBe("C:\\imgs");
     expect(src).toBe("out.png");
   });
   it("AC-P2-2 合成剪贴板名 → name=null（Rust 生成时间戳名）", async () => {
     const deps = makeDeps();
     await createImageUploadHandler(deps)(makeFile("image.png"));
-    const args = vi.mocked(deps.invoke).mock.calls[0][1] as Record<string, unknown>;
+    const args = vi.mocked(deps.invoke).mock.calls[0]![1] as Record<string, unknown>;
     expect(args.name).toBeNull();
   });
   it("真实文件名保留传递", async () => {
     const deps = makeDeps();
     await createImageUploadHandler(deps)(makeFile("照片.png"));
-    const args = vi.mocked(deps.invoke).mock.calls[0][1] as Record<string, unknown>;
+    const args = vi.mocked(deps.invoke).mock.calls[0]![1] as Record<string, unknown>;
     expect(args.name).toBe("照片.png");
   });
   it("AC-P2-4 未保存文档 → docDir=None 且 src 绝对路径", async () => {
@@ -116,7 +116,7 @@ describe("createImageUploadHandler", () => {
       getContext: vi.fn(() => ({ documentSaved: false, docDir: undefined, frontMatter: null })),
     });
     const src = await createImageUploadHandler(deps)(makeFile("a.png"));
-    const args = vi.mocked(deps.invoke).mock.calls[0][1] as Record<string, unknown>;
+    const args = vi.mocked(deps.invoke).mock.calls[0]![1] as Record<string, unknown>;
     expect(args.docDir).toBeUndefined();
     expect(src).toBe("C:\\docs\\out.png"); // invoke stub 无 docDir 时 relativeSrc=null
   });
@@ -133,7 +133,7 @@ describe("createImageUploadHandler", () => {
       })),
     });
     await createImageUploadHandler(deps)(makeFile("a.png"));
-    const args = vi.mocked(deps.invoke).mock.calls[0][1] as Record<string, unknown>;
+    const args = vi.mocked(deps.invoke).mock.calls[0]![1] as Record<string, unknown>;
     expect(args.targetDir).toBe("C:\\docs/fm-imgs");
   });
   it("AC-P2-5 存盘失败 → notifyError + blob 回落不崩溃", async () => {
@@ -150,7 +150,7 @@ describe("createImageUploadHandler", () => {
   it("mime 空类型文件回落 image/png（拖入未知类型场景）", async () => {
     const deps = makeDeps();
     await createImageUploadHandler(deps)(makeFile("x", ""));
-    const args = vi.mocked(deps.invoke).mock.calls[0][1] as Record<string, unknown>;
+    const args = vi.mocked(deps.invoke).mock.calls[0]![1] as Record<string, unknown>;
     expect(args.mime).toBe("image/png");
   });
   it("非 Error 抛出物（IPC 字符串错误）同样归一提示并回落", async () => {
@@ -176,7 +176,7 @@ describe("createImageUploadHandler", () => {
     };
     const src = await createImageUploadHandler(deps)(makeFile("a.png"));
     expect(deps.notifyError).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(deps.notifyError).mock.calls[0][0]).toContain("图片存盘失败");
+    expect(vi.mocked(deps.notifyError).mock.calls[0]![0]).toContain("图片存盘失败");
     expect(src).toBe("blob:default-stub");
   });
 });

@@ -48,22 +48,22 @@ describe("search-service 命令桥", () => {
     );
     expect(h.invokes).toHaveLength(1);
     // wire 契约（spec §5.3①）：命令名 search_in_folder + 三开关快照 + 上限 50
-    expect(h.invokes[0].cmd).toBe("search_in_folder");
-    expect(h.invokes[0].args).toMatchObject({
+    expect(h.invokes[0]!.cmd).toBe("search_in_folder");
+    expect(h.invokes[0]!.args).toMatchObject({
       root: "C:/ws",
       query: "关键词",
       opts: { caseSensitive: true, wholeWord: false, regexp: false, maxResults: 50 },
     });
     // 实现侧 new Channel 后赋值 onmessage 再 invoke：args.channel 与之同一实例，
     // 回调注册语义按 onmessage 为函数断言（工厂构造期记录不到赋值后的字段）
-    const channel = h.invokes[0].args?.channel as { onmessage: unknown };
+    const channel = h.invokes[0]!.args?.channel as { onmessage: unknown };
     expect(channel.onmessage).toBeTypeOf("function");
   });
 
   it("cancelGlobalSearch 幂等调用 cancel_search（无任务亦成功）", async () => {
     await cancelGlobalSearch();
     expect(h.invokes).toHaveLength(1);
-    expect(h.invokes[0].cmd).toBe("cancel_search");
+    expect(h.invokes[0]!.cmd).toBe("cancel_search");
   });
 
   it("invoke 拒绝字符串错误时抛 FileIoError（中文消息透传）", async () => {

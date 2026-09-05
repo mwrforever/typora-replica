@@ -22,8 +22,8 @@ describe("collectHeadings 标题收集", () => {
     ]);
     expect(items.map((h) => h.id)).toEqual(["一级", "二级", "引用内三级"]);
     // pos 单调递增且指向各自节点起点
-    expect(items[0].pos).toBeLessThan(items[1].pos);
-    expect(items[1].pos).toBeLessThan(items[2].pos);
+    expect(items[0]!.pos).toBeLessThan(items[1]!.pos);
+    expect(items[1]!.pos).toBeLessThan(items[2]!.pos);
   });
 
   it("空文档返回空数组；FM title 天然不入列（不进文档树）", async () => {

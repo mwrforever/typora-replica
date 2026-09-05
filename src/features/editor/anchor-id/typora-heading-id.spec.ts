@@ -64,7 +64,7 @@ describe("Typora 锚点 id 插件", () => {
 
 /** 在文档末尾追加一级标题（直接派生事务制造文档变更，驱动插件 update 链路） */
 function appendHeading(view: EditorView, text: string): void {
-  const headingType = view.state.schema.nodes.heading;
+  const headingType = view.state.schema.nodes.heading!;
   view.dispatch(
     view.state.tr.insert(
       view.state.doc.content.size,

@@ -93,8 +93,8 @@ describe("tabsStore 标签状态机", () => {
       s.closeTab(id, `内容${i}`);
     }
     expect(s.closedStack).toHaveLength(CLOSED_STACK_LIMIT);
-    expect(s.closedStack[0].content).toBe("内容5"); // 丢掉了 0-4
-    expect(s.closedStack[CLOSED_STACK_LIMIT - 1].content).toBe(`内容${CLOSED_STACK_LIMIT + 4}`);
+    expect(s.closedStack[0]!.content).toBe("内容5"); // 丢掉了 0-4
+    expect(s.closedStack[CLOSED_STACK_LIMIT - 1]!.content).toBe(`内容${CLOSED_STACK_LIMIT + 4}`);
   });
 
   it("reopenClosed LIFO：最近关闭先重开，恢复内容与脏状态（AC-F29-5）", () => {
@@ -119,8 +119,8 @@ describe("tabsStore 标签状态机", () => {
     const id = s.createUntitled();
     s.closeTab(id, "内容");
     expect(s.tabs).toHaveLength(1);
-    expect(s.tabs[0].kind).toBe("untitled");
-    expect(s.activeTabId).toBe(s.tabs[0].id);
+    expect(s.tabs[0]!.kind).toBe("untitled");
+    expect(s.activeTabId).toBe(s.tabs[0]!.id);
   });
 
   it("脏状态流转：markDirty/markSaved 只影响目标标签（AC-F29-8 簿记）", () => {
@@ -137,9 +137,9 @@ describe("tabsStore 标签状态机", () => {
     const s = store();
     const id = s.createUntitled();
     s.setSnapshot(id, "快照内容");
-    expect(s.tabs[0].contentSnapshot).toBe("快照内容");
+    expect(s.tabs[0]!.contentSnapshot).toBe("快照内容");
     s.clearSnapshot(id);
-    expect(s.tabs[0].contentSnapshot).toBeUndefined();
+    expect(s.tabs[0]!.contentSnapshot).toBeUndefined();
   });
 
   it("removeTab 回滚（打开失败路径）：末标签移除后按 D3 新建 Untitled（编辑器常驻无空态）", () => {
@@ -147,8 +147,8 @@ describe("tabsStore 标签状态机", () => {
     const id = s.openFile("D:\\a\\bad.md", "bad.md").id;
     s.removeTab(id);
     expect(s.tabs).toHaveLength(1);
-    expect(s.tabs[0].kind).toBe("untitled");
-    expect(s.activeTabId).toBe(s.tabs[0].id);
+    expect(s.tabs[0]!.kind).toBe("untitled");
+    expect(s.activeTabId).toBe(s.tabs[0]!.id);
   });
 
   it("removeTab 回滚非末标签：邻位激活、其余标签不变", () => {
@@ -181,7 +181,7 @@ describe("tabsStore 标签状态机", () => {
     s.closeTab("nope", "内容");
     s.removeTab("nope");
     expect(s.tabs).toHaveLength(1);
-    expect(s.tabs[0].id).toBe(id);
+    expect(s.tabs[0]!.id).toBe(id);
     expect(s.closedStack).toHaveLength(0);
   });
 
@@ -195,7 +195,7 @@ describe("tabsStore 标签状态机", () => {
   it("markContentReady：标记内容就绪（可挂载编辑器）", () => {
     const s = store();
     s.createUntitled();
-    expect(s.tabs[0].contentReady).toBe(true);
+    expect(s.tabs[0]!.contentReady).toBe(true);
     const fileId = s.openFile("D:\\a\\b.md", "b.md").id;
     expect(s.tabs.find((t) => t.id === fileId)!.contentReady).toBe(false);
     s.markContentReady(fileId);

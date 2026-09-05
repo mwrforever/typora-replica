@@ -27,10 +27,10 @@ describe("fileTreeStore", () => {
     await store.loadDir("C:/d");
     expect(store.currentDir).toBe("C:/d");
     expect(store.tree).toHaveLength(2);
-    expect(store.tree[0].name).toBe("a.md");
-    expect(store.tree[0].path).toBe("C:/d/a.md"); // 完整路径
-    expect(store.tree[1].children).toHaveLength(1); // sub 展开后含 b.md
-    expect(store.tree[1].children[0].path).toBe("C:/d/sub/b.md");
+    expect(store.tree[0]!.name).toBe("a.md");
+    expect(store.tree[0]!.path).toBe("C:/d/a.md"); // 完整路径
+    expect(store.tree[1]!.children).toHaveLength(1); // sub 展开后含 b.md
+    expect(store.tree[1]!.children[0]!.path).toBe("C:/d/sub/b.md");
     expect(listDirDetailed).toHaveBeenCalledWith("C:/d", {
       extFilters: [
         "md",
@@ -194,8 +194,8 @@ describe("fileTreeStore", () => {
     await store.loadDir("C:/b");
     // unwatch 旧目录先于订阅新目录
     expect(unwatchDir).toHaveBeenCalledWith("C:/a");
-    const unwatchOrder = vi.mocked(unwatchDir).mock.invocationCallOrder[0];
-    const watchOrder = vi.mocked(watchDir).mock.invocationCallOrder[1];
+    const unwatchOrder = vi.mocked(unwatchDir).mock.invocationCallOrder[0]!;
+    const watchOrder = vi.mocked(watchDir).mock.invocationCallOrder[1]!;
     expect(unwatchOrder).toBeLessThan(watchOrder);
     // unwatch 失败不阻断：新目录照常订阅并登记
     expect(store.watchedDir).toBe("C:/b");

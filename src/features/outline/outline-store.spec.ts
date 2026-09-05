@@ -49,7 +49,7 @@ describe("outlineStore", () => {
     store.applyHeadings([H("a", 1, "安装指南", 0), H("b", 2, "卸载", 10), H("c", 1, "附录", 20)]);
     store.setFilter("卸载");
     expect(store.filteredHeadings.map((h) => h.id)).toEqual(["b"]); // 只显命中项
-    expect(store.filteredHeadings[0].level).toBe(2); // 缩进按原级别
+    expect(store.filteredHeadings[0]!.level).toBe(2); // 缩进按原级别
     store.setFilter("");
     expect(store.filteredHeadings.length).toBe(3);
   });

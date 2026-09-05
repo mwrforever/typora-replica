@@ -58,7 +58,7 @@ describe("attachLocalImageView", () => {
     const view = attachLocalImageView(root, deps);
     addImg(root, "/blog/x.png");
     await vi.waitFor(() => expect(deps.invoke).toHaveBeenCalled());
-    const args = (deps.invoke as ReturnType<typeof vi.fn>).mock.calls[0][1] as Record<
+    const args = (deps.invoke as ReturnType<typeof vi.fn>).mock.calls[0]![1] as Record<
       string,
       unknown
     >;

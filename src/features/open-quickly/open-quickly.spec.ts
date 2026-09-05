@@ -22,7 +22,7 @@ describe("Open Quickly 数据源（F11-2）", () => {
     ]);
     // 去重后仅一条 a.md（保留 pinned 标记）
     expect(items.filter((i) => i.path === "C:/docs/a.md")).toHaveLength(1);
-    expect(items[0].pinned).toBe(true);
+    expect(items[0]!.pinned).toBe(true);
   });
 
   it("无当前目录时仅返回最近文件", async () => {

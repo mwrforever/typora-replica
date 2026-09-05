@@ -30,7 +30,7 @@ describe("RecentLocations", () => {
     for (let i = 1; i <= 12; i++) await svc.record(`C:/dir${i}`);
     const list = await svc.list();
     expect(list).toHaveLength(MAX_RECENT_LOCATIONS);
-    expect(list[0].path).toBe("C:/dir12"); // 最近在前
+    expect(list[0]!.path).toBe("C:/dir12"); // 最近在前
     expect(list.some((l) => l.path === "C:/dir1")).toBe(false); // 最旧被挤出
   });
 
@@ -87,7 +87,7 @@ describe("RecentLocations", () => {
     await svc.togglePin("C:/missing");
     const list = await svc.list();
     expect(list).toHaveLength(1);
-    expect(list[0].pinned).toBe(false);
+    expect(list[0]!.pinned).toBe(false);
   });
 
   it("溢出时固定项不被挤出且置顶，非固定项截断（AC-F9-4）", async () => {

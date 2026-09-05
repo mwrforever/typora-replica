@@ -13,7 +13,7 @@ describe("html NodeView", () => {
     const schema = te.editor.action((ctx) => ctx.get(schemaCtx));
     const factory = htmlNodeViewFactory();
     // 构造 html 节点（与真实编辑器同 schema，attrs.value 即原始 HTML）
-    const node = schema.nodes.html.create({ value: "<b>x</b>" });
+    const node = schema.nodes.html!.create({ value: "<b>x</b>" });
     const view = factory(node);
     // 构造时渲染：白名单清洗 + 剥离装饰属性后呈现
     expect(view.dom.querySelector("b")?.textContent).toBe("x");
@@ -22,7 +22,7 @@ describe("html NodeView", () => {
     expect(view.update(node)).toBe(true);
     expect(view.dom).toBe(domBefore);
     // 值变化：重渲为新内容，旧内容移除
-    const next = schema.nodes.html.create({ value: "<i>y</i>" });
+    const next = schema.nodes.html!.create({ value: "<i>y</i>" });
     expect(view.update(next)).toBe(true);
     expect(view.dom.querySelector("i")?.textContent).toBe("y");
     expect(view.dom.querySelector("b")).toBeNull();
@@ -31,7 +31,7 @@ describe("html NodeView", () => {
   it("ignoreMutation 恒为 true（容器内容由本视图全量接管）", async () => {
     const te = await makeTestEditor("<b>x</b>");
     const schema = te.editor.action((ctx) => ctx.get(schemaCtx));
-    const view = htmlNodeViewFactory()(schema.nodes.html.create({ value: "<b>x</b>" }));
+    const view = htmlNodeViewFactory()(schema.nodes.html!.create({ value: "<b>x</b>" }));
     expect(view.ignoreMutation()).toBe(true);
   });
 });

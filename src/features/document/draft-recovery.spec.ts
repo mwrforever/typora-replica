@@ -136,7 +136,7 @@ describe("草稿备份与恢复（F31）", () => {
     expect(mockSaveDraft).toHaveBeenCalledWith("b.md", "B 内容");
     expect(mockSaveDraft).toHaveBeenCalledWith("c.md", "C 内容");
     // 未命名 → 首标题/首句命名
-    expect(mockSaveDraft.mock.calls[2][0]).toBe("Untitled 标题内容");
+    expect(mockSaveDraft.mock.calls[2]![0]).toBe("Untitled 标题内容");
   });
 
   it("聚合：单标签写失败不阻断其余备份", async () => {
