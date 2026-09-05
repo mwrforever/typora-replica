@@ -146,9 +146,9 @@ describe("OutlinePanel（AC-F17/F18/F19）", () => {
     await nextTick();
     const items = wrapper.findAll("[data-outline-item]");
     expect(items).toHaveLength(3);
-    expect(items[1].classes()).toContain("outline-panel__item--active");
+    expect(items[1]!.classes()).toContain("outline-panel__item--active");
     // DOMWrapper 泛型为 Element，内联样式断言收窄到 HTMLElement（jsdom 可解析 style 绑定）
-    expect((items[2].element as HTMLElement).style.paddingLeft).toBe("32px"); // (3-1)*16
+    expect((items[2]!.element as HTMLElement).style.paddingLeft).toBe("32px"); // (3-1)*16
     wrapper.unmount();
   });
 
@@ -169,7 +169,7 @@ describe("OutlinePanel（AC-F17/F18/F19）", () => {
     const wrapper = mount(OutlinePanel);
     await flushPromises();
     const bPos = 3;
-    await wrapper.findAll("[data-outline-item]")[1].trigger("click");
+    await wrapper.findAll("[data-outline-item]")[1]!.trigger("click");
     // 编辑器实例 + B 文本区间 [pos+1, pos+1+len)：定位标题文本而非节点边界
     expect(h.revealRange).toHaveBeenCalledWith(expect.anything(), bPos + 1, bPos + 1 + "B".length);
     wrapper.unmount();
@@ -181,7 +181,7 @@ describe("OutlinePanel（AC-F17/F18/F19）", () => {
     h.editor = undefined;
     const wrapper = mount(OutlinePanel);
     await flushPromises();
-    await wrapper.findAll("[data-outline-item]")[0].trigger("click");
+    await wrapper.findAll("[data-outline-item]")[0]!.trigger("click");
     expect(h.revealRange).not.toHaveBeenCalled();
     wrapper.unmount();
   });
@@ -441,13 +441,13 @@ describe("OutlinePanel 右键菜单与折叠（AC-F20/F22）", () => {
     const carets = wrapper.findAll("[data-outline-caret]");
     expect(carets).toHaveLength(2);
     // 点击首个 caret（A）：toggleCollapsed 生效但不触发条目跳转（@click.stop 生效）
-    await carets[0].trigger("click");
+    await carets[0]!.trigger("click");
     expect(h.revealRange).not.toHaveBeenCalled();
     expect(store.collapsedIds.has("a")).toBe(true);
     // 折叠裁剪联动：A 子树隐藏仅剩根条目，且 A 的 caret 不消失（可再展开）
     expect(wrapper.findAll("[data-outline-item]")).toHaveLength(1);
     expect(wrapper.findAll("[data-outline-caret]")).toHaveLength(1);
-    await wrapper.findAll("[data-outline-caret]")[0].trigger("click");
+    await wrapper.findAll("[data-outline-caret]")[0]!.trigger("click");
     expect(store.collapsedIds.size).toBe(0);
     expect(wrapper.findAll("[data-outline-item]")).toHaveLength(3);
     wrapper.unmount();

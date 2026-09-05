@@ -110,8 +110,8 @@ describe("C2 关闭流程（脏挂起/保存/不保存/取消）", () => {
     // 干净直关：不挂起确认，关闭内容入重开栈（未挂载无快照 → 空串兜底序列化）
     expect(controller.closeRequest.value).toBeUndefined();
     expect(controller.store.tabs).toHaveLength(1); // 末标签自动新建 → 1 个 Untitled
-    expect(controller.store.tabs[0].kind).toBe("untitled");
-    expect(controller.store.closedStack[0].content).toBe("");
+    expect(controller.store.tabs[0]!.kind).toBe("untitled");
+    expect(controller.store.closedStack[0]!.content).toBe("");
   });
 
   it("不保存：丢弃变更关闭，重开可找回关闭前内容（AC-C2-3 + D4）", async () => {
@@ -125,7 +125,7 @@ describe("C2 关闭流程（脏挂起/保存/不保存/取消）", () => {
     // 不保存：直接关闭，关闭前内容恒存重开栈（D4）
     expect(controller.closeRequest.value).toBeUndefined();
     expect(controller.store.tabs.every((t) => t.kind === "untitled")).toBe(true);
-    expect(controller.store.closedStack[0].content).toBe("# 文档");
+    expect(controller.store.closedStack[0]!.content).toBe("# 文档");
     controller.reopenClosed();
     const reopened = controller.store.tabs.find((t) => t.contentSnapshot === "# 文档");
     expect(reopened?.kind).toBe("file");
@@ -153,8 +153,8 @@ describe("C2 关闭流程（脏挂起/保存/不保存/取消）", () => {
     );
     await controller.confirmCloseSave();
     expect(controller.store.tabs).toHaveLength(1);
-    expect(controller.store.tabs[0].kind).toBe("file"); // 标签保持打开
-    expect(controller.store.tabs[0].dirty).toBe(true); // 内容未丢仍脏
+    expect(controller.store.tabs[0]!.kind).toBe("file"); // 标签保持打开
+    expect(controller.store.tabs[0]!.dirty).toBe(true); // 内容未丢仍脏
     expect(controller.store.closedStack).toHaveLength(0);
   });
 
@@ -167,7 +167,7 @@ describe("C2 关闭流程（脏挂起/保存/不保存/取消）", () => {
     // 取消等价中止：挂起已清（弹窗已关）无残留，标签与内容不变
     expect(controller.closeRequest.value).toBeUndefined();
     expect(controller.store.tabs).toHaveLength(1);
-    expect(controller.store.tabs[0].kind).toBe("untitled");
+    expect(controller.store.tabs[0]!.kind).toBe("untitled");
     expect(controller.store.closedStack).toHaveLength(0);
   });
 
@@ -181,7 +181,7 @@ describe("C2 关闭流程（脏挂起/保存/不保存/取消）", () => {
     expect(mockSaveAsDialog).toHaveBeenCalledTimes(1);
     expect(mockWriteFile).toHaveBeenCalled();
     expect(controller.store.tabs.every((t) => t.kind === "untitled")).toBe(true);
-    expect(controller.store.closedStack[0].content).toBe("");
+    expect(controller.store.closedStack[0]!.content).toBe("");
   });
 
   it("挂起期间重复关闭：陈旧挂起请求防御分支安全返回（上下文已失）", async () => {
@@ -225,6 +225,6 @@ describe("C2 关闭流程（脏挂起/保存/不保存/取消）", () => {
     controller.confirmCloseDiscard();
     expect(controller.closeRequest.value).toBeUndefined();
     expect(controller.store.tabs).toHaveLength(1);
-    expect(controller.store.tabs[0].kind).toBe("untitled");
+    expect(controller.store.tabs[0]!.kind).toBe("untitled");
   });
 });

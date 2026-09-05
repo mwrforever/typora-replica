@@ -316,7 +316,7 @@ describe("编辑器实例管理", () => {
     const dispatch = vi.spyOn(view!, "dispatch");
     editorManager.insertMarkdown("[readme.md](readme.md)");
     expect(dispatch).toHaveBeenCalledTimes(1);
-    const tr = dispatch.mock.calls[0][0] as { insertText?: (t: string) => unknown };
+    const tr = dispatch.mock.calls[0]![0] as { insertText?: (t: string) => unknown };
     expect(typeof tr.insertText).toBe("function");
   });
 
@@ -336,7 +336,7 @@ describe("编辑器实例管理", () => {
       // 防抖总窗口 = listener 内置 200ms + 事件桥 200ms，等 600ms 保证触发（沿用本文件真实计时器惯例）
       await new Promise((r) => setTimeout(r, 600));
       expect(received.length).toBeGreaterThan(0);
-      expect(received[received.length - 1].textContent).toContain("更");
+      expect(received[received.length - 1]!.textContent).toContain("更");
       // 幂等：二次取消不抛错
       off();
       off();
@@ -383,7 +383,7 @@ describe("编辑器实例管理", () => {
       const external = await makeTestEditor("## 快照标题");
       editorManager.adopt(external.crepe);
       expect(docs).toHaveLength(1);
-      expect(docs[0].textContent).toContain("快照标题");
+      expect(docs[0]!.textContent).toContain("快照标题");
       expect(selections).toHaveLength(1);
       // 快照即新实例当前选区对象（emit 直传引用，无拷贝）
       expect(selections[0]).toBe(external.view.state.selection);

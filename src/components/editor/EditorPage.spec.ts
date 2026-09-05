@@ -48,7 +48,7 @@ describe("EditorPage 编辑器宿主", () => {
     });
     // 上缴载荷携带工厂解析出的 FM 内文（不含定界符，与 adopt/getMarkdownFor 约定一致：
     // 注册表保存时经 getMarkdownFor 原样回写定界符）
-    expect(ready[0].frontMatter).toBe("title: 元数据");
+    expect(ready[0]!.frontMatter).toBe("title: 元数据");
     // 门面未被 adopt：实例归回调方（tabs 注册表）管理，门面为空态
     expect(editorManager.getCrepe()).toBeUndefined();
   });

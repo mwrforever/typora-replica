@@ -112,7 +112,7 @@ describe("tabsController 编排控制器", () => {
     expect(await controller.openFile("C:/bad.md", "bad.md")).toBe(false);
     // 回滚：挂起标签移除 → 末标签按 D3 新建 Untitled（无空态）
     expect(controller.store.tabs).toHaveLength(1);
-    expect(controller.store.tabs[0].kind).toBe("untitled");
+    expect(controller.store.tabs[0]!.kind).toBe("untitled");
     expect(controller.initialDocs.size).toBe(0);
   });
 
@@ -132,8 +132,8 @@ describe("tabsController 编排控制器", () => {
     controller.createUntitled();
     const id = controller.store.activeTabId!;
     expect(controller.store.tabs).toHaveLength(1);
-    expect(controller.store.tabs[0].kind).toBe("untitled");
-    expect(controller.store.tabs[0].contentReady).toBe(true);
+    expect(controller.store.tabs[0]!.kind).toBe("untitled");
+    expect(controller.store.tabs[0]!.contentReady).toBe(true);
     expect(controller.initialDocs.get(id)).toBe("");
   });
 
@@ -146,7 +146,7 @@ describe("tabsController 编排控制器", () => {
     controller.onInstanceReady(id, { crepe: fakeCrepe("编辑器正文"), frontMatter: null });
     const inst = registry.getInstance(id);
     expect(inst).toBeDefined();
-    expect(controller.store.tabs[0].contentSnapshot).toBeUndefined(); // clearSnapshot
+    expect(controller.store.tabs[0]!.contentSnapshot).toBeUndefined(); // clearSnapshot
     expect(controller.activeSession()).toBe(inst!.session); // 激活 → 门面会话可及
     startedAutoSaveIds.push(id); // 激活即 start（afterEach 停订）
   });
@@ -185,7 +185,7 @@ describe("tabsController 编排控制器", () => {
     controller.onInstanceReady(aId, { crepe: fakeCrepe("内容A"), frontMatter: null });
     await controller.openFile("C:/a/b.md", "b.md"); // 激活 b，a 转后台
     controller.closeTab(aId);
-    expect(controller.store.closedStack[0].content).toBe("内容A"); // getMarkdownFor 序列化
+    expect(controller.store.closedStack[0]!.content).toBe("内容A"); // getMarkdownFor 序列化
     expect(controller.store.tabs.map((t) => t.id)).toEqual([controller.store.activeTabId]);
     expect(registry.getInstance(aId)).toBeUndefined(); // 注销实例
   });
@@ -196,10 +196,10 @@ describe("tabsController 编排控制器", () => {
     controller.createUntitled(); // tab2（激活）
     controller.store.setSnapshot(aId, "快照内容");
     controller.closeTab(aId);
-    expect(controller.store.closedStack[0].content).toBe("快照内容");
+    expect(controller.store.closedStack[0]!.content).toBe("快照内容");
     // 未挂载且无快照 → 空串（关闭末标签后 D3 自动新建 Untitled，不出现空态）
     controller.closeTab(controller.store.activeTabId!);
-    expect(controller.store.closedStack[1].content).toBe("");
+    expect(controller.store.closedStack[1]!.content).toBe("");
     // 未知 id：无副作用
     controller.closeTab("nope");
     expect(controller.store.tabs).toHaveLength(1); // D3 自动新建的 Untitled
@@ -212,7 +212,7 @@ describe("tabsController 编排控制器", () => {
     controller.onInstanceReady(aId, { crepe: fakeCrepe("脏内容"), frontMatter: null });
     controller.closeTab(aId); // 激活标签关闭 → 按 D3 新建 Untitled
     controller.reopenClosed();
-    const reopened = controller.store.tabs.find((t) => t.id !== controller.store.tabs[0].id)!;
+    const reopened = controller.store.tabs.find((t) => t.id !== controller.store.tabs[0]!.id)!;
     expect(reopened).toBeDefined();
     expect(controller.initialDocs.get(reopened.id)).toBe("脏内容");
   });
@@ -259,12 +259,12 @@ describe("tabsController 编排控制器", () => {
     // 依次挂载并推进时间：lastActivatedAt 递增 → 最久未激活 = 第一个挂载的
     for (let i = 0; i < ids.length; i++) {
       vi.advanceTimersByTime(1000);
-      controller.onInstanceReady(ids[i], {
+      controller.onInstanceReady(ids[i]!, {
         crepe: fakeCrepe(contentById.get(`C:/a/${i}.md`)!),
         frontMatter: null,
       });
     }
-    const victimId = ids[0];
+    const victimId = ids[0]!;
     mockReadFile.mockResolvedValueOnce({ content: "新内容", encoding: "utf8", lineEnding: "lf" });
     expect(await controller.openFile("C:/a/new.md", "new.md")).toBe(true);
     expect(controller.store.tabs).toHaveLength(MAX_TABS + 1);
@@ -313,12 +313,12 @@ describe("tabsController 编排控制器", () => {
     // 依次挂载并推进时间：lastActivatedAt 递增 → 第 17 个标签触发回收最久未激活（首个）
     for (let i = 0; i < ids.length; i++) {
       vi.advanceTimersByTime(1000);
-      controller.onInstanceReady(ids[i], {
+      controller.onInstanceReady(ids[i]!, {
         crepe: fakeCrepe(`内容${i}`),
         frontMatter: null,
       });
     }
-    const victimId = ids[0];
+    const victimId = ids[0]!;
     mockReadFile.mockResolvedValueOnce({ content: "新内容", encoding: "utf8", lineEnding: "lf" });
     expect(await controller.openFile("C:/a/new.md", "new.md")).toBe(true);
     expect(controller.recycledIds.has(victimId)).toBe(true); // 前置：已回收（v-if 卸载态）
@@ -370,9 +370,9 @@ describe("tabsController 编排控制器", () => {
     const session = registry.getInstance(id)!.session;
     // 脏状态桥接（02 单一事件源）：markDirty/markSaved → store 簿记联动
     session.markDirty();
-    expect(controller.store.tabs[0].dirty).toBe(true);
+    expect(controller.store.tabs[0]!.dirty).toBe(true);
     session.markSaved();
-    expect(controller.store.tabs[0].dirty).toBe(false);
+    expect(controller.store.tabs[0]!.dirty).toBe(false);
     // 通知口径：error 走 console.error，info 走 console.info
     session.notify({ level: "error", message: "写盘失败" });
     expect(console.error).toHaveBeenCalledWith("[MarkWell]", "写盘失败");

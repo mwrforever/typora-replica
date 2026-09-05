@@ -53,7 +53,7 @@ function tableOf(te: TE): { pos: number; node: PMNode } {
 function hoverCell(te: TE, rowIndex: number, colIndex: number): void {
   const table = tableOf(te);
   const map = TableMap.get(table.node);
-  const inside = table.pos + map.map[rowIndex * map.width + colIndex] + 1;
+  const inside = table.pos + map.map[rowIndex * map.width + colIndex]! + 1;
   vi.spyOn(te.view, "posAtCoords").mockReturnValue({ pos: inside, inside });
   const block = te.view.dom.querySelector(".milkdown-table-block");
   expect(block).not.toBeNull();
@@ -78,8 +78,8 @@ function selectRow(te: TE, row: number): void {
   const table = tableOf(te);
   const map = TableMap.get(table.node);
   // TableMap.map 偏移量相对表格内容起点（table.pos + 1），换算绝对坐标需 +1
-  const anchor = table.pos + map.map[row * map.width] + 1;
-  const head = table.pos + map.map[(row + 1) * map.width - 1] + 1;
+  const anchor = table.pos + map.map[row * map.width]! + 1;
+  const head = table.pos + map.map[(row + 1) * map.width - 1]! + 1;
   te.view.dispatch(
     te.view.state.tr.setSelection(CellSelection.create(te.view.state.doc, anchor, head)),
   );
@@ -89,8 +89,8 @@ function selectRow(te: TE, row: number): void {
 function selectColumn(te: TE, col: number): void {
   const table = tableOf(te);
   const map = TableMap.get(table.node);
-  const anchor = table.pos + map.map[col] + 1;
-  const head = table.pos + map.map[(map.height - 1) * map.width + col] + 1;
+  const anchor = table.pos + map.map[col]! + 1;
+  const head = table.pos + map.map[(map.height - 1) * map.width + col]! + 1;
   te.view.dispatch(
     te.view.state.tr.setSelection(CellSelection.create(te.view.state.doc, anchor, head)),
   );
@@ -167,7 +167,7 @@ describe("E8 表格", () => {
     const table = tableOf(te);
     const map = TableMap.get(table.node);
     // 光标置于第一个数据行唯一格 "b" 的段落内容（TableMap 偏移相对表格内容起点，绝对坐标 = table.pos + 偏移 + 3）
-    const bCell = table.pos + map.map[map.width] + 3;
+    const bCell = table.pos + map.map[map.width]! + 3;
     te.setSelection(bCell, bCell);
     const beforeTop = selectedRect(te.view.state).top; // 记下 Tab 前所在行号（数据行 1）
     te.press("Tab");
@@ -229,7 +229,7 @@ describe("E8 表格", () => {
     const table = tableOf(te);
     const map = TableMap.get(table.node);
     // TableMap.map 偏移量相对表格内容起点，换算绝对坐标需 +1
-    const cell = table.pos + map.map[0] + 1;
+    const cell = table.pos + map.map[0]! + 1;
     te.view.dispatch(
       te.view.state.tr.setSelection(CellSelection.create(te.view.state.doc, cell, cell)),
     );

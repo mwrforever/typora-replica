@@ -201,7 +201,7 @@ describe("image-block 现状钉桩（07 T1，裸 Crepe 库内置行为）", () =
     // 仅记录结果不作断言（探测性用例，插入失败本身即为结论）
     try {
       te.view.dispatch(
-        te.view.state.tr.replaceSelectionWith(te.view.state.schema.nodes["image-block"].create()),
+        te.view.state.tr.replaceSelectionWith(te.view.state.schema.nodes["image-block"]!.create()),
       );
       console.log("[PIN-5] 编程插入后序列化:", JSON.stringify(te.getMarkdown()));
     } catch (err) {

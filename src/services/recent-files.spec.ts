@@ -26,7 +26,7 @@ describe("最近文件（F13）", () => {
     await rf.record("C:/a.md");
     await rf.record("C:/b.md");
     const list = await rf.list();
-    expect(list[0].path).toBe("C:/b.md");
+    expect(list[0]!.path).toBe("C:/b.md");
     expect(list).toHaveLength(2);
   });
 
@@ -37,7 +37,7 @@ describe("最近文件（F13）", () => {
     await rf.record("C:/a.md");
     const list = await rf.list();
     expect(list).toHaveLength(2);
-    expect(list[0].path).toBe("C:/a.md");
+    expect(list[0]!.path).toBe("C:/a.md");
   });
 
   it("连续打开 12 个只保留 10 条（AC-F13-2）", async () => {
@@ -45,8 +45,8 @@ describe("最近文件（F13）", () => {
     for (let i = 1; i <= 12; i++) await rf.record(`C:/f${i}.md`);
     const list = await rf.list();
     expect(list).toHaveLength(MAX_RECENT);
-    expect(list[0].path).toBe("C:/f12.md");
-    expect(list[9].path).toBe("C:/f3.md"); // f1/f2 被挤出
+    expect(list[0]!.path).toBe("C:/f12.md");
+    expect(list[9]!.path).toBe("C:/f3.md"); // f1/f2 被挤出
   });
 
   it("clear 清除非固定项、固定项保留（AC-F13-3）", async () => {
@@ -57,8 +57,8 @@ describe("最近文件（F13）", () => {
     await rf.clear();
     const list = await rf.list();
     expect(list).toHaveLength(1);
-    expect(list[0].path).toBe("C:/b.md");
-    expect(list[0].pinned).toBe(true);
+    expect(list[0]!.path).toBe("C:/b.md");
+    expect(list[0]!.pinned).toBe(true);
   });
 
   it("remove 移除条目（打开失败时调用，AC-F13-4）", async () => {
@@ -77,8 +77,8 @@ describe("最近文件（F13）", () => {
     await rf.record("C:/a.md");
     const list = await rf.list();
     expect(list).toHaveLength(1);
-    expect(list[0].path).toBe("C:/a.md");
-    expect(list[0].pinned).toBe(true);
+    expect(list[0]!.path).toBe("C:/a.md");
+    expect(list[0]!.pinned).toBe(true);
   });
 
   it("存量键为非法类型时回落空列表（损坏存量不崩溃）", async () => {

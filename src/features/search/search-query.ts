@@ -119,7 +119,8 @@ export function nthMatch(
  */
 export function activeMatchIndex(matches: SearchResult[], head: number): number {
   for (let i = 0; i < matches.length; i += 1) {
-    if (matches[i].to > head) return i;
+    // 循环边界 i < matches.length 保证元素存在（! 仅作类型收窄）
+    if (matches[i]!.to > head) return i;
   }
   return Math.max(0, matches.length - 1);
 }

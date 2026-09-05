@@ -54,7 +54,7 @@ describe("mermaid 预览钩子", () => {
     const applyPreview = vi.fn();
     hook("sequence", "A->B: hi", applyPreview);
     await vi.waitFor(() => expect(applyPreview).toHaveBeenCalled());
-    const html = applyPreview.mock.calls[0][0] as string;
+    const html = applyPreview.mock.calls[0]![0] as string;
     expect(html).toContain("sequenceDiagram");
   });
 
@@ -70,8 +70,8 @@ describe("mermaid 预览钩子", () => {
     await vi.waitFor(() => expect(applySecond).toHaveBeenCalled());
     const render = mermaidMock.render;
     expect(render).toHaveBeenCalledTimes(2);
-    const id1 = render.mock.calls[0][0];
-    const id2 = render.mock.calls[1][0];
+    const id1 = render.mock.calls[0]![0];
+    const id2 = render.mock.calls[1]![0];
     // 两次渲染 id 不同，且按 markwell-mermaid-N 自增形态生成
     expect(id1).toMatch(/^markwell-mermaid-\d+$/);
     expect(id2).toMatch(/^markwell-mermaid-\d+$/);
@@ -83,7 +83,7 @@ describe("mermaid 预览钩子", () => {
     const applyPreview = vi.fn();
     hook("flow", "st=>start: S", applyPreview);
     await vi.waitFor(() => expect(applyPreview).toHaveBeenCalled());
-    const html = applyPreview.mock.calls[0][0] as string;
+    const html = applyPreview.mock.calls[0]![0] as string;
     expect(html).toContain("flowchart TD");
   });
 

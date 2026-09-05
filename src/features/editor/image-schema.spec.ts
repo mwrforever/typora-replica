@@ -59,7 +59,7 @@ describe("image-block schema 定制（07）", () => {
     const te = await makeTestEditor("");
     te.editor.action((ctx) => {
       const view = ctx.get(editorViewCtx);
-      const nodeType = view.state.schema.nodes["image-block"];
+      const nodeType = view.state.schema.nodes["image-block"]!;
       view.dispatch(
         view.state.tr.replaceSelectionWith(
           nodeType.create({ src: "p.png", caption: "图注", ratio: 0.75 }),

@@ -131,8 +131,9 @@ export const useTabsStore = defineStore("tabs", {
         this.activeTabId = undefined;
         this.createUntitled();
       } else if (this.activeTabId === id) {
-        // 关闭的是激活标签：激活右邻（原位置现为右邻），无右邻则左邻（末尾）
-        const neighbor = this.tabs[Math.min(index, this.tabs.length - 1)];
+        // 关闭的是激活标签：激活右邻（原位置现为右邻），无右邻则左邻（末尾）；
+        // 上方 length===0 分支已排除空表，Math.min 把 index 钳在末位，邻位必存在
+        const neighbor = this.tabs[Math.min(index, this.tabs.length - 1)]!;
         this.activate(neighbor.id);
       }
     },
@@ -147,7 +148,8 @@ export const useTabsStore = defineStore("tabs", {
           this.activeTabId = undefined;
           this.createUntitled();
         } else {
-          this.activate(this.tabs[Math.min(index, this.tabs.length - 1)].id);
+          // length>0 分支已排除空表，Math.min 把 index 钳在末位，邻位必存在
+          this.activate(this.tabs[Math.min(index, this.tabs.length - 1)]!.id);
         }
       }
     },
@@ -156,8 +158,9 @@ export const useTabsStore = defineStore("tabs", {
     cycle(dir: 1 | -1): void {
       if (this.tabs.length === 0) return;
       const index = this.tabs.findIndex((t) => t.id === this.activeTabId);
+      // 对 length 取模的环游下标恒落在 [0, length-1]（含 index=-1 与 -0 边界），条目必存在
       const next = (index + dir + this.tabs.length) % this.tabs.length;
-      this.activate(this.tabs[next].id);
+      this.activate(this.tabs[next]!.id);
     },
 
     /** LIFO 重开最近关闭：恢复关闭前内容与脏状态（AC-F29-5/6）；栈空返回 undefined */

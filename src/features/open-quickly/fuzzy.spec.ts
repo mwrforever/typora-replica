@@ -29,7 +29,7 @@ describe("Open Quickly 模糊匹配（F11）", () => {
 
   it("排序：前缀优先 + 固定项提前 + 名称短优先", () => {
     const r = searchQuickItems("sub", items);
-    expect(r[0].path).toBe("C:/docs/sub.md"); // 固定项优先
+    expect(r[0]!.path).toBe("C:/docs/sub.md"); // 固定项优先
   });
 
   it("分数相同时按字典序排序（平局分支）", () => {

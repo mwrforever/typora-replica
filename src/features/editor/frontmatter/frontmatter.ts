@@ -115,8 +115,8 @@ export function readFrontMatterKey(fm: string, key: string): string | undefined 
     const m = /^([\w-]+)\s*:\s*(.*)$/.exec(rawLine.trim());
     // 非键值行（空行/注释行）跳过
     if (!m) continue;
-    // 命中目标键即返回（首个匹配优先）
-    if (m[1] === key) return m[2].trim();
+    // 命中目标键即返回（首个匹配优先）；正则含第二个捕获组，命中后 m[2] 恒有值（! 仅作类型收窄）
+    if (m[1] === key) return m[2]!.trim();
   }
   return undefined;
 }

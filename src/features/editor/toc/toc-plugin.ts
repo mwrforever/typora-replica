@@ -49,12 +49,13 @@ function remarkTocNode() {
     const walk = (node: MdastNode): void => {
       if (!node.children) return;
       node.children = node.children.map((child) => {
-        // 命中条件：段落且唯一子节点为文本 `[toc]`（行内其余字符均不命中）
+        // 命中条件：段落且唯一子节点为文本 `[toc]`（行内其余字符均不命中）；
+        // children?.length === 1 已保证首子节点存在（! 仅作类型收窄）
         if (
           child.type === "paragraph" &&
           child.children?.length === 1 &&
-          child.children[0].type === "text" &&
-          child.children[0].value === "[toc]"
+          child.children[0]!.type === "text" &&
+          child.children[0]!.value === "[toc]"
         ) {
           return { type: tocNodeName };
         }
@@ -103,8 +104,9 @@ const tocInputRule = $inputRule(() => {
     // 光标必须位于段落内容末尾（行尾无未消费文本才转换）
     const $end = state.doc.resolve(end);
     if ($end.parentOffset !== $end.parent.content.size) return null;
-    // 整段替换为 toc 原子节点（范围含段落开闭标签，与 E8 建表规则同一写法）
-    return state.tr.replaceRangeWith(start - 1, end + 1, state.schema.nodes[tocNodeName].create());
+    // 整段替换为 toc 原子节点（范围含段落开闭标签，与 E8 建表规则同一写法）；
+    // toc 节点由本模块 $nodeSchema 注册进 schema，必有定义（! 仅作类型收窄）
+    return state.tr.replaceRangeWith(start - 1, end + 1, state.schema.nodes[tocNodeName]!.create());
   });
 });
 

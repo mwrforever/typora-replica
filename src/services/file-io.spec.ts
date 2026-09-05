@@ -89,7 +89,7 @@ describe("file-io 桥（Rust command 封装）", () => {
     mockInvoke.mockResolvedValue([{ path: "p", name: "2026-08-15-a.md", date: "2026-08-15" }]);
     const drafts = await listDrafts();
     expect(mockInvoke).toHaveBeenCalledWith("list_drafts");
-    expect(drafts[0].date).toBe("2026-08-15");
+    expect(drafts[0]!.date).toBe("2026-08-15");
   });
 
   it("recoverDraft 走契约名 recover_draft 并返回解码结果", async () => {
@@ -182,7 +182,7 @@ describe("03 文件树封装", () => {
         groupFolderFirst: true,
       },
     });
-    expect(out[0].name).toBe("a.md");
+    expect(out[0]!.name).toBe("a.md");
   });
 
   it("watchDir 创建 Channel 并投递批量事件（Rust 合并窗口契约）", async () => {

@@ -244,8 +244,9 @@ export function makeTableTabAddRowCommand() {
       if (!isLastCellOfRow) return false;
       if (!dispatch) return true;
       // 末行末格段落内容位置：TableMap.map 偏移量相对表格内容起点，
-      // 换算绝对坐标 = table.pos + 偏移 + 1（格节点起点）+ 2（段落内容起点）
-      const lastCellPos = table.pos + map.map[map.map.length - 1] + 3;
+      // 换算绝对坐标 = table.pos + 偏移 + 1（格节点起点）+ 2（段落内容起点）；
+      // 多列表格（width>1 已守卫）map 至少 2 项，末项恒存在（! 仅作类型收窄）
+      const lastCellPos = table.pos + map.map[map.map.length - 1]! + 3;
       // selectedRect 需要完整 EditorState（内部读 state.selection），不能直接传 TextSelection；
       // 用末格选区经 state.apply 构造一次性状态求末行矩形，不影响真实选区
       const lastRowState = state.apply(

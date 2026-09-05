@@ -38,11 +38,11 @@ describe("tree-utils", () => {
       "C:/d",
     );
     expect(tree.map((n) => n.name)).toEqual(["a.md", "sub"]);
-    expect(tree[1].path).toBe("C:/d/sub");
-    expect(tree[1].relPath).toBe("sub");
-    expect(tree[1].children.map((n) => n.name)).toEqual(["b.md"]);
-    expect(tree[1].children[0].path).toBe("C:/d/sub/b.md");
-    expect(tree[1].children[0].relPath).toBe("sub/b.md");
+    expect(tree[1]!.path).toBe("C:/d/sub");
+    expect(tree[1]!.relPath).toBe("sub");
+    expect(tree[1]!.children.map((n) => n.name)).toEqual(["b.md"]);
+    expect(tree[1]!.children[0]!.path).toBe("C:/d/sub/b.md");
+    expect(tree[1]!.children[0]!.relPath).toBe("sub/b.md");
   });
 
   it("duplicateTargetName 基础命名与冲突追加 -1", () => {
