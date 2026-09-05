@@ -3,8 +3,8 @@
 // 职责：设置读取（settings.theme 组）→ 目录扫描（list_themes）→ asset 授权（复用 07
 // allow_asset_directory，递归放行主题目录含 fonts/）→ 注入驱动（theme-css）→
 // .markwell-dark 根类激活（08 自建运行时激活，消费 crepe-overrides 暗色段）。
-// 明暗源 = 系统（Task 12/13 接入 matchMedia；本文件先落恒亮色基座——对齐
-// zoom-render.spec 钉桩注释「现阶段恒亮色」）。不调用 setTheme 钉死窗口主题（D-3）。
+// 明暗源 = 系统（matchMedia prefers-color-scheme：Task 12 封装求值/订阅，
+// Task 13 在 init 接入真值与 change 联动）。不调用 setTheme 钉死窗口主题（D-3）。
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -12,6 +12,7 @@ import { allowThemeAssetDirectory, listThemes, watchThemes } from "../../service
 import type { ThemeMeta } from "../../services/theme-io";
 import { loadSettings, updateSettings } from "../../services/settings";
 import { applyThemeCss } from "./theme-css";
+import { currentSystemDark, watchSystemColorScheme } from "./color-scheme";
 
 /** 明暗模式（settings.theme 两组键的选择器） */
 export type ThemeMode = "light" | "dark";
@@ -29,7 +30,7 @@ export const useThemeStore = defineStore("theme", () => {
   const lightTheme = ref("");
   /** 暗色模式主题名（settings.theme.darkTheme 镜像） */
   const darkTheme = ref("");
-  /** 当前系统暗色（Task 13 起接入 matchMedia 真值；基座恒 false） */
+  /** 当前系统暗色（init 读 matchMedia 真值 + change 订阅镜像；AC-T5-1 明暗源） */
   const systemDark = ref(false);
   /** 主题目录 asset 基准 URL（convertFileSrc(dir)，尾随分隔符归一） */
   const assetBase = ref("");
@@ -81,6 +82,12 @@ export const useThemeStore = defineStore("theme", () => {
       themes.value = list.themes;
       hasBaseUserCss.value = list.hasBaseUserCss;
       assetBase.value = convertFileSrc(list.dir).replace(/[/\\]+$/, "");
+      systemDark.value = currentSystemDark();
+      // 订阅系统色系（AC-T5-1）：切换即镜像 + 重挂对应主题（明暗分离选择，Task 5 存储）
+      stopColorScheme = watchSystemColorScheme((dark) => {
+        systemDark.value = dark;
+        applyCurrent();
+      });
       try {
         await allowThemeAssetDirectory(list.dir);
       } catch (e) {
@@ -113,6 +120,9 @@ export const useThemeStore = defineStore("theme", () => {
 
   /** 防抖定时器（目录事件风暴合并；dispose 清理防悬挂回调；undefined=无待触发定时器） */
   let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** 系统色系退订函数（init 订阅、dispose 释放；undefined=未订阅，宪法 A.1.2.3） */
+  let stopColorScheme: (() => void) | undefined;
 
   /** 目录事件 → 300ms 尾沿防抖刷新（Rust 侧另有 100ms 合并窗口，此处合并前端风暴） */
   function scheduleRefresh(): void {
@@ -148,6 +158,9 @@ export const useThemeStore = defineStore("theme", () => {
       clearTimeout(refreshTimer);
       refreshTimer = undefined;
     }
+    // 色系退订幂等：重复调用/未订阅时 optional chain 落空，零副作用
+    stopColorScheme?.();
+    stopColorScheme = undefined;
   }
 
   return {

@@ -12,6 +12,11 @@ const mocks = vi.hoisted(() => ({
   updateSettings: vi.fn(),
   convert: vi.fn((p: string) => `http://asset.localhost/${encodeURIComponent(p)}`),
   errorSpy: vi.fn(),
+  currentDark: vi.fn(() => false),
+  // 退订函数须为 spy：dispose 用例对退订断言调用次数（普通函数无法 toHaveBeenCalledTimes）；
+  // 泛型形式标注签名使 calls 元组携带 onChange 类型（strict/noUncheckedIndexedAccess 下
+  // 空参数元组不可索引），且避免未用形参触发 no-unused-vars
+  watchScheme: vi.fn<(onChange: (dark: boolean) => void) => () => void>(() => vi.fn()),
 }));
 vi.mock("../../services/theme-io", () => ({
   listThemes: mocks.listThemes,
@@ -25,6 +30,10 @@ vi.mock("../../services/settings", () => ({
   updateSettings: mocks.updateSettings,
 }));
 vi.mock("@tauri-apps/api/core", () => ({ convertFileSrc: mocks.convert }));
+vi.mock("./color-scheme", () => ({
+  currentSystemDark: mocks.currentDark,
+  watchSystemColorScheme: mocks.watchScheme,
+}));
 
 import { useThemeStore } from "./theme-store";
 
@@ -251,5 +260,69 @@ describe("themeStore 热刷新（Task 10）", () => {
     await store.init();
     expect(mocks.errorSpy).toHaveBeenCalled();
     expect(document.getElementById("markwell-theme-link")).not.toBeNull(); // 首次注入不受影响
+  });
+});
+
+describe("themeStore 明暗联动（Task 13）", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    document.head.innerHTML = "";
+    document.documentElement.className = "";
+    vi.clearAllMocks();
+    mocks.listThemes.mockResolvedValue(LIST);
+    mocks.loadSettings.mockResolvedValue(SETTINGS);
+    mocks.updateSettings.mockImplementation(
+      async (patch: { theme?: Partial<{ lightTheme: string; darkTheme: string }> }) => ({
+        theme: { ...SETTINGS.theme, ...patch.theme },
+      }),
+    );
+    vi.spyOn(console, "error").mockImplementation(mocks.errorSpy);
+    vi.spyOn(Date, "now").mockReturnValue(1_000);
+  });
+
+  it("init 读真实系统色系：暗色系统下启动即挂暗色主题并激活根类（AC-T5-1 初始态）", async () => {
+    mocks.currentDark.mockReturnValue(true);
+    const store = useThemeStore();
+    await store.init();
+    expect(store.systemDark).toBe(true);
+    expect(document.documentElement.classList.contains("markwell-dark")).toBe(true);
+    const link = document.getElementById("markwell-theme-link") as HTMLLinkElement;
+    expect(link.getAttribute("href")).toContain("/markwell-dark.css?t=");
+  });
+
+  it("系统色系切换 → 对应主题自动应用与根类切换（AC-T5-1）", async () => {
+    const store = useThemeStore();
+    await store.init();
+    // 捕获 watchSystemColorScheme 订阅的回调（Task 12 模块被 mock）
+    const onChange = mocks.watchScheme.mock.calls[0]?.[0];
+    expect(onChange).toBeDefined(); // init 必须已订阅系统色系（RED：未订阅时此处失败）
+    onChange?.(true);
+    expect(document.documentElement.classList.contains("markwell-dark")).toBe(true);
+    expect(
+      (document.getElementById("markwell-theme-link") as HTMLLinkElement).getAttribute("href"),
+    ).toContain("/markwell-dark.css?t=");
+    onChange?.(false);
+    expect(document.documentElement.classList.contains("markwell-dark")).toBe(false);
+    expect(
+      (document.getElementById("markwell-theme-link") as HTMLLinkElement).getAttribute("href"),
+    ).toContain("/markwell-light.css?t=");
+  });
+
+  it("暗色模式下明暗主题分设生效（设置值失效回落内置暗色）", async () => {
+    mocks.currentDark.mockReturnValue(true);
+    const store = useThemeStore();
+    await store.init();
+    store.darkTheme = "deleted-dark"; // 设置值失效场景
+    expect(store.resolveActiveTheme("dark")?.name).toBe("markwell-dark"); // 内置兜底
+  });
+
+  it("dispose 退订系统色系监听（App 卸载链路）", async () => {
+    const store = useThemeStore();
+    await store.init();
+    expect(mocks.watchScheme).toHaveBeenCalledTimes(1);
+    const unsubscribe = mocks.watchScheme.mock.results[0]?.value;
+    expect(unsubscribe).toBeDefined();
+    store.dispose();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
 });
