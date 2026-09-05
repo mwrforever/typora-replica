@@ -45,6 +45,9 @@ fn main() {
             "list_themes",
             "open_theme_folder",
             "watch_themes",
+            // 08 T7 DevTools 开关（devtools.rs）：漏声明则 allow-toggle-devtools
+            // 权限不会生成，capabilities 引用即构建失败
+            "toggle_devtools",
         ]))
         // 关闭 tauri-build 默认 manifest：改由下方 rustc-link-arg 统一嵌入，
         // 否则主程序出现两份 manifest 资源（winres 一份 + 链接器一份）冲突

@@ -13,6 +13,7 @@ pub struct AppState {
     pub theme_watcher: Mutex<Option<notify::RecommendedWatcher>>,
 }
 
+pub mod devtools;
 pub mod io;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -70,7 +71,10 @@ pub fn run() {
             io::images::allow_asset_directory,
             io::themes::list_themes,
             io::themes::open_theme_folder,
-            io::themes::watch_themes
+            io::themes::watch_themes,
+            // 08 T7 DevTools 开关（devtools.rs）：debug 构建可用，release 须 devtools
+            // feature（未启用时命令无操作返回 false）
+            devtools::toggle_devtools
         ])
         .run(tauri::generate_context!())
     {

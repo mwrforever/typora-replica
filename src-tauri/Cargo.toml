@@ -37,6 +37,11 @@ pathdiff = "0.2"
 tauri-plugin-dialog = "2"
 tauri-plugin-store = "2"
 
+[features]
+# 08 T7 DevTools：release 构建显式启用（debug 构建默认编译 devtools 能力；
+# tauri 的 devtools 方法带 #[cfg(any(debug_assertions, feature = "devtools"))] 门控）
+devtools = ["tauri/devtools"]
+
 [dev-dependencies]
 # 命令层测试（unwatch_dir 幂等/多槽并存）经 tauri::test mock 运行时直呼命令——
 # tauri 的 test feature（空 feature，仅编译 mock 模块）只对测试构建生效。
