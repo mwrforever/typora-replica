@@ -20,7 +20,7 @@
 | P0 | 环境与分支准备 | ✅ 完成 | worktree 就绪；基线四项全绿；gh 可用；进度文件已提交 |
 | P1 | 实施计划撰写 | ✅ 完成 | 计划 7f7b442 已提交；16 条 AC 全映射；18 任务全标注；7 批次合规；自审三查留痕（附录 C） |
 | P2 | SDD 预检与批次登记 | ✅ 完成 | ledger 首行为本计划标识；pre-flight 6 冲突主控裁决→计划修订 27a2d04；批次表已登记 ledger |
-| P3 | 分批 TDD 实现与批审 | ⬜ 未开始 | — |
+| P3 | 分批 TDD 实现与批审 | ✅ 完成 | B1~B7 全 complete（3 修复轮）；16 AC 证据齐全；三阶段验收门过；七项门禁全绿（2026-09-06 取证） |
 | P4 | 全分支终审 | ⬜ 未开始 | — |
 | P5 | 端到端验收 | ⬜ 未开始 | — |
 | P6 | PR 与 code-review 插件审核 | ⬜ 未开始 | — |
@@ -125,12 +125,19 @@
 
 ## 七项全量门禁记录（P3 末首跑 / P5 复跑为最终证据）
 
-| 门禁 | P3 首跑 | P5 复跑 |
+| 门禁 | P3 首跑（2026-09-06） | P5 复跑 |
 | --- | --- | --- |
-| `npm run typecheck` | ⬜ | ⬜ |
-| `npm run lint` | ⬜ | ⬜ |
-| `npm run format:check` | ⬜ | ⬜ |
-| `npm run test:coverage` | ⬜ | ⬜ |
-| `cargo fmt -- --check` | ⬜ | ⬜ |
-| `cargo clippy -D warnings` | ⬜ | ⬜ |
-| `cargo test` | ⬜ | ⬜ |
+| `npm run typecheck` | ✅ exit 0 | ⬜ |
+| `npm run lint` | ✅ exit 0 | ⬜ |
+| `npm run format:check` | ✅ exit 0 | ⬜ |
+| `npm run test:coverage` | ✅ exit 0（主题核心域 4 文件四项 100%，全局 860 测试） | ⬜ |
+| `cargo fmt -- --check` | ✅ exit 0 | ⬜ |
+| `cargo clippy -D warnings` | ✅ exit 0 | ⬜ |
+| `cargo test` | ✅ 124 passed / 0 failed | ⬜ |
+
+## P3 汇总（2026-09-06 收批）
+
+- 批次：B1（Task1-3，1 修复轮 AC-T6-3 判别力）→ B2（Task4-5，Approved）→ B3（Task6-8，1 修复轮 init 拒绝路径）→ B4（Task9-11，1 修复轮 refresh 拒绝路径）→ B5（Task12-14，Approved）→ B6（Task15-17，Approved）→ B7（Task18 E2E，Approved）。共 18 任务 21 笔代码/文档提交，3 轮批审修复循环均 1 轮收敛。
+- 测试规模：Vitest 92 文件 860 用例（含 theme 域 27 Vitest + E2E 2 用例）；Rust 124（含 io::themes 14）。
+- spec 三阶段验收门：基座（AC-T1/T2 数据链路）✅、管理增强（AC-T4/T6 ✅ + AC-T3 数据链路）✅、明暗字体（AC-T5/T7/T8 披露降级段除外）✅。
+- deferred minors 与 parked：全部入 ledger（`.superpowers/sdd/2026-09-05-08-theme/progress.md`），无 parked 裁决（全部 findings 经修复轮闭环或列 deferred）。
