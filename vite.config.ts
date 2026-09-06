@@ -77,6 +77,14 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 09 导入导出核心 100%：HTML 管线（变量替换防 XSS / 大纲 / CSS 内联 / 后处理）、
+        // PDF 编排、导出项管理与会话级记忆（宪法 A.6.2 核心域同步阈值）
+        "src/features/export/**/*.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
         // 02 核心服务 100%：行尾转换器（落盘统一口径——FM 盲区收口/硬换行往返）
         "src/services/line-ending.ts": {
           lines: 100,
