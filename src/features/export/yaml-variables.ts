@@ -3,7 +3,7 @@
 // 安全设计（spec §2 X1「YAML 变量替换仅限 <title>/<meta> 内防 XSS」）：
 // 1. 变量只从 front matter 内文提取，键名走白名单，白名单外键直接丢弃；
 // 2. 替换只作用于调用方传入的 head 模板字符串——正文 HTML（DOM 序列化产物）
-//    在 html-export 管线中永不进入本函数，正文中的 ${title} 字面量天然不被替换；
+//    在 html-export 管线中永不进入本函数，正文中的 {{title}} 字面量天然不被替换；
 // 3. 全部值经 escapeHtmlValue 转义后才拼入模板，<script> 注入失效。
 // 纯函数模块：无状态、无 IO。
 import { readFrontMatterKey } from "../editor/frontmatter/frontmatter";

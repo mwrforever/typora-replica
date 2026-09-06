@@ -44,4 +44,33 @@ describe("buildOutlineHtml", () => {
     expect(html.match(/<li>/g)!.length).toBe(html.match(/<\/li>/g)!.length);
     expect(html).toContain('<a href="#c">C</a>');
   });
+
+  it("跳级缺档（h1 直跳 h3）平铺降级两条目均输出且配对完整", () => {
+    const gapped: HeadingInfo[] = [
+      { id: "h1", level: 1, text: "一级", pos: 0 },
+      { id: "h3", level: 3, text: "三级", pos: 1 },
+    ];
+    const html = buildOutlineHtml(gapped, true);
+    expect(html).toContain('<a href="#h1">一级</a>');
+    expect(html).toContain('<a href="#h3">三级</a>');
+    expect(html.match(/<a /g)!.length).toBe(html.match(/<\/a>/g)!.length);
+    expect(html.match(/<ul>/g)!.length).toBe(html.match(/<\/ul>/g)!.length);
+    expect(html.match(/<li>/g)!.length).toBe(html.match(/<\/li>/g)!.length);
+  });
+
+  it("锚点 id 含引号/尖括号时转义，href 属性不可被逃逸注入（批1 R1 回归）", () => {
+    // slugOf 保留引号/尖括号（typora-heading-id.ts），含引号标题的 id 若零转义
+    // 拼 href 会提前闭合属性注入事件处理器
+    const malicious: HeadingInfo[] = [
+      { id: 'a" onclick="alert(1)', level: 1, text: "A", pos: 0 },
+      { id: "b>c", level: 2, text: "B", pos: 1 },
+    ];
+    const html = buildOutlineHtml(malicious, true);
+    // id 内引号已转义为 &quot;，属性值无法提前闭合
+    expect(html).toContain('href="#a&quot; onclick=&quot;alert(1)"');
+    expect(html).not.toContain('onclick="alert(1)"');
+    // 尖括号转义为 &gt;，不产生畸形标签
+    expect(html).toContain('href="#b&gt;c"');
+    expect(html).not.toContain('href="#b>c"');
+  });
 });
