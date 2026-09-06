@@ -9,8 +9,8 @@ import { ref } from "vue";
 import { loadSettings, updateSettings } from "../../services/settings";
 import type { ExportSettings } from "../../services/settings";
 
-/** 导出菜单项元数据 */
-export interface ExportMenuItemMeta {
+/** 导出菜单项元数据（模块内私有——store.items 结构类型经 useExportStore 推导对外可见） */
+interface ExportMenuItemMeta {
   /** 项 id（内置 = 格式 id；自定义 = 自增 id） */
   id: string;
   /** 菜单显示名 */
@@ -21,8 +21,8 @@ export interface ExportMenuItemMeta {
   enabled: boolean;
 }
 
-/** 内置导出 4 项（锁定；顺序即默认菜单序——用户实测回填） */
-export const BUILTIN_EXPORT_ITEMS: ExportMenuItemMeta[] = [
+/** 内置导出 4 项（锁定；顺序即默认菜单序——用户实测回填；模块内私有） */
+const BUILTIN_EXPORT_ITEMS: ExportMenuItemMeta[] = [
   { id: "pdf", label: "PDF", builtin: true, enabled: true },
   { id: "html", label: "HTML", builtin: true, enabled: true },
   { id: "html-plain", label: "HTML (without Styles)", builtin: true, enabled: true },
