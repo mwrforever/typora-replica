@@ -25,6 +25,7 @@ import { renderMermaidToSvg } from "./mermaid-export";
 import { exportSaveDialog } from "./export-dialog";
 import { resolveExportDefaultPath, setLastExportDir } from "./export-location";
 import { recordExportSnapshot } from "./export-previous";
+import { useExportStore } from "./export-store";
 import { ExportError } from "./export-types";
 import type {
   ExportHtmlOptions,
@@ -64,7 +65,12 @@ export async function exportHtml(
   options: ExportHtmlOptions = {},
 ): Promise<ExportResult | undefined> {
   const built = await buildExportDocument({ plain: false, options });
-  const target = await askExportTarget(built.title, "HTML", "html", options.destinationPath);
+  const target = await askExportTarget({
+    titleBase: built.title,
+    filterName: "HTML",
+    ext: "html",
+    destinationPath: options.destinationPath,
+  });
   if (target === undefined) return undefined;
   await writeFile(target, built.document, "lf");
   // 回写会话级上次导出目录（spec X8：auto+未命名文档回落到上次导出目录）
@@ -82,7 +88,12 @@ export async function exportPlainHtml(
   options: ExportHtmlOptions = {},
 ): Promise<ExportResult | undefined> {
   const built = await buildExportDocument({ plain: true, options });
-  const target = await askExportTarget(built.title, "HTML", "html", options.destinationPath);
+  const target = await askExportTarget({
+    titleBase: built.title,
+    filterName: "HTML",
+    ext: "html",
+    destinationPath: options.destinationPath,
+  });
   if (target === undefined) return undefined;
   await writeFile(target, built.document, "lf");
   // 回写会话级上次导出目录（spec X8：auto+未命名文档回落到上次导出目录）
@@ -138,11 +149,13 @@ async function buildExportDocument(args: BuildArgs): Promise<{ document: string;
     plainMode: args.plain,
   });
 
-  // title 优先级：YAML title（白名单提取）> 调用方显式文件名基 > Untitled
+  // title 优先级：YAML title（白名单提取）> 调用方显式文件名基 > Untitled；
+  // 全空白 title 视同缺省（批3 Minor6②：空白标题导出产物 <title> 全空白无意义）
   const vars = extractYamlVariables(getActiveFrontMatter());
-  const title = vars.title !== "" ? vars.title : (args.options.fileNameBase ?? "Untitled");
+  const hasTitle = vars.title.trim() !== "";
+  const title = hasTitle ? vars.title : (args.options.fileNameBase ?? "Untitled");
   // YAML title 缺省时以回落标题回填变量集：导出产物 <title> 与落盘文件名保持一致
-  if (vars.title === "") vars.title = title;
+  if (!hasTitle) vars.title = title;
 
   // Include Outline：body 最前置大纲导航（正文锚点跳转依赖标题 id 序列化保留）
   const outlineNav = args.options.includeOutline === true ? `${outlineHtml}\n` : "";
@@ -194,28 +207,33 @@ async function collectThemeCss(themeOverride?: ExportThemeRef): Promise<string |
   }
 }
 
+/** 另存对话框目标请求（askExportTarget 入参对象化，批3 Minor6①） */
+interface ExportTargetRequest {
+  /** 文档标题（文件名基） */
+  titleBase: string;
+  /** 对话框过滤器显示名 */
+  filterName: string;
+  /** 扩展名（不含点） */
+  ext: string;
+  /** 直接落盘路径（X6 overwrite 复导出）；缺省走另存对话框 */
+  destinationPath?: string;
+}
+
 /**
- * 解析导出落盘目标
- * @param titleBase 文档标题（文件名基）
- * @param filterName 对话框过滤器显示名
- * @param ext 扩展名（不含点）
- * @param destinationPath 直接落盘路径（X6 overwrite 复导出）；缺省走另存对话框
+ * 解析导出落盘目标（位置设置读导出 store——X8 位置模式的运行时数据面）
+ * @param req 目标请求（标题基/过滤器名/扩展名/直落路径）
  * @returns 落盘路径；用户取消对话框 = undefined
  */
-async function askExportTarget(
-  titleBase: string,
-  filterName: string,
-  ext: string,
-  destinationPath?: string,
-): Promise<string | undefined> {
-  if (destinationPath !== undefined) return destinationPath;
+async function askExportTarget(req: ExportTargetRequest): Promise<string | undefined> {
+  if (req.destinationPath !== undefined) return req.destinationPath;
+  const exportStore = useExportStore();
   const documentDir = dirnameOf(useTabsStore().activeTab?.path);
   const defaultPath = resolveExportDefaultPath(
-    `${toFileName(titleBase)}.${ext}`,
-    { locationMode: "auto", customDir: "" },
+    `${toFileName(req.titleBase)}.${req.ext}`,
+    { locationMode: exportStore.locationMode, customDir: exportStore.customDir },
     { documentDir },
   );
-  const picked = await exportSaveDialog({ defaultPath, filterName, ext });
+  const picked = await exportSaveDialog({ defaultPath, filterName: req.filterName, ext: req.ext });
   return picked ?? undefined;
 }
 

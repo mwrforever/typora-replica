@@ -26,6 +26,15 @@ const useTabsStoreMock = vi.hoisted(() =>
   vi.fn(() => ({ activeTab: undefined as { path?: string } | undefined })),
 );
 vi.mock("../tabs/tabs-store", () => ({ useTabsStore: useTabsStoreMock }));
+// 导出 store 桩：默认 auto/空串（与未装载时真实初值一致，既有用例依赖）；
+// 位置接线用例以 mockReturnValueOnce 改写为 custom（askPdfTarget 动态 import 亦被本桩拦截）
+const useExportStoreMock = vi.hoisted(() =>
+  vi.fn(() => ({
+    locationMode: "auto" as "auto" | "document-dir" | "custom",
+    customDir: "",
+  })),
+);
+vi.mock("./export-store", () => ({ useExportStore: useExportStoreMock }));
 const recordMock = vi.hoisted(() => vi.fn());
 vi.mock("./export-previous", () => ({ recordExportSnapshot: recordMock }));
 
@@ -43,6 +52,7 @@ describe("exportPdf", () => {
     buildPdfMock.mockClear();
     recordMock.mockClear();
     useTabsStoreMock.mockClear();
+    useExportStoreMock.mockClear();
   });
 
   it("invoke export_pdf 携带 HTML 全文 + A4 打印设置 + 目标路径", async () => {
@@ -100,6 +110,8 @@ describe("exportPdf", () => {
 
   it("成功落盘后回写会话上次导出目录（X8 auto 未命名回落链）", async () => {
     try {
+      // 哨兵预置：回写未发生时断言读到哨兵值，消除既有用例泄漏值造成的误通过窗口（批4-M6）
+      setLastExportDir("D:/sentinel");
       await exportPdf({ destinationPath: "D:/out/x.pdf" });
       expect(getLastExportDirForTest()).toBe("D:/out");
     } finally {
@@ -110,9 +122,11 @@ describe("exportPdf", () => {
 
   it("invoke 拒绝时不回写会话目录（失败路径不污染回落链）", async () => {
     try {
+      // 哨兵预置：失败路径断言记忆保持哨兵原值，钉住「拒绝即不回写」语义（批4-M6）
+      setLastExportDir("D:/sentinel");
       invokeMock.mockRejectedValueOnce("打印管线失败");
       await expect(exportPdf({ destinationPath: "D:/out/x.pdf" })).rejects.toThrow("打印管线失败");
-      expect(getLastExportDirForTest()).toBeUndefined();
+      expect(getLastExportDirForTest()).toBe("D:/sentinel");
     } finally {
       setLastExportDir(undefined);
     }
@@ -131,6 +145,16 @@ describe("exportPdf", () => {
       filterName: "PDF",
       ext: "pdf",
     });
+  });
+
+  it("AC-X8-1：位置模式接线——locationMode/customDir 读导出 store 传入位置解析", async () => {
+    useExportStoreMock.mockReturnValueOnce({ locationMode: "custom", customDir: "D:/custom" });
+    await exportPdf();
+    expect(vi.mocked(resolveExportDefaultPath)).toHaveBeenCalledWith(
+      "手册.pdf",
+      { locationMode: "custom", customDir: "D:/custom" },
+      { documentDir: undefined },
+    );
   });
 
   it("invoke 拒绝（非 string 非 Error 形态）包装为兜底错误消息上抛", async () => {

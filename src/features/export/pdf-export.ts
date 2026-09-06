@@ -47,15 +47,17 @@ export async function exportPdf(options: PdfExportOptions = {}): Promise<ExportR
   return { path: target, format: "pdf" };
 }
 
-/** PDF 另存对话框（title 供文件名基；位置解析同 html 管线） */
+/** PDF 另存对话框（title 供文件名基；位置设置读导出 store，与 html 管线同规） */
 async function askPdfTarget(title: string): Promise<string | undefined> {
   // 动态 import 避免编排模块加载即触碰 Pinia（与 export-commands 同理）
   const { useTabsStore } = await import("../tabs/tabs-store");
+  const { useExportStore } = await import("./export-store");
   const active = useTabsStore().activeTab;
+  const exportStore = useExportStore();
   const base = toFileName(title);
   const defaultPath = resolveExportDefaultPath(
     `${base}.pdf`,
-    { locationMode: "auto", customDir: "" },
+    { locationMode: exportStore.locationMode, customDir: exportStore.customDir },
     { documentDir: active?.path !== undefined ? dirnameOf(active.path) : undefined },
   );
   const picked = await exportSaveDialog({ defaultPath, filterName: "PDF", ext: "pdf" });

@@ -89,6 +89,18 @@ const tabsState = vi.hoisted(() => ({ activeTab: undefined as { path?: string } 
 vi.mock("../tabs/tabs-store", () => ({
   useTabsStore: () => ({ activeTab: tabsState.activeTab, activeTabId: undefined }),
 }));
+// export-store 桩：位置模式与自定义目录可变（AC-X8-1 位置接线用例内改值；
+// 其余用例依赖默认 auto——与导出 store 未装载时的真实初值一致）
+const exportStoreState = vi.hoisted(() => ({
+  locationMode: "auto" as "auto" | "document-dir" | "custom",
+  customDir: "",
+}));
+vi.mock("./export-store", () => ({
+  useExportStore: () => ({
+    locationMode: exportStoreState.locationMode,
+    customDir: exportStoreState.customDir,
+  }),
+}));
 
 import { buildExportDocumentForPdf, exportHtml, exportPlainHtml } from "./html-export";
 import { getLastExportDirForTest, setLastExportDir } from "./export-location";
@@ -168,6 +180,8 @@ beforeEach(() => {
   themeState.lastResolvedMode = undefined;
   themeIoState.hasBaseUserCss = true;
   tabsState.activeTab = undefined;
+  exportStoreState.locationMode = "auto";
+  exportStoreState.customDir = "";
   // readFile 桩：路径含 "user" 即用户层（base.user.css / {theme}.user.css 皆命中）；
   // mockReset 清上一用例调用历史与实现，防跨用例累积污染断言
   readFileMock.mockReset();
@@ -225,6 +239,13 @@ describe("exportHtml（HTML 导出编排）", () => {
     getFrontMatterMock.mockReturnValueOnce(null);
     await exportHtml({ destinationPath: "D:/out/x.html", fileNameBase: "笔记" });
     expect(writtenHtml()).toContain("<title>笔记</title>");
+  });
+
+  it("FM title 为全空白时视同缺省——<title> 回落 fileNameBase（批3 Minor6②）", async () => {
+    getFrontMatterMock.mockReturnValueOnce("title:   ");
+    await exportHtml({ destinationPath: "D:/out/x.html", fileNameBase: "笔记" });
+    expect(writtenHtml()).toContain("<title>笔记</title>");
+    expect(writtenHtml()).not.toContain("<title>   </title>");
   });
 
   it("AC-X1-4：正文中的 ${title} 字面量不被替换（变量只作用于 head）", async () => {
@@ -323,6 +344,15 @@ describe("exportHtml（HTML 导出编排）", () => {
     await exportHtml();
     expect(saveDialogMock).toHaveBeenCalledWith(
       expect.objectContaining({ defaultPath: "D:/docs/我的产品手册.html" }),
+    );
+  });
+
+  it("AC-X8-1：store 位置 custom 时对话框默认路径以 customDir 开头（位置接线编排级）", async () => {
+    exportStoreState.locationMode = "custom";
+    exportStoreState.customDir = "D:/custom";
+    await exportHtml();
+    expect(saveDialogMock).toHaveBeenCalledWith(
+      expect.objectContaining({ defaultPath: "D:/custom/我的产品手册.html" }),
     );
   });
 
