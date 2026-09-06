@@ -53,8 +53,9 @@ e2e/run-smoke-app.cmd
 # 02 E2E 运行时预置的启动 fixture（wdio.conf 加载时生成）
 e2e/.fixtures/
 
-# 过程与设计文档不入库（2026-09-06 用户裁决：提交白名单=宪法文件+代码+README.md，docs/ 禁止；
-# 2026-08-16 1a44a76 首立，本次修正：宪法文件与 README.md 回归版本库）
+# 过程与设计文档不入库（2026-09-06 用户裁决：提交白名单=宪法体系文件（AGENTS/CLAUDE/
+# CHANGELOG/TASK）+ README.md + 代码，docs/ 与 design-system/ 等过程文档禁止；
+# 2026-08-16 1a44a76 首立，本次修正：宪法体系文件与 README.md 回归版本库）
 docs/
 design-system/
 .superpowers/
