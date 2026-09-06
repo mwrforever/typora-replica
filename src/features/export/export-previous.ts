@@ -60,6 +60,8 @@ export function resetExportPreviousForTest(): void {
 export async function exportWithPrevious(): Promise<ExportResult | undefined> {
   const snapshot = getPreviousSnapshot();
   if (snapshot === undefined) {
+    // 回落不带 store 选项：引入 export-commands 单向依赖成环（本模块 → 命令 → 本模块），
+    // 且 Typora 对无上次导出行为未载明——自定回落为无选项正常导出（披露清单已记，批5-M1）。
     // 动态 import 断循环依赖（html-export → 本模块登记 → 命令 → html-export）
     const { exportHtml } = await import("./html-export");
     return exportHtml();
