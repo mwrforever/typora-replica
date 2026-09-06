@@ -133,4 +133,36 @@ describe("偏好设置（store 持久化）", () => {
     const reloaded = await loadSettings();
     expect(reloaded.theme).toEqual({ lightTheme: "solar-mint", darkTheme: "markwell-dark" }); // 整组写回独立键 theme
   });
+
+  it("export 组缺失键逐层回落默认（位置 auto/大纲关/页眉页脚空/h1 分页关）", async () => {
+    // 无存储键（beforeEach 已清空）→ export 组逐字段回落默认值：
+    // 默认关闭 Include Outline 与 h1 分页（不改变用户最小导出预期，09 spec）
+    const s = await loadSettings();
+    expect(s.export).toEqual({
+      locationMode: "auto",
+      customDir: "",
+      includeOutline: false,
+      pdfHeader: "",
+      pdfFooter: "",
+      pdfPageBreakH1: false,
+    });
+  });
+
+  it("updateSettings 增量合并 export 字段且部分补丁语义保持（未触及键不丢）", async () => {
+    // 只改位置模式与自定义目录（单组增量）——includeOutline 等未触及键回落当前默认关，
+    // 不要求调用方整组传入；整组写回独立键 export（与 loadSettings 读取键对称）
+    const s = await updateSettings({ export: { locationMode: "custom", customDir: "D:/out" } });
+    expect(s.export.locationMode).toBe("custom");
+    expect(s.export.customDir).toBe("D:/out");
+    expect(s.export.includeOutline).toBe(false); // 部分补丁：未触及键保持默认关
+    const reloaded = await loadSettings();
+    expect(reloaded.export).toEqual({
+      locationMode: "custom",
+      customDir: "D:/out",
+      includeOutline: false,
+      pdfHeader: "",
+      pdfFooter: "",
+      pdfPageBreakH1: false,
+    }); // 已写回 store
+  });
 });
