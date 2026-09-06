@@ -46,6 +46,9 @@ fn main() {
             "open_theme_folder",
             "watch_themes",
             "unwatch_themes",
+            // 09 PDF 导出（pdf.rs）：漏声明则 allow-export-pdf 权限不会生成，
+            // capabilities 引用即构建失败
+            "export_pdf",
             // 08 T7 DevTools 开关（devtools.rs）：漏声明则 allow-toggle-devtools
             // 权限不会生成，capabilities 引用即构建失败
             "toggle_devtools",

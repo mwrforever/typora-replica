@@ -36,6 +36,16 @@ trash = "5.2"
 pathdiff = "0.2"
 tauri-plugin-dialog = "2"
 tauri-plugin-store = "2"
+# 09 PDF 导出：WebView2 打印管线（PrintToPdfStream）。版本对齐 tauri 2.11 内部
+# webview2-com 0.38（cargo tree 实证），防嵌套双拷贝（宪法 B.2.5 同源精神）
+webview2-com = "0.38.2"
+# COM 接口 cast（Interface trait）与 IStream 读取；
+# 0.61 而非 0.62：webview2-com 0.38.2 的 Cargo.toml 声明 windows = "0.61"，
+# 依 brief 版本策略以其为准统一，避免 windows 0.61/0.62 双拷贝
+windows = { version = "0.61", features = ["Win32_System_Com"] }
+windows-core = "0.61"
+# A.1.3.3：export_pdf 错误枚举
+thiserror = "2"
 
 [features]
 # 08 T7 DevTools：release 构建显式启用（debug 构建默认编译 devtools 能力；
