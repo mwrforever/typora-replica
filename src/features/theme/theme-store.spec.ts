@@ -368,6 +368,42 @@ describe("热刷新退订通道（T9-1/T13-1：dispose 与重复 init 不泄漏�
     expect(mocks.listThemes.mock.calls.length).toBe(callsBefore);
   });
 
+  it("未订阅（watchThemes 失败降级）时 dispose 不发退订命令（themeWatchActive false 分支）", async () => {
+    const store = useThemeStore();
+    mocks.watchThemes.mockRejectedValueOnce(new Error("订阅降级"));
+    await store.init();
+    store.dispose();
+    expect(mocks.unwatchThemes).not.toHaveBeenCalled();
+    // 幂等：未订阅状态下重复 dispose 零副作用
+    expect(() => store.dispose()).not.toThrow();
+  });
+
+  it("dispose 退订失败仅记录降级（catch 日志分支，不影响清理完成）", async () => {
+    const store = useThemeStore();
+    await store.init();
+    mocks.unwatchThemes.mockRejectedValueOnce(new Error("ipc 断开"));
+    expect(() => store.dispose()).not.toThrow();
+    // fire-and-forget 的 catch 在微任务轮次执行：flush 后断言日志
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("主题监视退订失败"),
+      expect.anything(),
+    );
+  });
+
+  it("重复 init 时旧订阅退订失败仅记录降级（重装配继续）", async () => {
+    const store = useThemeStore();
+    await store.init();
+    mocks.unwatchThemes.mockRejectedValueOnce(new Error("ipc 断开"));
+    await expect(store.init()).resolves.toBeUndefined();
+    expect(mocks.errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("旧主题监视退订失败"),
+      expect.anything(),
+    );
+    // 降级后重装配仍完成：新旧两份订阅都建立
+    expect(mocks.watchThemes.mock.calls.length).toBe(2);
+  });
+
   it("重复 init 不泄漏：二次 init 前退订旧 watch 订阅与旧色系订阅", async () => {
     const store = useThemeStore();
     await store.init();
