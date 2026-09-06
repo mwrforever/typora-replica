@@ -41,7 +41,8 @@ export function getActiveSession(): DocumentSession | undefined {
 
 /**
  * 当前激活标签的 front matter 内文（07 图片链路消费：typora-root-url /
- * typora-copy-images-to 解析基准；无激活标签或无 FM 返回 null）
+ * typora-copy-images-to 解析基准；09 导出消费：head 模板变量提取基准；
+ * 无激活标签或无 FM 返回 null）
  * 只增不改的补充读取器，与 getActiveSession 同源（adopted 实例表）。
  */
 export function getActiveFrontMatter(): string | null {

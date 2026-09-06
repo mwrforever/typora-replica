@@ -60,7 +60,8 @@ export function getExportMenuEntries(): ExportMenuEntry[] {
  * （仅在非默认值时携带，保持空选项调用面干净）。
  * @param formatId 格式或固定命令 id
  * @returns 导出结果；取消 / 未知 id 返回 undefined
- * @throws ExportError 导出管线失败（调用方呈现，不静默）
+ * @throws ExportError 导出管线失败（调用方呈现，不静默）；HTML / HTML 无样式的
+ *         落盘失败形态为 FileIoError（file-io 包装）
  */
 export async function runExport(formatId: string): Promise<ExportResult | undefined> {
   const store = useExportStore();

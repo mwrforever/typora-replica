@@ -153,9 +153,13 @@ fn print_html_to_pdf(
     let result = print_via_webview(app, &temp_html, settings)
         .and_then(|bytes| write_pdf_bytes(std::path::Path::new(output_path), &bytes));
     if let Err(e) = std::fs::remove_file(&temp_html) {
+        // 日志只带文件名，不落完整路径（B.5.2 日志安全，对齐本命令输出路径的处理）
         eprintln!(
             "[MarkWell] 清理导出临时 HTML 失败（{}）: {e}",
-            temp_html.display()
+            temp_html
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
         );
     }
     match &result {

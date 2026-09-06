@@ -100,17 +100,26 @@ describe("export-previous（X6 复用/覆盖两命令）", () => {
     exportMocks.exportPdf.mockReset();
   });
 
-  it("AC-X6-1：有快照时复用上次选项与路径重新导出（HTML）", async () => {
+  it("AC-X6-1：有快照时复用上次选项重新导出（HTML；位置走正常导出流程）", async () => {
     recordExportSnapshot("html", "D:/old.html", { includeOutline: true });
-    exportMocks.exportHtml.mockResolvedValue({ path: "D:/old.html", format: "html" });
+    exportMocks.exportHtml.mockResolvedValue({ path: "D:/new.html", format: "html" });
     const result = await exportWithPrevious();
-    // 快照选项原样复用 + 目标路径锁定快照路径
+    // 快照选项原样复用；不携带 destinationPath——「使用上一次设置导出」只复用设置，
+    // 位置由导出管线正常解析（位置设置 + 对话框），不静默覆盖上次导出文件
     expect(exportMocks.exportHtml).toHaveBeenCalledTimes(1);
-    expect(exportMocks.exportHtml).toHaveBeenCalledWith({
-      includeOutline: true,
-      destinationPath: "D:/old.html",
-    });
-    expect(result).toEqual({ path: "D:/old.html", format: "html" });
+    expect(exportMocks.exportHtml).toHaveBeenCalledWith({ includeOutline: true });
+    expect(result).toEqual({ path: "D:/new.html", format: "html" });
+  });
+
+  it("with Previous 复用选项但不复用路径（路径锁定语义只归 overwrite 命令）", async () => {
+    recordExportSnapshot("html", "D:/old.html", { includeOutline: true, fileNameBase: "手册" });
+    exportMocks.exportHtml.mockResolvedValue({ path: "D:/new.html", format: "html" });
+    await exportWithPrevious();
+    // 复导出参数不含 destinationPath 键：路径语义专属「导出并覆盖」（confirm 知情后锁定）；
+    // with Previous 锁路径会在用户无感知时覆盖旧导出文件（数据丢失风险，review 裁量修复）
+    const arg = exportMocks.exportHtml.mock.calls[0]?.[0];
+    expect(arg).toEqual({ includeOutline: true, fileNameBase: "手册" });
+    expect(arg).not.toHaveProperty("destinationPath");
   });
 
   it("AC-X6-1：无快照回落正常 HTML 导出（无参调用、不弹错不打断）", async () => {
@@ -168,20 +177,31 @@ describe("export-previous（X6 复用/覆盖两命令）", () => {
     expect(result).toEqual({ path: "D:/out/page.html", format: "html" });
   });
 
-  it("AC-X6-1：plain 快照复导出走无样式管线（格式保真，不误走 styled HTML）", async () => {
+  it("AC-X6-1：plain 快照复导出走无样式管线（格式保真，不误走 styled HTML；位置走正常导出流程）", async () => {
     recordExportSnapshot("html-plain", "D:/old/plain.html", {});
     exportMocks.exportPlainHtml.mockResolvedValue({
-      path: "D:/old/plain.html",
+      path: "D:/new/plain.html",
       format: "html-plain",
     });
     const result = await exportWithPrevious();
     expect(exportMocks.exportPlainHtml).toHaveBeenCalledTimes(1);
-    expect(exportMocks.exportPlainHtml).toHaveBeenCalledWith({
-      destinationPath: "D:/old/plain.html",
-    });
+    // 复用选项但不复用路径（无 destinationPath，同 with Previous 语义）
+    expect(exportMocks.exportPlainHtml).toHaveBeenCalledWith({});
     expect(exportMocks.exportHtml).not.toHaveBeenCalled();
     expect(exportMocks.exportPdf).not.toHaveBeenCalled();
-    expect(result).toEqual({ path: "D:/old/plain.html", format: "html-plain" });
+    expect(result).toEqual({ path: "D:/new/plain.html", format: "html-plain" });
+  });
+
+  it("AC-X6-1：pdf 快照复导出走 PDF 管线（复用选项；位置走正常导出流程）", async () => {
+    recordExportSnapshot("pdf", "D:/old/report.pdf", { header: "页眉" });
+    exportMocks.exportPdf.mockResolvedValue({ path: "D:/new/report.pdf", format: "pdf" });
+    const result = await exportWithPrevious();
+    expect(exportMocks.exportPdf).toHaveBeenCalledTimes(1);
+    // 复用选项但不复用路径（无 destinationPath，同 with Previous 语义；不经覆盖确认）
+    expect(exportMocks.exportPdf).toHaveBeenCalledWith({ header: "页眉" });
+    expect(exportMocks.exportHtml).not.toHaveBeenCalled();
+    expect(exportMocks.exportPlainHtml).not.toHaveBeenCalled();
+    expect(result).toEqual({ path: "D:/new/report.pdf", format: "pdf" });
   });
 
   it("AC-X6-2：plain 快照确认覆盖同样走无样式管线（按快照格式分派）", async () => {

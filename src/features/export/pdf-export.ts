@@ -49,7 +49,8 @@ export async function exportPdf(options: PdfExportOptions = {}): Promise<ExportR
 
 /** PDF 另存对话框（title 供文件名基；位置设置读导出 store，与 html 管线同规） */
 async function askPdfTarget(title: string): Promise<string | undefined> {
-  // 动态 import 避免编排模块加载即触碰 Pinia（与 export-commands 同理）
+  // 动态 import 延迟模块加载：仅真正解析导出目标时才加载 tabs/export store 的
+  // 编排链依赖，避免导出功能未触发时就在模块启动路径引入这部分加载成本
   const { useTabsStore } = await import("../tabs/tabs-store");
   const { useExportStore } = await import("./export-store");
   const active = useTabsStore().activeTab;

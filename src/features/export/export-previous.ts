@@ -55,6 +55,8 @@ export function resetExportPreviousForTest(): void {
 
 /**
  * 使用上一次设置导出（AC-X6-1）
+ * 复用范围 = 上次导出选项；位置不复用——由导出管线走位置解析 + 另存对话框，
+ * 不静默覆盖上次导出文件（路径锁定语义专属「导出并覆盖」命令）
  * @returns 导出结果；无快照回落正常 HTML 导出（Typora 未载明，自定策略：不弹错不打断）
  */
 export async function exportWithPrevious(): Promise<ExportResult | undefined> {
@@ -66,11 +68,12 @@ export async function exportWithPrevious(): Promise<ExportResult | undefined> {
     const { exportHtml } = await import("./html-export");
     return exportHtml();
   }
-  return rerunSnapshot(snapshot);
+  return rerunSnapshot(snapshot, { overwrite: false });
 }
 
 /**
  * 导出并覆盖上次的导出文件（AC-X6-2）
+ * 目标路径锁定快照路径（confirm 知情确认后静默覆盖属本命令显式语义）
  * @returns 导出结果；无快照 / 用户取消覆盖警告返回 undefined
  */
 export async function exportOverwriteWithPrevious(): Promise<ExportResult | undefined> {
@@ -81,16 +84,24 @@ export async function exportOverwriteWithPrevious(): Promise<ExportResult | unde
     `将覆盖上次的导出文件：\n${snapshot.destinationPath}\n\n请谨慎操作。`,
   );
   if (!confirmed) return undefined;
-  return rerunSnapshot(snapshot);
+  return rerunSnapshot(snapshot, { overwrite: true });
 }
 
-/** 按快照格式重新执行导出（三分派保真：pdf/html-plain/html 各走原管线；目标路径锁定快照路径；选项原样复用） */
-async function rerunSnapshot(snapshot: ExportSnapshot): Promise<ExportResult | undefined> {
+/**
+ * 按快照格式重新执行导出（三分派保真：pdf/html-plain/html 各走原管线；选项原样复用）
+ * @param snapshot 上次成功导出的会话快照
+ * @param mode 复执行模式：overwrite=true 传 destinationPath 锁定快照路径（覆盖语义）；
+ *             false 不传——由导出管线走位置解析 + 另存对话框（AC-X6-1 只复用设置）
+ */
+async function rerunSnapshot(
+  snapshot: ExportSnapshot,
+  mode: { overwrite: boolean },
+): Promise<ExportResult | undefined> {
   if (snapshot.format === "pdf") {
     const { exportPdf } = await import("./pdf-export");
     return exportPdf({
       ...(snapshot.options as PdfExportOptions),
-      destinationPath: snapshot.destinationPath,
+      ...(mode.overwrite ? { destinationPath: snapshot.destinationPath } : {}),
     });
   }
   if (snapshot.format === "html-plain") {
@@ -98,12 +109,12 @@ async function rerunSnapshot(snapshot: ExportSnapshot): Promise<ExportResult | u
     const { exportPlainHtml } = await import("./html-export");
     return exportPlainHtml({
       ...(snapshot.options as ExportHtmlOptions),
-      destinationPath: snapshot.destinationPath,
+      ...(mode.overwrite ? { destinationPath: snapshot.destinationPath } : {}),
     });
   }
   const { exportHtml } = await import("./html-export");
   return exportHtml({
     ...(snapshot.options as ExportHtmlOptions),
-    destinationPath: snapshot.destinationPath,
+    ...(mode.overwrite ? { destinationPath: snapshot.destinationPath } : {}),
   });
 }

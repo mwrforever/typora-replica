@@ -47,7 +47,8 @@ pub fn run() {
         // D2 前置 unwatch_dir（watch.rs，与 watch_dir 同模块）；
         // 06 P3 search_in_folder/cancel_search（search.rs）；
         // 07 save_image/import_local_images + Task 3 resolve_image_path/
-        // allow_asset_directory（asset 协议运行时授权，images.rs）
+        // allow_asset_directory（asset 协议运行时授权，images.rs）；
+        // 09 export_pdf（pdf.rs）
         .invoke_handler(tauri::generate_handler![
             io::commands::get_cli_args,
             io::commands::read_file,

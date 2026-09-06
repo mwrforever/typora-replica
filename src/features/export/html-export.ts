@@ -59,7 +59,7 @@ function renderMathBlockToHtml(code: string): string {
  * 导出 HTML（内嵌样式单文件）
  * @param options 导出选项（缺省值由调用方合并 store 后传入）
  * @returns 导出结果；用户取消对话框返回 undefined
- * @throws ExportError 编辑器未就绪 / 落盘失败
+ * @throws ExportError 编辑器未就绪；落盘失败经 FileIoError（file-io 包装）上抛
  */
 export async function exportHtml(
   options: ExportHtmlOptions = {},
@@ -83,6 +83,7 @@ export async function exportHtml(
  * 导出 HTML 无样式（纯语义 HTML：无 <style>、无 mw-* 包裹类；锚点 id 保留）
  * @param options 同 exportHtml
  * @returns 同 exportHtml
+ * @throws 同 exportHtml（编辑器未就绪 ExportError；落盘失败经 FileIoError 上抛）
  */
 export async function exportPlainHtml(
   options: ExportHtmlOptions = {},
