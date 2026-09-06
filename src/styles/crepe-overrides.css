@@ -170,3 +170,29 @@
   width: fit-content;
   margin-inline: auto;
 }
+
+/* Typora 变量映射兜底层（spec §3 兼容策略，尽力而为；2026-09-06 用户裁决 D-9(b)
+   由独立文件 typora-var-bridge.css 并入本文件尾部，恢复全局样式两文件白名单）。
+   仅当用户 Typora 主题定义了对应变量时生效；回退值与本文件亮色段同值（两处取值
+   须同步维护）。层序语义：本段位于亮/暗基础段之后=原独立文件的静态引入顺序，
+   仍在主题 link（主题层）之前——原生主题自定义的 --crepe-* 在更晚的 link 层取胜。
+   官方明言变量集可能变化，映射为尽力而为；DOM 结构差异（#write 等）不兼容属预期。 */
+.milkdown {
+  --crepe-color-background: var(--bg-color, #ffffff);
+  --crepe-color-on-background: var(--text-color, #1f2937);
+  --crepe-color-surface: var(--bg-color, #f8fafc);
+  --crepe-color-surface-low: var(--side-bar-bg-color, #f1f5f9);
+  --crepe-color-on-surface: var(--text-color, #1f2937);
+  --crepe-color-on-surface-variant: var(--text-color, #475569);
+  --crepe-color-outline: var(--border-color, #cbd5e1);
+  --crepe-color-primary: var(--primary-color, #0f766e);
+  --crepe-color-secondary: var(--select-text-bg-color, #ccfbf1);
+  --crepe-color-on-secondary: var(--bg-color, #134e4a);
+  --crepe-color-inverse: var(--text-color, #134e4a);
+  --crepe-color-on-inverse: var(--bg-color, #f0fdfa);
+  --crepe-color-inline-code: var(--code-color, #c2410c);
+  --crepe-color-error: var(--error-color, #dc2626);
+  --crepe-color-hover: var(--hover-bg-color, #f0fdfa);
+  --crepe-color-selected: var(--select-text-bg-color, #ccfbf1);
+  --crepe-color-inline-area: var(--bg-color, #e2e8f0);
+}
