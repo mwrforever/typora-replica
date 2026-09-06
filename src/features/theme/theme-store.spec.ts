@@ -7,6 +7,8 @@ import { createPinia, setActivePinia } from "pinia";
 const mocks = vi.hoisted(() => ({
   listThemes: vi.fn(),
   watchThemes: vi.fn(),
+  // 默认恒 resolve：dispose/重复 init 的 fire-and-forget 退订在任意 describe 均安全
+  unwatchThemes: vi.fn(async () => undefined),
   allowDir: vi.fn(),
   loadSettings: vi.fn(),
   updateSettings: vi.fn(),
@@ -21,6 +23,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../services/theme-io", () => ({
   listThemes: mocks.listThemes,
   watchThemes: mocks.watchThemes,
+  unwatchThemes: mocks.unwatchThemes,
   allowThemeAssetDirectory: mocks.allowDir,
   openThemeFolder: vi.fn(),
   toggleDevtools: vi.fn(),
@@ -324,5 +327,60 @@ describe("themeStore 明暗联动（Task 13）", () => {
     expect(unsubscribe).toBeDefined();
     store.dispose();
     expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("热刷新退订通道（T9-1/T13-1：dispose 与重复 init 不泄漏）", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    document.head.innerHTML = "";
+    document.documentElement.className = "";
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    mocks.listThemes.mockResolvedValue(LIST);
+    mocks.loadSettings.mockResolvedValue(SETTINGS);
+    mocks.unwatchThemes.mockResolvedValue(undefined);
+    mocks.watchThemes.mockResolvedValue(undefined);
+    vi.spyOn(console, "error").mockImplementation(mocks.errorSpy);
+    vi.spyOn(Date, "now").mockReturnValue(1_000);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("dispose 调用 unwatchThemes 清 Rust 监视槽位（watchThemes 订阅成功前提下）", async () => {
+    const store = useThemeStore();
+    await store.init();
+    store.dispose();
+    expect(mocks.unwatchThemes).toHaveBeenCalledTimes(1);
+  });
+
+  it("dispose 后迟到事件不再触发防抖刷新（disposed 守卫，App 卸载后零副作用）", async () => {
+    const store = useThemeStore();
+    await store.init();
+    store.dispose();
+    const callsBefore = mocks.listThemes.mock.calls.length;
+    const onEvents = mocks.watchThemes.mock.calls[0]?.[0] as
+      ((events: unknown[]) => void) | undefined;
+    expect(onEvents).toBeDefined();
+    onEvents?.([{ kind: "created", path: "x.css" }]);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(mocks.listThemes.mock.calls.length).toBe(callsBefore);
+  });
+
+  it("重复 init 不泄漏：二次 init 前退订旧 watch 订阅与旧色系订阅", async () => {
+    const store = useThemeStore();
+    await store.init();
+    expect(mocks.unwatchThemes).not.toHaveBeenCalled();
+    await store.init();
+    // 二次 init 装配前：先 unwatch 旧 Rust 槽位（新订阅建立前）
+    expect(mocks.unwatchThemes).toHaveBeenCalledTimes(1);
+    // 旧色系订阅在重订阅前被退订（watchScheme 返回的 spy 被调用 1 次）
+    const unsub = mocks.watchScheme.mock.results[0]?.value as (() => void) | undefined;
+    expect(unsub).toBeDefined();
+    expect(unsub).toHaveBeenCalledTimes(1);
+    // 两条腿各自仍然只挂最新一份订阅
+    expect(mocks.watchThemes.mock.calls.length).toBe(2);
+    expect(mocks.watchScheme.mock.calls.length).toBe(2);
   });
 });

@@ -249,6 +249,23 @@ pub fn watch_themes<R: tauri::Runtime>(
     Ok(())
 }
 
+/// 退订主题目录监视（dispose/重复 init 装配前调用；watch_themes 的对称面）。
+/// 语义：取锁后清空 `theme_watcher` 槽位——watcher drop 即停止全部监听（宪法 A.5.4），
+/// 事件流随 flush 线程排空自然终止。幂等：槽位本空时直接成功（dispose 重入/未订阅安全）。
+/// 纯槽位操作、无路径解析——mock 运行时直呼测试安全（D-6 豁免仅约束路径解析命令）。
+#[tauri::command]
+pub fn unwatch_themes<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<(), String> {
+    use tauri::Manager;
+    let state = app.state::<crate::AppState>();
+    let mut guard = state
+        .theme_watcher
+        .lock()
+        .map_err(|_| "主题监视状态锁损坏".to_string())?;
+    // 赋 None 即 drop 旧 watcher：notify 句柄析构同步停止监视，事件通道随之断开
+    *guard = None;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -431,6 +448,35 @@ mod tests {
     }
 
     use std::time::{Duration, Instant};
+
+    // ---- unwatch_themes（纯槽位操作无路径解析，mock 直呼不触真实 %APPDATA%）----
+    #[test]
+    fn unwatch_themes_drops_slot_and_is_idempotent() {
+        use tauri::Manager;
+        let app = tauri::test::mock_app();
+        app.manage(crate::AppState {
+            watcher: std::sync::Mutex::new(std::collections::HashMap::new()),
+            search_job: std::sync::Mutex::new(None),
+            theme_watcher: std::sync::Mutex::new(None),
+        });
+        // 幂等：槽位本空时退订成功且零副作用
+        unwatch_themes(app.handle().clone()).expect("空槽位退订应成功");
+        // 有槽位时退订后槽位清空（watcher drop 即停监视——宪法 A.5.4 语义）
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let watcher = notify::recommended_watcher(Box::new(move |_| {
+            let _ = tx.clone().send(());
+        }))
+        .expect("测试 watcher 创建");
+        {
+            let state = app.state::<crate::AppState>();
+            let mut guard = state.theme_watcher.lock().unwrap();
+            *guard = Some(watcher);
+        }
+        unwatch_themes(app.handle().clone()).expect("有槽位退订应成功");
+        let state = app.state::<crate::AppState>();
+        let guard = state.theme_watcher.lock().unwrap();
+        assert!(guard.is_none(), "退订后监视槽位必须清空（drop 即停）");
+    }
 
     // ---- start_theme_watch（显式 dir 可测面；命令层按 D-6 豁免 mock 直呼）----
     #[test]
