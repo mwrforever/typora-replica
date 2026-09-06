@@ -45,6 +45,7 @@ fn main() {
             "list_themes",
             "open_theme_folder",
             "watch_themes",
+            "unwatch_themes",
             // 08 T7 DevTools 开关（devtools.rs）：漏声明则 allow-toggle-devtools
             // 权限不会生成，capabilities 引用即构建失败
             "toggle_devtools",

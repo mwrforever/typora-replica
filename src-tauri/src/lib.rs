@@ -72,6 +72,7 @@ pub fn run() {
             io::themes::list_themes,
             io::themes::open_theme_folder,
             io::themes::watch_themes,
+            io::themes::unwatch_themes,
             // 08 T7 DevTools 开关（devtools.rs）：debug 构建可用，release 须 devtools
             // feature（未启用时命令无操作返回 false）
             devtools::toggle_devtools

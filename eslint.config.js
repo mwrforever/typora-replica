@@ -11,7 +11,8 @@ export default defineConfigWithVueTs(
   },
   {
     name: "app/files-to-ignore",
-    // 构建产物、覆盖率报告、Rust 侧代码与测试产物不参与前端 lint
+    // 构建产物、覆盖率报告、Rust 侧代码与测试产物不参与前端 lint；
+    // 过程文档工作区（SDD scratch 与 docs/）不入库也不参与门禁（2026-09-06 用户裁决白名单）
     ignores: [
       "**/dist/**",
       "**/dist-ssr/**",
@@ -19,6 +20,8 @@ export default defineConfigWithVueTs(
       "src-tauri/target/**",
       "src-tauri/gen/**",
       "e2e/.wdio*/**",
+      ".superpowers/**",
+      "docs/**",
     ],
   },
   pluginVue.configs["flat/essential"],

@@ -85,6 +85,14 @@ export function watchThemes(onEvents: (events: ThemeFsEvent[]) => void): Promise
 }
 
 /**
+ * 退订主题目录监视（watchThemes 的对称面；dispose/重复 init 装配前调用）。
+ * Rust 侧清空监视槽位即停事件流（watcher drop 语义），幂等：未订阅时亦成功。
+ */
+export function unwatchThemes(): Promise<void> {
+  return invokeOrThrow<void>("unwatch_themes");
+}
+
+/**
  * 切换 DevTools 开合（AC-T7-1）
  * @returns 切换后状态：true=已打开，false=已关闭（或当前构建不支持）
  */

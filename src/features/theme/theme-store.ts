@@ -8,7 +8,12 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { allowThemeAssetDirectory, listThemes, watchThemes } from "../../services/theme-io";
+import {
+  allowThemeAssetDirectory,
+  listThemes,
+  unwatchThemes,
+  watchThemes,
+} from "../../services/theme-io";
 import type { ThemeMeta } from "../../services/theme-io";
 import { loadSettings, updateSettings } from "../../services/settings";
 import { applyThemeCss } from "./theme-css";
@@ -75,6 +80,16 @@ export const useThemeStore = defineStore("theme", () => {
    *   仅记录并整体降级（跳过注入），不中断编辑主链路。
    */
   async function init(): Promise<void> {
+    // 重装配幂等（12 窗口外壳场景）：先清旧订阅再装配，防旧 watcher/色系句柄泄漏
+    disposed = false;
+    stopColorScheme?.();
+    stopColorScheme = undefined;
+    if (themeWatchActive) {
+      themeWatchActive = false;
+      void unwatchThemes().catch((e: unknown) => {
+        console.error("[MarkWell] 旧主题监视退订失败（继续重装配）", e);
+      });
+    }
     try {
       const [settings, list] = await Promise.all([loadSettings(), listThemes()]);
       lightTheme.value = settings.theme.lightTheme;
@@ -97,6 +112,7 @@ export const useThemeStore = defineStore("theme", () => {
       // 热刷新订阅（AC-T3-1/2）：失败仅记录——降级为重启可见（官方基线行为，D-5）
       try {
         await watchThemes(scheduleRefresh);
+        themeWatchActive = true;
       } catch (e) {
         console.error("[MarkWell] 主题热刷新订阅失败（降级为重启可见）", e);
       }
@@ -124,8 +140,18 @@ export const useThemeStore = defineStore("theme", () => {
   /** 系统色系退订函数（init 订阅、dispose 释放；undefined=未订阅，宪法 A.1.2.3） */
   let stopColorScheme: (() => void) | undefined;
 
+  /** Rust 热刷新监视是否存活（init 订阅成功置位、dispose/重装配清位；退订通道 T9-1） */
+  let themeWatchActive = false;
+
+  /** 生命周期终点标记：dispose 后迟到目录事件被静默忽略（卸载后零副作用） */
+  let disposed = false;
+
   /** 目录事件 → 300ms 尾沿防抖刷新（Rust 侧另有 100ms 合并窗口，此处合并前端风暴） */
   function scheduleRefresh(): void {
+    // dispose 后 Rust 侧退订完成前可能仍有迟到事件：静默忽略，杜绝卸载后重扫/重挂
+    if (disposed) {
+      return;
+    }
     if (refreshTimer !== undefined) {
       clearTimeout(refreshTimer);
     }
@@ -152,8 +178,9 @@ export const useThemeStore = defineStore("theme", () => {
     }
   }
 
-  /** 清理可释放资源（App 卸载/测试收尾调用；Rust 监视槽位随应用生命周期存活） */
+  /** 清理可释放资源（App 卸载/测试收尾调用）：防抖定时器 + 色系订阅 + Rust 监视槽位 */
   function dispose(): void {
+    disposed = true;
     if (refreshTimer !== undefined) {
       clearTimeout(refreshTimer);
       refreshTimer = undefined;
@@ -161,6 +188,13 @@ export const useThemeStore = defineStore("theme", () => {
     // 色系退订幂等：重复调用/未订阅时 optional chain 落空，零副作用
     stopColorScheme?.();
     stopColorScheme = undefined;
+    // Rust 监视退订（T9-1）：fire-and-forget，失败仅记录（重启亦随进程终止停监视）
+    if (themeWatchActive) {
+      themeWatchActive = false;
+      void unwatchThemes().catch((e: unknown) => {
+        console.error("[MarkWell] 主题监视退订失败（不影响本次清理）", e);
+      });
+    }
   }
 
   return {

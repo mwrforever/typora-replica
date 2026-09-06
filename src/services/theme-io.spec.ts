@@ -18,6 +18,7 @@ import {
   openThemeFolder,
   ThemeIoError,
   toggleDevtools,
+  unwatchThemes,
   watchThemes,
 } from "./theme-io";
 
@@ -55,6 +56,13 @@ describe("theme-io IPC 收敛", () => {
     invokeMock.mockResolvedValue(true);
     await expect(toggleDevtools()).resolves.toBe(true);
     expect(invokeMock).toHaveBeenLastCalledWith("toggle_devtools");
+  });
+
+  it("unwatchThemes 无参调用退订命令（dispose/重复 init 前清 Rust 监视槽位）", async () => {
+    invokeMock.mockResolvedValue(undefined);
+    await expect(unwatchThemes()).resolves.toBeUndefined();
+    expect(invokeMock).toHaveBeenCalledWith("unwatch_themes");
+    expect(invokeMock).toHaveBeenCalledTimes(1);
   });
 
   it("字符串拒绝值规范化为 ThemeIoError（Rust Result Err 中文直传）", async () => {

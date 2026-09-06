@@ -31,6 +31,7 @@
     "allow-list-themes",
     "allow-open-theme-folder",
     "allow-watch-themes",
+    "allow-unwatch-themes",
     "allow-toggle-devtools"
   ]
 }
