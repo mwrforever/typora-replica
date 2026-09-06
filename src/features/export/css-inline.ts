@@ -10,8 +10,8 @@ import katexCss from "katex/dist/katex.min.css?raw";
 /** A4 纸张尺寸（英寸；WebView2 PrintSettings 单位为英寸） */
 export const A4_SIZE_IN = { widthIn: 8.27, heightIn: 11.69 } as const;
 
-/** 导出专用基础样式（正文容器 / 代码块 / 表格 / 大纲；明色为基线，不含暗色段） */
-export const EXPORT_BASE_CSS = `
+/** 导出专用基础样式（正文容器 / 代码块 / 表格 / 大纲；明色为基线，不含暗色段；模块内私有，仅 buildStyleBlock 消费） */
+const EXPORT_BASE_CSS = `
 body { margin: 0; }
 .mw-export-body { max-width: 794px; margin: 0 auto; padding: 2em 1em; box-sizing: border-box; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; line-height: 1.6; }
 .mw-export-body pre { background: #f6f8fa; padding: 12px; border-radius: 6px; overflow: auto; }

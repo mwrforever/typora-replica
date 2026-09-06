@@ -233,18 +233,17 @@ fn print_via_webview(
         return Err(ExportPdfError::Dispatch(e.to_string()));
     }
 
-    // 阻塞等打印结果（60s 上限）；所有分支统一关窗，不留隐藏窗口残留
+    // 阻塞等打印结果（60s 上限）；所有分支统一关窗，不留隐藏窗口残留。
+    // Disconnected（信道关闭）结构性不可达：原始 tx 存活于本函数栈帧直至 recv 返回
+    // 之后（仅 clone 移入主线程闭包与 COM 回调，本函数从不交出原始 tx），闭包/窗口
+    // 早夭场景退化为 60s 超时兜底而非信道断开——Err 臂实际只有 Timeout 可达（批4-M1）
     let outcome = match rx.recv_timeout(std::time::Duration::from_secs(PRINT_TIMEOUT_SECS)) {
         Ok(Ok(bytes)) => Ok(bytes),
         Ok(Err(e)) => Err(e),
-        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+        Err(_) => {
             eprintln!("[MarkWell] PDF 打印超时（{PRINT_TIMEOUT_SECS}s，label={label}）");
             Err(ExportPdfError::Timeout)
         }
-        // 信道关闭而未收到结果：主线程闭包提前消亡（如窗口被系统销毁）
-        Err(_) => Err(ExportPdfError::Print(
-            "打印任务异常中断（导出窗口提前关闭）".to_string(),
-        )),
     };
     let _ = window.close();
     outcome
@@ -364,9 +363,10 @@ fn begin_print_on_main_thread(
             };
             let mut nav_id = 0u64;
             // SAFETY: args 为 COM 事件交付的有效参数对象，NavigationId 为其标准出参读取
-            if unsafe { args.NavigationId(&mut nav_id) }.is_ok()
-                && Some(nav_id) != target_nav_id.get()
-            {
+            // id 读取失败按非目标导航处理（fail-closed，与 Starting 侧对称，批6-M-1）：
+            // 宁可放弃打印由 60s 超时兜底，也不把无法核验的完成事件误当目标导航触发打印
+            let id_verified = unsafe { args.NavigationId(&mut nav_id) }.is_ok();
+            if !id_verified || Some(nav_id) != target_nav_id.get() {
                 return Ok(());
             }
             if printed.get() {
@@ -495,10 +495,7 @@ fn read_pdf_stream(stream: &IStream) -> Result<Vec<u8>, ExportPdfError> {
 /// # 返回值
 /// - `Ok(())`：落盘成功
 /// - `Err(Persist)`：临时写失败或改名失败
-pub(crate) fn write_pdf_bytes(
-    target: &std::path::Path,
-    bytes: &[u8],
-) -> Result<(), ExportPdfError> {
+fn write_pdf_bytes(target: &std::path::Path, bytes: &[u8]) -> Result<(), ExportPdfError> {
     let temp_pdf = target.with_extension("pdf.tmp");
     std::fs::write(&temp_pdf, bytes).map_err(|e| {
         // 临时写入失败同样清理半成品，不在目标目录残留孤儿文件
