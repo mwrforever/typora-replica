@@ -23,7 +23,7 @@ import { buildPdfPageCss, buildStyleBlock } from "./css-inline";
 import { postProcessExportHtml } from "./html-postprocess";
 import { renderMermaidToSvg } from "./mermaid-export";
 import { exportSaveDialog } from "./export-dialog";
-import { resolveExportDefaultPath } from "./export-location";
+import { resolveExportDefaultPath, setLastExportDir } from "./export-location";
 import { recordExportSnapshot } from "./export-previous";
 import { ExportError } from "./export-types";
 import type {
@@ -67,6 +67,8 @@ export async function exportHtml(
   const target = await askExportTarget(built.title, "HTML", "html", options.destinationPath);
   if (target === undefined) return undefined;
   await writeFile(target, built.document, "lf");
+  // 回写会话级上次导出目录（spec X8：auto+未命名文档回落到上次导出目录）
+  setLastExportDir(dirnameOf(target));
   recordExportSnapshot("html", target, options);
   return { path: target, format: "html" };
 }
@@ -83,6 +85,8 @@ export async function exportPlainHtml(
   const target = await askExportTarget(built.title, "HTML", "html", options.destinationPath);
   if (target === undefined) return undefined;
   await writeFile(target, built.document, "lf");
+  // 回写会话级上次导出目录（spec X8：auto+未命名文档回落到上次导出目录）
+  setLastExportDir(dirnameOf(target));
   recordExportSnapshot("html-plain", target, options);
   return { path: target, format: "html-plain" };
 }
@@ -116,7 +120,13 @@ async function buildExportDocument(args: BuildArgs): Promise<{ document: string;
   const view = editorManager.getView();
   if (view === undefined) throw new ExportError("编辑器未就绪，无法导出");
   const doc = view.state.doc;
-  const outlineHtml = buildOutlineHtml(collectHeadings(doc), useOutlineStore().collapsible);
+  // plain 传参剥 nav 的 mw-* 类（AC-X3-1）：大纲产物经 [toc] 替换与 includeOutline
+  // 前置两条通路进 body，类必须在本源处剥除，postprocess 对注入内容无能为力
+  const outlineHtml = buildOutlineHtml(
+    collectHeadings(doc),
+    useOutlineStore().collapsible,
+    args.plain,
+  );
 
   // 序列化到独立 DOM 副本：serializeFragment 产出全新 DOM 树，不触碰编辑器挂载节点
   const container = document.createElement("div");
@@ -152,6 +162,8 @@ async function buildExportDocument(args: BuildArgs): Promise<{ document: string;
       styleBlock += `\n<style>\n${buildPdfPageCss({ ...args.pdfPage, title })}\n</style>`;
     }
   }
+  // lang 恒 zh-CN：产品当前只面向中文界面（spec 未约束多语言导出），非中文文档的
+  // lang 标注失真为既定取舍（批3 Minor 7），随 X1 收口时按 front matter lang 或语言探测裁决
   const htmlRoot = darkMode ? '<html lang="zh-CN" class="markwell-dark">' : '<html lang="zh-CN">';
   const head = replaceHeadVariables(HEAD_TEMPLATE, vars);
   const documentHtml = `<!DOCTYPE html>\n${htmlRoot}\n<head>\n${head}\n${styleBlock}\n</head>\n<body>\n${bodyHtml}\n</body>\n</html>\n`;

@@ -73,4 +73,22 @@ describe("buildOutlineHtml", () => {
     expect(html).toContain('href="#b&gt;c"');
     expect(html).not.toContain('href="#b>c"');
   });
+
+  it("plainMode=true 时 nav 为裸标签（无 class 属性，AC-X3-1 无包裹类）", () => {
+    const html = buildOutlineHtml(headings, false, true);
+    expect(html).not.toContain("class=");
+    expect(html).toContain("<nav>");
+    expect(html).toContain('<a href="#h1-a">第一章</a>'); // 大纲内容语义不变
+  });
+
+  it("plainMode=true 空大纲同样输出裸 nav（早退分支同规则）", () => {
+    const html = buildOutlineHtml([], false, true);
+    expect(html).not.toContain("class=");
+    expect(html).toContain("<nav>");
+  });
+
+  it("plainMode 缺省（两参调用）保持既有带类形态（向后兼容）", () => {
+    expect(buildOutlineHtml(headings, false)).toContain('class="mw-export-outline"');
+    expect(buildOutlineHtml([], false)).toContain('class="mw-export-outline"');
+  });
 });

@@ -11,15 +11,21 @@ import { Schema } from "@milkdown/kit/prose/model";
 import type { Node as ProseMirrorNode } from "@milkdown/kit/prose/model";
 import type { EditorView } from "@milkdown/kit/prose/view";
 
-const { readFileMock, writeFileMock, saveDialogMock, getViewMock, getFrontMatterMock } = vi.hoisted(
-  () => ({
-    readFileMock: vi.fn(),
-    writeFileMock: vi.fn(),
-    saveDialogMock: vi.fn(),
-    getViewMock: vi.fn(),
-    getFrontMatterMock: vi.fn(),
-  }),
-);
+const {
+  readFileMock,
+  writeFileMock,
+  saveDialogMock,
+  getViewMock,
+  getFrontMatterMock,
+  renderMermaidMock,
+} = vi.hoisted(() => ({
+  readFileMock: vi.fn(),
+  writeFileMock: vi.fn(),
+  saveDialogMock: vi.fn(),
+  getViewMock: vi.fn(),
+  getFrontMatterMock: vi.fn(),
+  renderMermaidMock: vi.fn(),
+}));
 
 vi.mock("../../services/file-io", () => ({
   readFile: readFileMock,
@@ -32,6 +38,10 @@ vi.mock("katex/dist/katex.min.css?raw", () => ({
 }));
 vi.mock("./export-dialog", () => ({
   exportSaveDialog: saveDialogMock,
+}));
+// mermaid 渲染桩：避免真实 mermaid 重依赖（Minor 5 编排级集成腿——hook 真实接线由本 spec 钉住）
+vi.mock("./mermaid-export", () => ({
+  renderMermaidToSvg: renderMermaidMock,
 }));
 // theme-io 桩：base.user.css 存在性可变（该分支两侧用例依赖）
 const themeIoState = vi.hoisted(() => ({ hasBaseUserCss: true }));
@@ -81,6 +91,7 @@ vi.mock("../tabs/tabs-store", () => ({
 }));
 
 import { buildExportDocumentForPdf, exportHtml, exportPlainHtml } from "./html-export";
+import { getLastExportDirForTest, setLastExportDir } from "./export-location";
 
 /** 最小桩 schema（doc/paragraph/heading/fence/text；形态对齐真实序列化） */
 const schema = new Schema({
@@ -100,6 +111,11 @@ const schema = new Schema({
       // 真实形态：data-language 在 pre 上（非 code 上）
       toDOM: (node) => ["pre", { "data-language": String(node.attrs.language) }, ["code", 0]],
     },
+    toc: {
+      group: "block",
+      // 真实形态：空占位 div（内容由导出后处理填充，postprocess 按 data-node-type 收集）
+      toDOM: () => ["div", { "data-node-type": "toc" }],
+    },
     text: { group: "inline" },
   },
 });
@@ -118,11 +134,31 @@ function stubView(): EditorView {
   return { state: { doc: stubDoc(), schema } } as unknown as EditorView;
 }
 
+/** 变体视图：追加指定 block 节点（toc 占位 / mermaid 围栏，Minor 5 集成腿用） */
+function stubViewWith(...extraNodes: ProseMirrorNode[]): EditorView {
+  const doc = schema.node("doc", null, [...stubDoc().content.content, ...extraNodes]);
+  return { state: { doc, schema } } as unknown as EditorView;
+}
+
+/** mermaid 围栏节点 */
+function mermaidNode(): ProseMirrorNode {
+  return schema.nodes.fence.create({ language: "mermaid" }, schema.text("graph TD"));
+}
+
+/** [toc] 占位节点 */
+function tocNode(): ProseMirrorNode {
+  return schema.nodes.toc.create();
+}
+
 let classListContainsSpy: MockInstance;
 
 beforeEach(() => {
+  // 会话级上次导出目录清零（export-location 模块级记忆，防跨用例污染对话框默认路径断言）
+  setLastExportDir(undefined);
   getViewMock.mockReturnValue(stubView());
   getFrontMatterMock.mockReturnValue("title: 我的产品手册");
+  renderMermaidMock.mockReset();
+  renderMermaidMock.mockResolvedValue("<svg>graph</svg>");
   themeState.activeTheme = {
     name: "markwell-light",
     fileName: "markwell-light.css",
@@ -305,6 +341,20 @@ describe("exportHtml（HTML 导出编排）", () => {
       expect.objectContaining({ defaultPath: "Untitled.html" }),
     );
   });
+
+  it("成功落盘后回写会话级上次导出目录（AC-X8 auto+未命名回落链，批3 R1）", async () => {
+    await exportHtml({ destinationPath: "D:/out/x.html" });
+    expect(getLastExportDirForTest()).toBe("D:/out");
+  });
+
+  it("mermaid 围栏经真实导出 hook 渲染为内联 SVG（编排级集成腿，批3 R1）", async () => {
+    getViewMock.mockReturnValueOnce(stubViewWith(mermaidNode()));
+    await exportHtml({ destinationPath: "D:/out/x.html" });
+    expect(renderMermaidMock).toHaveBeenCalledWith("graph TD");
+    const html = writtenHtml();
+    expect(html).toContain("mw-mermaid");
+    expect(html).toContain("<svg>graph</svg>");
+  });
 });
 
 describe("exportPlainHtml（无样式导出）", () => {
@@ -330,6 +380,23 @@ describe("exportPlainHtml（无样式导出）", () => {
     expect(result).toBeUndefined();
     expect(writeFileMock).not.toHaveBeenCalled();
   });
+
+  it("plain+includeOutline：前置大纲为裸 nav，无 mw-* 类（AC-X3-1 防回归，批3 R1）", async () => {
+    await exportPlainHtml({ destinationPath: "D:/out/plain.html", includeOutline: true });
+    const html = writtenHtml();
+    expect(html).not.toContain('class="mw-');
+    expect(html).toContain("<nav>");
+    expect(html).toContain('href="#手册"'); // 大纲语义保留
+  });
+
+  it("plain+[toc]+includeOutline：[toc] 替换与前置大纲均无 mw-* 类（批3 R1 PoC 场景）", async () => {
+    getViewMock.mockReturnValueOnce(stubViewWith(tocNode()));
+    await exportPlainHtml({ destinationPath: "D:/out/plain.html", includeOutline: true });
+    const html = writtenHtml();
+    expect(html).not.toContain('class="mw-');
+    expect(html).not.toContain('data-node-type="toc"'); // 占位已替换为大纲内容
+    expect(html).toContain('href="#手册"');
+  });
 });
 
 describe("buildExportDocumentForPdf（PDF 源文档构建）", () => {
@@ -347,5 +414,18 @@ describe("buildExportDocumentForPdf（PDF 源文档构建）", () => {
   it("breakH1 缺省视为关（不注入分页样式）", async () => {
     const { document: doc } = await buildExportDocumentForPdf({ header: "", footer: "" });
     expect(doc).not.toContain("break-before: page");
+  });
+
+  it("防 XSS：YAML title 含 </style> 时 head 内 style 段不被断链（批3 R1 PoC 复验）", async () => {
+    getFrontMatterMock.mockReturnValueOnce("title: </style><img src=x onerror=alert(1)>");
+    const { document: doc } = await buildExportDocumentForPdf({
+      header: "${title}",
+      footer: "${pageNo}",
+      breakH1: true,
+    });
+    // 解析层验证：注入载荷不得成为任何 DOM 节点，head 内两段 style（主题+@page）完整
+    const parsed = new DOMParser().parseFromString(doc, "text/html");
+    expect(parsed.querySelectorAll("img")).toHaveLength(0);
+    expect(parsed.querySelectorAll("head style")).toHaveLength(2);
   });
 });

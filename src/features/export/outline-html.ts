@@ -12,15 +12,22 @@ import type { HeadingInfo } from "../editor/heading-collect";
  * 构建导出大纲 HTML
  * @param headings 标题条目（文档序，collectHeadings 产物）
  * @param collapsible true = Collapsible 嵌套形态；false = Flat 平铺
+ * @param plainMode true = 无样式导出形态：nav 为裸标签（无 mw-* 类，AC-X3-1 集成
+ *        场景——[toc] 替换与 includeOutline 前置共用本产物，类会随之泄漏进 plain 产物）
  * @returns nav 元素 HTML（调用方原样拼入 body）；空大纲返回不含 ul 的空 nav
  */
-export function buildOutlineHtml(headings: HeadingInfo[], collapsible: boolean): string {
+export function buildOutlineHtml(
+  headings: HeadingInfo[],
+  collapsible: boolean,
+  plainMode?: boolean,
+): string {
   // 空大纲早退：不渲染空 ul（调用方拼接后不产生空列表语义）
   if (headings.length === 0) {
-    return `<nav class="mw-export-outline">\n</nav>`;
+    return plainMode === true ? `<nav>\n</nav>` : `<nav class="mw-export-outline">\n</nav>`;
   }
   const items = collapsible ? buildLevel(headings, 1).html : buildFlat(headings);
-  return `<nav class="mw-export-outline">\n<ul>\n${items}</ul>\n</nav>`;
+  const navOpen = plainMode === true ? `<nav>` : `<nav class="mw-export-outline">`;
+  return `${navOpen}\n<ul>\n${items}</ul>\n</nav>`;
 }
 
 /** Flat 平铺：全部标题同级 li */

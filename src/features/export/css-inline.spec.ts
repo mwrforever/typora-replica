@@ -99,6 +99,19 @@ describe("buildPdfPageCss", () => {
     expect(out).toContain('"a\\rb\\nc"');
   });
 
+  it("title 含 </style> 时不突破 style 原文上下文（批3 R1 防 XSS 回归）", () => {
+    // <style> 是 HTML 原始文本上下文：title 若原样携带 </style> 即闭合标签，
+    // 后续载荷注入 head——escapeCssString 将 </ 转义为 <\/（CSS 解析回字面 </，语义不变）
+    const out = buildPdfPageCss({
+      header: "${title}",
+      footer: undefined,
+      title: "</style><img src=x onerror=alert(1)>",
+      breakH1: false,
+    });
+    expect(out).not.toContain("</style>");
+    expect(out).toContain("<\\/style>"); // 转义产物：HTML 扫描不命中闭合序列
+  });
+
   it("A4 尺寸常量（英寸，WebView2 PrintSettings 单位）", () => {
     expect(A4_SIZE_IN.widthIn).toBeCloseTo(8.27);
     expect(A4_SIZE_IN.heightIn).toBeCloseTo(11.69);

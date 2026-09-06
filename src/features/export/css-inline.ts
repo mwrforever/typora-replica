@@ -138,12 +138,17 @@ function pushString(tokens: ContentToken[], text: string): void {
   else tokens.push({ kind: "str", text });
 }
 
-/** CSS 字符串字面转义（反斜杠/控制字符/引号，防 content 表达式注入） */
+/** CSS 字符串字面转义（反斜杠/控制字符/引号/`</` 序列，防 content 表达式与 head 注入） */
 function escapeCssString(text: string): string {
   // 控制字符（\r \n）转为字面反斜杠序列：CSS content 字符串中裸换行破坏语法
   return `"${text
     .split("\\")
     .join("\\\\")
+    // </ → <\/：title 等用户值经 @page content 通路拼入 <style> 原文上下文，
+    // 原样 </style 会闭合标签注入 head——CSS 字符串内 \/ 解析回字面 /（语义不变），
+    // HTML 原始文本扫描不再命中闭合序列（批3 R1 防 XSS，补 escapeHtmlValue 闸门外的第二通路）
+    .split("</")
+    .join("<\\/")
     .split("\r")
     .join("\\r")
     .split("\n")
