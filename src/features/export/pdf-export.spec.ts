@@ -13,9 +13,15 @@ const saveDialogMock = vi.hoisted(() =>
   vi.fn(async (): Promise<string | null> => "D:/out/手册.pdf"),
 );
 vi.mock("./export-dialog", () => ({ exportSaveDialog: saveDialogMock }));
-vi.mock("./export-location", () => ({
-  resolveExportDefaultPath: vi.fn((fileName: string) => `D:/out/${fileName}`),
-}));
+vi.mock("./export-location", async (importOriginal) => {
+  // 展开 Real 模块：setLastExportDir/getLastExportDirForTest 走真实会话记忆，
+  // 仅替换 resolveExportDefaultPath（对话框默认路径锚定既有用例）
+  const actual = await importOriginal<typeof import("./export-location")>();
+  return {
+    ...actual,
+    resolveExportDefaultPath: vi.fn((fileName: string) => `D:/out/${fileName}`),
+  };
+});
 const useTabsStoreMock = vi.hoisted(() =>
   vi.fn(() => ({ activeTab: undefined as { path?: string } | undefined })),
 );
@@ -23,7 +29,11 @@ vi.mock("../tabs/tabs-store", () => ({ useTabsStore: useTabsStoreMock }));
 const recordMock = vi.hoisted(() => vi.fn());
 vi.mock("./export-previous", () => ({ recordExportSnapshot: recordMock }));
 
-import { resolveExportDefaultPath } from "./export-location";
+import {
+  getLastExportDirForTest,
+  resolveExportDefaultPath,
+  setLastExportDir,
+} from "./export-location";
 import { exportPdf } from "./pdf-export";
 
 describe("exportPdf", () => {
@@ -86,6 +96,26 @@ describe("exportPdf", () => {
       "D:/out/x.pdf",
       expect.objectContaining({ header: "h" }),
     );
+  });
+
+  it("成功落盘后回写会话上次导出目录（X8 auto 未命名回落链）", async () => {
+    try {
+      await exportPdf({ destinationPath: "D:/out/x.pdf" });
+      expect(getLastExportDirForTest()).toBe("D:/out");
+    } finally {
+      // 会话记忆是模块级状态，用例后清理防泄漏到其他用例
+      setLastExportDir(undefined);
+    }
+  });
+
+  it("invoke 拒绝时不回写会话目录（失败路径不污染回落链）", async () => {
+    try {
+      invokeMock.mockRejectedValueOnce("打印管线失败");
+      await expect(exportPdf({ destinationPath: "D:/out/x.pdf" })).rejects.toThrow("打印管线失败");
+      expect(getLastExportDirForTest()).toBeUndefined();
+    } finally {
+      setLastExportDir(undefined);
+    }
   });
 
   it("无 destinationPath 时以文档目录为 documentDir 组装对话框默认路径", async () => {

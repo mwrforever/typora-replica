@@ -448,8 +448,11 @@ pub(crate) fn write_pdf_bytes(
     bytes: &[u8],
 ) -> Result<(), ExportPdfError> {
     let temp_pdf = target.with_extension("pdf.tmp");
-    std::fs::write(&temp_pdf, bytes)
-        .map_err(|e| ExportPdfError::Persist(format!("写入临时 PDF 失败: {e}")))?;
+    std::fs::write(&temp_pdf, bytes).map_err(|e| {
+        // 临时写入失败同样清理半成品，不在目标目录残留孤儿文件
+        let _ = std::fs::remove_file(&temp_pdf);
+        ExportPdfError::Persist(format!("写入临时 PDF 失败: {e}"))
+    })?;
     if let Err(e) = std::fs::rename(&temp_pdf, target) {
         // 覆盖失败回收临时文件（如目标被占用只读），错误冒泡给前端提示
         let _ = std::fs::remove_file(&temp_pdf);

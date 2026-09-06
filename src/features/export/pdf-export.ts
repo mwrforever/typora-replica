@@ -10,7 +10,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { buildExportDocumentForPdf } from "./html-export";
 import { A4_SIZE_IN } from "./css-inline";
 import { exportSaveDialog } from "./export-dialog";
-import { resolveExportDefaultPath } from "./export-location";
+import { resolveExportDefaultPath, setLastExportDir } from "./export-location";
 import { recordExportSnapshot } from "./export-previous";
 import { ExportError } from "./export-types";
 import type { ExportResult, PdfExportOptions, PdfPrintSettingsDto } from "./export-types";
@@ -40,6 +40,8 @@ export async function exportPdf(options: PdfExportOptions = {}): Promise<ExportR
       typeof error === "string" ? error : error instanceof Error ? error.message : "未知打印错误";
     throw new ExportError(`PDF 导出失败：${message}`);
   }
+  // 成功落盘即回写会话上次导出目录（X8 auto 对未命名文档的回落链，与 HTML 导出同规）
+  setLastExportDir(dirnameOf(target));
   // X6：成功落盘后登记会话快照（复导出/覆盖入口消费）
   recordExportSnapshot("pdf", target, options);
   return { path: target, format: "pdf" };
