@@ -40,6 +40,14 @@ fn main() {
             // Task 3：显示解析 + asset 协议运行时动态授权（D-4）
             "resolve_image_path",
             "allow_asset_directory",
+            // 08 主题（themes.rs）：同上，漏声明则 allow-list-themes 等
+            // 权限不会生成，capabilities 引用即构建失败
+            "list_themes",
+            "open_theme_folder",
+            "watch_themes",
+            // 08 T7 DevTools 开关（devtools.rs）：漏声明则 allow-toggle-devtools
+            // 权限不会生成，capabilities 引用即构建失败
+            "toggle_devtools",
         ]))
         // 关闭 tauri-build 默认 manifest：改由下方 rustc-link-arg 统一嵌入，
         // 否则主程序出现两份 manifest 资源（winres 一份 + 链接器一份）冲突

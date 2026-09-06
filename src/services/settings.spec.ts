@@ -115,4 +115,22 @@ describe("偏好设置（store 持久化）", () => {
     const reloaded = await loadSettings();
     expect(reloaded.image).toEqual({ ...DEFAULT_SETTINGS.image, copyToFolderEnabled: true }); // 已写回 store
   });
+
+  it("theme 组缺失键逐层回落默认（亮暗各内置主题名）", async () => {
+    // 无存储键（beforeEach 已清空）→ theme 组逐字段回落默认值：
+    // 默认名与 Rust BUILT_IN_THEMES 预置文件同名，首启即可解析到主题
+    const s = await loadSettings();
+    expect(s.theme).toEqual(DEFAULT_SETTINGS.theme);
+    expect(s.theme.lightTheme).toBe("markwell-light");
+    expect(s.theme.darkTheme).toBe("markwell-dark");
+  });
+
+  it("updateSettings 增量合并 theme 字段且不影响其他组", async () => {
+    const s = await updateSettings({ theme: { lightTheme: "solar-mint" } });
+    expect(s.theme.lightTheme).toBe("solar-mint");
+    expect(s.theme.darkTheme).toBe("markwell-dark"); // 未触及键保持
+    expect(s.autoSave.enabled).toBe(true); // 其他组不受影响
+    const reloaded = await loadSettings();
+    expect(reloaded.theme).toEqual({ lightTheme: "solar-mint", darkTheme: "markwell-dark" }); // 整组写回独立键 theme
+  });
 });

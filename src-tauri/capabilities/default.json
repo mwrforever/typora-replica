@@ -27,6 +27,10 @@
     "allow-save-image",
     "allow-import-local-images",
     "allow-resolve-image-path",
-    "allow-allow-asset-directory"
+    "allow-allow-asset-directory",
+    "allow-list-themes",
+    "allow-open-theme-folder",
+    "allow-watch-themes",
+    "allow-toggle-devtools"
   ]
 }

@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Capabilities, Options } from "@wdio/types";
@@ -37,6 +37,31 @@ const imageFixtureDir = path.join(os.tmpdir(), "markwell-e2e-image");
 mkdirSync(imageFixtureDir, { recursive: true });
 writeFileSync(path.join(imageFixtureDir, "doc.md"), "# 图片显示\n\n![](pic.png)\n", "utf8");
 writeFileSync(path.join(imageFixtureDir, "pic.png"), Buffer.from(PNG_1X1_BASE64, "base64"));
+
+/**
+ * 08 主题 E2E 前置（D8-②）：重置 settings store 的 theme 组为默认——
+ * 防止开发机遗留的自定义主题选择污染用例 1 的「默认亮色主题」断言。
+ * 必须在应用启动前落盘（themeStore.init 仅启动读一次设置，spec 内 before 钩子
+ * 晚于装载无法生效）；经 store 文件直写（tauri-plugin-store 默认落点 = AppData
+ * 基准，与上方 fixture 同一时点同一手法）。原字节存内存，onComplete 还原。
+ */
+const settingsPath = path.join(
+  process.env.APPDATA ?? "",
+  "com.markwell.app",
+  "markwell-settings.json",
+);
+// 原文件字节（不存在则 undefined，还原时删除本预置创建的文件）
+const originalSettings = existsSync(settingsPath) ? readFileSync(settingsPath) : undefined;
+try {
+  const parsed = originalSettings
+    ? (JSON.parse(originalSettings.toString("utf8")) as Record<string, unknown>)
+    : {};
+  parsed.theme = { lightTheme: "markwell-light", darkTheme: "markwell-dark" };
+  mkdirSync(path.dirname(settingsPath), { recursive: true });
+  writeFileSync(settingsPath, JSON.stringify(parsed, null, 2), "utf8");
+} catch {
+  // 存量文件非法 JSON：按空设置处理（theme 组由应用逐键回落默认），还原时写回原字节
+}
 
 /** 共享 tauri:options（两 capability 仅 --reopen-file 启动参数不同） */
 function tauriOptions(reopenFile: string): Record<string, unknown> {
@@ -120,4 +145,13 @@ export const config: Options.Testrunner = {
     ui: "bdd",
   },
   reporters: ["spec"],
+
+  // 08 主题 E2E 后置（D8-②）：还原 settings store 原字节；本预置创建的文件（原不存在）则删除
+  onComplete: () => {
+    if (originalSettings) {
+      writeFileSync(settingsPath, originalSettings);
+    } else if (existsSync(settingsPath)) {
+      rmSync(settingsPath);
+    }
+  },
 };

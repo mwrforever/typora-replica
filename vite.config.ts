@@ -199,6 +199,33 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 08 主题核心 100%（spec §4 前端核心：明暗切换链路 / CSS 4 层注入顺序 /
+        // 热刷新事件；含主题域 IPC 契约封装与系统色系监视。register/devtools/
+        // builtin-theme 钉桩等装配与验证层走全局 80% + E2E）
+        "src/features/theme/theme-store.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        "src/features/theme/theme-css.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        "src/features/theme/color-scheme.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        "src/services/theme-io.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },

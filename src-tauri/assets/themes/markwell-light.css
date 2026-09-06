@@ -1,0 +1,36 @@
+/* MarkWell 内置亮色主题 markwell-light（08 原创编写，clean-room：
+   以「清爽纸面 + 蓝色强调」风格原创设计，未复制任何 Typora 主题文件）。
+   作用域约定（D-4）：.milkdown 与 .markwell-dark .milkdown 双选择器——
+   前者与 crepe-overrides.css 亮色默认段同特异性、link 注入更晚取胜；
+   后者与 crepe-overrides 暗色段同特异性打平后凭注入顺序取胜（AC-T5）。
+   字号统一 rem（AC-T8-2）：字号偏好调整根字号时全文字号跟随。 */
+.milkdown,
+.markwell-dark .milkdown {
+  --crepe-color-background: #ffffff;
+  --crepe-color-on-background: #1f2328;
+  --crepe-color-surface: #f6f8fa;
+  --crepe-color-surface-low: #eef1f5;
+  --crepe-color-on-surface: #1f2328;
+  --crepe-color-on-surface-variant: #59636e;
+  --crepe-color-outline: #d1d9e0;
+  --crepe-color-primary: #0969da;
+  --crepe-color-secondary: #ddf4ff;
+  --crepe-color-on-secondary: #0a3069;
+  --crepe-color-inverse: #1f2328;
+  --crepe-color-on-inverse: #ffffff;
+  --crepe-color-inline-code: #8a5300;
+  --crepe-color-error: #cf222e;
+  --crepe-color-hover: #f6f8fa;
+  --crepe-color-selected: #ddf4ff;
+  --crepe-color-inline-area: #e7ebef;
+
+  --crepe-font-title: var(--markwell-font-sans, sans-serif);
+  --crepe-font-default: var(--markwell-font-sans, sans-serif);
+  --crepe-font-code: var(--markwell-font-code, monospace);
+
+  --crepe-shadow-1: 0 1px 2px rgb(31 35 40 / 0.08);
+  --crepe-shadow-2: 0 8px 24px rgb(31 35 40 / 0.16);
+
+  /* 基准字号 1rem：字号偏好（10 设置模块）调整根字号时全文跟随（AC-T8-2） */
+  --crepe-base-font-size: 1rem;
+}

@@ -1,0 +1,32 @@
+/* MarkWell 内置暗色主题 markwell-dark（08 原创编写，clean-room：
+   以「深夜墨面 + 青色强调」风格原创设计，未复制任何 Typora 主题文件。
+   作用域与 rem 字号约定同 markwell-light.css 文件头注释）。 */
+.milkdown,
+.markwell-dark .milkdown {
+  --crepe-color-background: #101418;
+  --crepe-color-on-background: #e6e8eb;
+  --crepe-color-surface: #171c22;
+  --crepe-color-surface-low: #1e242b;
+  --crepe-color-on-surface: #e6e8eb;
+  --crepe-color-on-surface-variant: #9ea7b1;
+  --crepe-color-outline: #333b44;
+  --crepe-color-primary: #2dd4bf;
+  --crepe-color-secondary: #0f3d38;
+  --crepe-color-on-secondary: #ccfbf1;
+  --crepe-color-inverse: #ccfbf1;
+  --crepe-color-on-inverse: #0f3d38;
+  --crepe-color-inline-code: #f59e0b;
+  --crepe-color-error: #f87171;
+  --crepe-color-hover: #1c232a;
+  --crepe-color-selected: #14453f;
+  --crepe-color-inline-area: #232b33;
+
+  --crepe-font-title: var(--markwell-font-sans, sans-serif);
+  --crepe-font-default: var(--markwell-font-sans, sans-serif);
+  --crepe-font-code: var(--markwell-font-code, monospace);
+
+  --crepe-shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  --crepe-shadow-2: 0 8px 24px rgb(0 0 0 / 0.5);
+
+  --crepe-base-font-size: 1rem;
+}

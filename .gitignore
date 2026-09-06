@@ -64,3 +64,6 @@ skills/
 
 # tauri-build 生成的命令权限（DO NOT EDIT，构建产物）
 src-tauri/permissions/
+
+# 隔离工作区（git worktree）
+.worktrees/
