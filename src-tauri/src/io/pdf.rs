@@ -13,9 +13,12 @@ use webview2_com::Microsoft::Web::WebView2::Win32::{
     ICoreWebView2Controller, ICoreWebView2Environment6, ICoreWebView2PrintSettings,
     ICoreWebView2_16, ICoreWebView2_2,
 };
-use webview2_com::{NavigationCompletedEventHandler, PrintToPdfStreamCompletedHandler};
-use windows::Win32::System::Com::IStream;
-use windows_core::{Interface, BOOL, HSTRING};
+use webview2_com::{
+    NavigationCompletedEventHandler, NavigationStartingEventHandler,
+    PrintToPdfStreamCompletedHandler,
+};
+use windows::Win32::System::Com::{CoTaskMemFree, IStream};
+use windows_core::{Interface, BOOL, HSTRING, PWSTR};
 
 /// 打印结果等待上限：超时视为管线卡死，关窗报错（秒）
 const PRINT_TIMEOUT_SECS: u64 = 60;
@@ -195,10 +198,16 @@ fn print_via_webview(
     let url_text = file_url.as_str().to_string();
     // 窗口 label 带毫秒时间戳保证并发导出唯一（重复 label 会建窗失败）
     let label = format!("markwell-export-{}", unix_millis());
+    // 建窗先指向 about:blank：目标 URL 的加载留给回调注册后主动发起（唯一一次）。
+    // 若建窗即加载目标 URL，回调注册可能晚于加载完成而错过 NavigationCompleted；
+    // 而对已完成文档的重导航会被「忽略重复导航」特性直接中止（msedgedriver 注入
+    // IgnoreDuplicateNavs，IsSuccess=false，2026-09-07 E2E 排障实证）——about:blank
+    // 起步 + 单次目标导航在两种时序下都能产生一次可捕获的成功事件
+    let blank_url = tauri::Url::parse("about:blank").map_err(|_| ExportPdfError::InvalidTempUrl)?;
     let window = tauri::WebviewWindowBuilder::new(
         app,
         label.as_str(),
-        tauri::WebviewUrl::External(file_url),
+        tauri::WebviewUrl::External(blank_url),
     )
     .title("MarkWell 导出")
     .visible(false)
@@ -306,28 +315,71 @@ fn begin_print_on_main_thread(
             .map_err(|e| ExportPdfError::Print(format!("关闭系统页眉页脚失败: {e}")))?;
     }
 
-    // 先注册导航完成回调，再主动 Navigate 一次：builder 建窗时虽已带 URL，但页面可能在
-    // 回调注册前就加载完成而错过事件；重新 Navigate 保证 NavigationCompleted 必然触发
+    // 目标导航配对：NavigationStarting 登记「目标 URL 导航」的 id，NavigationCompleted
+    // 只处理该 id 的完成事件——建窗首载 about:blank 的启动/完成事件被天然排除，
+    // 打印与失败判定都不会被无关导航污染。Rc<Cell> 供两个主线程回调共享（无跨线程）
+    let target_nav_id = std::rc::Rc::new(std::cell::Cell::new(None::<u64>));
+    // 打印只发起一次：重定向/二次导航不重复触发 PrintToPdfStream
     let printed = std::cell::Cell::new(false);
-    let nav_handler = NavigationCompletedEventHandler::create({
+
+    // 导航启动回调：登记目标 URL 对应的导航 id（about:blank 首载的启动事件被忽略）
+    let starting_handler = NavigationStartingEventHandler::create({
+        let file_url = file_url.clone();
+        let target_nav_id = std::rc::Rc::clone(&target_nav_id);
+        Box::new(move |_webview, args| {
+            let Some(args) = args else {
+                return Ok(());
+            };
+            let mut uri_ptr = PWSTR::null();
+            // SAFETY: args 为 COM 事件交付的有效参数对象，Uri 为其标准出参读取；
+            // 读出的 COM 串用后立即 CoTaskMemFree 防泄漏
+            let is_target = unsafe { args.Uri(&mut uri_ptr) }.is_ok()
+                && unsafe { uri_ptr.to_string() }.is_ok_and(|uri| uri == file_url);
+            unsafe { CoTaskMemFree(Some(uri_ptr.0.cast())) };
+            if !is_target {
+                return Ok(());
+            }
+            let mut nav_id = 0u64;
+            // SAFETY: args 为 COM 事件交付的有效参数对象，NavigationId 为其标准出参读取
+            if unsafe { args.NavigationId(&mut nav_id) }.is_ok() {
+                target_nav_id.set(Some(nav_id));
+            }
+            Ok(())
+        })
+    });
+    // SAFETY: webview 与 starting_handler 均为主线程持有的有效 COM 对象，add_ 走标准事件订阅
+    let mut starting_token = 0i64;
+    unsafe { webview.add_NavigationStarting(&starting_handler, &mut starting_token) }
+        .map_err(|e| ExportPdfError::Print(format!("注册导航启动回调失败: {e}")))?;
+
+    // 导航完成回调：仅目标导航 id 的成功完成事件才发起 PrintToPdfStream；
+    // 导航失败（如临时 HTML 被清理）即时回传错误，避免等满超时
+    let completed_handler = NavigationCompletedEventHandler::create({
         let tx = tx.clone();
         let print_settings = print_settings.clone();
+        let target_nav_id = std::rc::Rc::clone(&target_nav_id);
         Box::new(move |webview, args| {
-            // 打印只发起一次：重定向/二次导航不重复触发 PrintToPdfStream
+            let Some(args) = args else {
+                return Ok(());
+            };
+            let mut nav_id = 0u64;
+            // SAFETY: args 为 COM 事件交付的有效参数对象，NavigationId 为其标准出参读取
+            if unsafe { args.NavigationId(&mut nav_id) }.is_ok()
+                && Some(nav_id) != target_nav_id.get()
+            {
+                return Ok(());
+            }
             if printed.get() {
                 return Ok(());
             }
             printed.set(true);
-            // 导航失败（如临时 HTML 被清理）不进入打印，即时回传错误避免等满超时
-            if let Some(args) = args {
-                let mut success = BOOL::default();
-                // SAFETY: args 为 COM 事件交付的有效参数对象，IsSuccess 是其标准出参读取
-                if unsafe { args.IsSuccess(&mut success) }.is_ok() && !success.as_bool() {
-                    let _ = tx.send(Err(ExportPdfError::Navigation(
-                        "导出页面未成功加载".to_string(),
-                    )));
-                    return Ok(());
-                }
+            let mut success = BOOL::default();
+            // SAFETY: args 为 COM 事件交付的有效参数对象，IsSuccess 是其标准出参读取
+            if unsafe { args.IsSuccess(&mut success) }.is_ok() && !success.as_bool() {
+                let _ = tx.send(Err(ExportPdfError::Navigation(
+                    "导出页面未成功加载".to_string(),
+                )));
+                return Ok(());
             }
             let outcome = start_print(&webview, &print_settings, &tx);
             if let Err(e) = outcome {
@@ -336,9 +388,9 @@ fn begin_print_on_main_thread(
             Ok(())
         })
     });
-    // SAFETY: webview 与 nav_handler 均为主线程持有的有效 COM 对象，add_ 走标准事件订阅
+    // SAFETY: webview 与 completed_handler 均为主线程持有的有效 COM 对象，add_ 走标准事件订阅
     let mut nav_token = 0i64;
-    unsafe { webview.add_NavigationCompleted(&nav_handler, &mut nav_token) }
+    unsafe { webview.add_NavigationCompleted(&completed_handler, &mut nav_token) }
         .map_err(|e| ExportPdfError::Print(format!("注册导航完成回调失败: {e}")))?;
 
     // SAFETY: webview 为有效 COM 对象；Navigate 的 HSTRING 在调用期间存活
