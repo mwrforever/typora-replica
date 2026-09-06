@@ -2,6 +2,12 @@
 
 > 本文件记录工程规范与体系级变更（先记变更再改正文）。代码级变更走 git 提交历史，不在此重复。
 
+## 2026-09-06 09 导入导出模块 Rust unsafe 引入与新增依赖登记（规范变更，A.1.3.2 例外通道）
+
+- **unsafe 引入（批4-F2 追认登记）**：09 PDF 导出在 `src-tauri/src/io/pdf.rs` 引入 WebView2 COM 打印段（`ICoreWebView2_16::PrintToPdfStream` + NavigationCompleted 事件等待 + IStream 流读取），全部 unsafe 块逐块附 `// SAFETY:` 注释——走宪法 A.1.3.2「确需引入属规范变更：须评审并逐块附 SAFETY 注释」例外通道，条款正文不变。**PR 披露追认安排**：本变更随 09 分支 PR 合入 test 时在 PR 描述强制披露清单中列明，用户把关合入即追认完成。
+- **新增运行时依赖**（版本以 src-tauri/Cargo.toml 与 Cargo.lock 实测为准）：webview2-com 0.38.2（版本对齐 tauri 内部同源依赖，防嵌套双拷贝）、windows 0.61 / windows-core 0.61（COM 接口 cast 与 IStream 读取；0.61 而非 0.62 系 webview2-com 0.38.2 依赖声明使然）、thiserror 2（`ExportPdfError` 错误枚举，A.1.3.3）。AGENTS.md C.2 技术栈表已同步追加「PDF 打印」行。
+- **spec 背书**：打印管线设计定稿于 docs/specs/modules/09-导入导出.md §5（spec 属 docs/ 不入库，仅工作树）。
+
 ## 2026-09-06 08 模块交付后用户裁决四项（PR 待合入）
 
 - **文档入库策略修正（推翻 1a44a76 部分内容）**：用户核实明确提交白名单 = **宪法体系文件（AGENTS.md/CLAUDE.md/CHANGELOG.md/TASK.md）+ README.md + 代码**，docs/ 下内容一律不入库（2026-09-06 第二次确认将 CHANGELOG.md/TASK.md 纳入白名单并随本条目入库）。落地：① .gitignore 移除 AGENTS.md / README.md 忽略行（两者回归版本库，经 prettier --check 预检通过）；② PR #13 中以 `git add -f` 入库的三个 loop 产物（实施计划/进度文件/终验报告）`git rm --cached` 移出版本库（工作树保留，回归 gitignored 状态）；③ **历史残留披露**：三文件在 PR #13 合并提交（b81aa75）中的历史无法不改写 test 分支而清除，属既成事实，本提交后不再新增。

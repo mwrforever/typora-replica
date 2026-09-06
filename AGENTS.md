@@ -209,22 +209,23 @@ App.vue → components → features → services ──invoke──▶ src-tauri
 
 ### C.2 技术栈选型
 
-| 职责              | 技术                                                                             | 版本（实测证据）              |
-| ----------------- | -------------------------------------------------------------------------------- | ----------------------------- |
-| 前端框架          | Vue（Composition API + `<script setup>`）                                        | ^3.5.13                       |
-| 语言（前端）      | TypeScript（strict）+ vue-tsc                                                    | ~5.6.2 / ^2.1.10              |
-| 构建 / 开发服务器 | Vite                                                                             | ^6.0.3                        |
-| 编辑器内核        | Milkdown（crepe / kit / vue）                                                    | 7.22.1                        |
-| 数学 / 图表       | KaTeX / Mermaid                                                                  | ^0.18.4 / ^11.16.1            |
-| 状态管理          | Pinia                                                                            | ^4.0.3                        |
-| 搜索基座          | prosemirror-search（kit 之外的既有例外，见 B.2.5）                               | 1.1.1                         |
-| 桌面外壳          | Tauri（protocol-asset）+ @tauri-apps/api                                         | 2.x                           |
-| Rust 关键依赖     | serde / serde_json、encoding_rs、ignore、regex、walkdir、notify、trash、pathdiff | 见 src-tauri/Cargo.toml       |
-| Tauri 插件        | dialog / store / opener                                                          | 2.x                           |
-| 单元测试          | Vitest + @vitest/coverage-v8 + jsdom                                             | ^4.1.10 / 30                  |
-| E2E               | WebdriverIO + edgedriver（本地）；smoke-ci.mjs 冒烟（CI）                        | ^9.30.1                       |
-| 静态检查 / 格式化 | ESLint（flat config）+ eslint-plugin-vue / Prettier                              | ^10.8.1 / ^3.9.6              |
-| Rust 门禁         | rustfmt / clippy -D warnings / cargo test                                        | stable-x86_64-pc-windows-msvc |
+| 职责              | 技术                                                                                                          | 版本（实测证据）                     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| 前端框架          | Vue（Composition API + `<script setup>`）                                                                     | ^3.5.13                              |
+| 语言（前端）      | TypeScript（strict）+ vue-tsc                                                                                 | ~5.6.2 / ^2.1.10                     |
+| 构建 / 开发服务器 | Vite                                                                                                          | ^6.0.3                               |
+| 编辑器内核        | Milkdown（crepe / kit / vue）                                                                                 | 7.22.1                               |
+| 数学 / 图表       | KaTeX / Mermaid                                                                                               | ^0.18.4 / ^11.16.1                   |
+| 状态管理          | Pinia                                                                                                         | ^4.0.3                               |
+| 搜索基座          | prosemirror-search（kit 之外的既有例外，见 B.2.5）                                                            | 1.1.1                                |
+| 桌面外壳          | Tauri（protocol-asset）+ @tauri-apps/api                                                                      | 2.x                                  |
+| Rust 关键依赖     | serde / serde_json、encoding_rs、ignore、regex、walkdir、notify、trash、pathdiff                              | 见 src-tauri/Cargo.toml              |
+| PDF 打印          | webview2-com（ICoreWebView2_16 PrintToPdfStream）+ windows/windows-core（COM/IStream）+ thiserror（错误枚举） | 0.38.2 / 0.61 / 0.61 / 2（实测证据） |
+| Tauri 插件        | dialog / store / opener                                                                                       | 2.x                                  |
+| 单元测试          | Vitest + @vitest/coverage-v8 + jsdom                                                                          | ^4.1.10 / 30                         |
+| E2E               | WebdriverIO + edgedriver（本地）；smoke-ci.mjs 冒烟（CI）                                                     | ^9.30.1                              |
+| 静态检查 / 格式化 | ESLint（flat config）+ eslint-plugin-vue / Prettier                                                           | ^10.8.1 / ^3.9.6                     |
+| Rust 门禁         | rustfmt / clippy -D warnings / cargo test                                                                     | stable-x86_64-pc-windows-msvc        |
 
 **技术栈锁定**：上表选型不可单方面变更（变更须用户拍板并重新评估）；新增运行时依赖须经评估；升级大版本须跑全量门禁并记录（含核对配置项在新版本仍被识别，见 C.6）。版本只认本表与配置证据，禁止凭记忆书写。
 
