@@ -22,7 +22,7 @@
 | P2 | SDD 预检与批次登记 | ✅ 完成 | ledger 首行为本计划标识；pre-flight 6 冲突主控裁决→计划修订 27a2d04；批次表已登记 ledger |
 | P3 | 分批 TDD 实现与批审 | ✅ 完成 | B1~B7 全 complete（3 修复轮）；16 AC 证据齐全；三阶段验收门过；七项门禁全绿（2026-09-06 取证） |
 | P4 | 全分支终审 | ✅ 完成 | Ready to merge = Yes；fix wave 1 次（51a4790）+ scoped re-review 过；deferred minors triage 留痕（must-fix 0） |
-| P5 | 端到端验收 | ⬜ 未开始 | — |
+| P5 | 端到端验收 | ✅ 完成 | E2E 8 spec 全过（修复循环 1 轮收敛：补 tauri-driver/dev server 前置）；七项门禁复跑全绿 |
 | P6 | PR 与 code-review 插件审核 | ⬜ 未开始 | — |
 | P7 | 终验与收尾 | ⬜ 未开始 | — |
 
@@ -125,15 +125,17 @@
 
 ## 七项全量门禁记录（P3 末首跑 / P5 复跑为最终证据）
 
-| 门禁 | P3 首跑（2026-09-06） | P5 复跑 |
+| 门禁 | P3 首跑（2026-09-06） | P5 复跑（2026-09-06，fix wave 51a4790 后） |
 | --- | --- | --- |
-| `npm run typecheck` | ✅ exit 0 | ⬜ |
-| `npm run lint` | ✅ exit 0 | ⬜ |
-| `npm run format:check` | ✅ exit 0 | ⬜ |
-| `npm run test:coverage` | ✅ exit 0（主题核心域 4 文件四项 100%，全局 860 测试） | ⬜ |
-| `cargo fmt -- --check` | ✅ exit 0 | ⬜ |
-| `cargo clippy -D warnings` | ✅ exit 0 | ⬜ |
-| `cargo test` | ✅ 124 passed / 0 failed | ⬜ |
+| `npm run typecheck` | ✅ exit 0 | ✅ exit 0 |
+| `npm run lint` | ✅ exit 0 | ✅ exit 0 |
+| `npm run format:check` | ✅ exit 0 | ✅ exit 0 |
+| `npm run test:coverage` | ✅ exit 0（主题核心域 4 文件四项 100%，全局 860 测试） | ✅ exit 0（同） |
+| `cargo fmt -- --check` | ✅ exit 0 | ✅ exit 0 |
+| `cargo clippy -D warnings` | ✅ exit 0 | ✅ exit 0 |
+| `cargo test` | ✅ 124 passed / 0 failed | ✅ 124 passed / 0 failed |
+
+- **E2E（P5）**：8 spec 文件全过（含 theme.e2e.ts 2 用例；wdio 汇总「Spec Files: 8 passed」）。修复循环 1 轮收敛：首轮失败原因为环境前置缺失（tauri-driver 未启动，4444 拒连）——按 e2e/README §2 三前置重建（Vite dev server 1420 + `tauri-driver --native-driver e2e/.driver/msedgedriver.exe` + wdio）后全绿；运行前置 AppsUseLightTheme=1（置亮）→ 运行后还原 0，均已确认；后台进程已清理无残留。另：`cargo check --release` exit 0（devtools 降级分支编译取证）。
 
 ## P3 汇总（2026-09-06 收批）
 
