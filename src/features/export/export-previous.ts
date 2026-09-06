@@ -82,12 +82,20 @@ export async function exportOverwriteWithPrevious(): Promise<ExportResult | unde
   return rerunSnapshot(snapshot);
 }
 
-/** 按快照格式重新执行导出（目标路径锁定快照路径；选项原样复用） */
+/** 按快照格式重新执行导出（三分派保真：pdf/html-plain/html 各走原管线；目标路径锁定快照路径；选项原样复用） */
 async function rerunSnapshot(snapshot: ExportSnapshot): Promise<ExportResult | undefined> {
   if (snapshot.format === "pdf") {
     const { exportPdf } = await import("./pdf-export");
     return exportPdf({
       ...(snapshot.options as PdfExportOptions),
+      destinationPath: snapshot.destinationPath,
+    });
+  }
+  if (snapshot.format === "html-plain") {
+    // plain 快照必须回落无样式管线，否则 styled HTML 覆盖 plain 文件破坏格式保真（批5 R1）
+    const { exportPlainHtml } = await import("./html-export");
+    return exportPlainHtml({
+      ...(snapshot.options as ExportHtmlOptions),
       destinationPath: snapshot.destinationPath,
     });
   }

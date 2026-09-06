@@ -125,8 +125,8 @@ describe("export-previous（X6 复用/覆盖两命令）", () => {
     vi.stubGlobal("confirm", confirmSpy);
     exportMocks.exportPdf.mockResolvedValue({ path: "D:/out/report.pdf", format: "pdf" });
     const result = await exportOverwriteWithPrevious();
-    // 覆盖警告必须先于导出弹出且被用户确认
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    // 覆盖警告文案必须携带快照目标路径（M2 钉桩：用户知情权）
+    expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("D:/out/report.pdf"));
     expect(exportMocks.exportPdf).toHaveBeenCalledTimes(1);
     expect(exportMocks.exportPdf).toHaveBeenCalledWith({ destinationPath: "D:/out/report.pdf" });
     expect(exportMocks.exportHtml).not.toHaveBeenCalled();
@@ -166,5 +166,39 @@ describe("export-previous（X6 复用/覆盖两命令）", () => {
       destinationPath: "D:/out/page.html",
     });
     expect(result).toEqual({ path: "D:/out/page.html", format: "html" });
+  });
+
+  it("AC-X6-1：plain 快照复导出走无样式管线（格式保真，不误走 styled HTML）", async () => {
+    recordExportSnapshot("html-plain", "D:/old/plain.html", {});
+    exportMocks.exportPlainHtml.mockResolvedValue({
+      path: "D:/old/plain.html",
+      format: "html-plain",
+    });
+    const result = await exportWithPrevious();
+    expect(exportMocks.exportPlainHtml).toHaveBeenCalledTimes(1);
+    expect(exportMocks.exportPlainHtml).toHaveBeenCalledWith({
+      destinationPath: "D:/old/plain.html",
+    });
+    expect(exportMocks.exportHtml).not.toHaveBeenCalled();
+    expect(exportMocks.exportPdf).not.toHaveBeenCalled();
+    expect(result).toEqual({ path: "D:/old/plain.html", format: "html-plain" });
+  });
+
+  it("AC-X6-2：plain 快照确认覆盖同样走无样式管线（按快照格式分派）", async () => {
+    recordExportSnapshot("html-plain", "D:/out/plain.html", {});
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
+    exportMocks.exportPlainHtml.mockResolvedValue({
+      path: "D:/out/plain.html",
+      format: "html-plain",
+    });
+    const result = await exportOverwriteWithPrevious();
+    expect(exportMocks.exportPlainHtml).toHaveBeenCalledWith({
+      destinationPath: "D:/out/plain.html",
+    });
+    expect(exportMocks.exportHtml).not.toHaveBeenCalled();
+    expect(result).toEqual({ path: "D:/out/plain.html", format: "html-plain" });
   });
 });
