@@ -71,6 +71,34 @@ describe("buildPdfPageCss", () => {
     expect(out).not.toContain("@bottom-center");
   });
 
+  it("页眉页脚空串与 undefined 同路径（不产出 margin boxes）", () => {
+    const out = buildPdfPageCss({ header: "", footer: "", title: "t", breakH1: false });
+    expect(out).not.toContain("@top-center");
+    expect(out).not.toContain("@bottom-center");
+  });
+
+  it("页眉空串页脚有效时仅产出页脚 margin box（短路组合）", () => {
+    const out = buildPdfPageCss({
+      header: "",
+      footer: "第 ${pageNo} 页",
+      title: "t",
+      breakH1: false,
+    });
+    expect(out).not.toContain("@top-center");
+    expect(out).toContain("@bottom-center");
+    expect(out).toContain("counter(page)");
+  });
+
+  it("content 字符串转义控制字符（CSS 字符串中裸换行破坏语法）", () => {
+    const out = buildPdfPageCss({
+      header: "a\rb\nc",
+      footer: undefined,
+      title: "t",
+      breakH1: false,
+    });
+    expect(out).toContain('"a\\rb\\nc"');
+  });
+
   it("A4 尺寸常量（英寸，WebView2 PrintSettings 单位）", () => {
     expect(A4_SIZE_IN.widthIn).toBeCloseTo(8.27);
     expect(A4_SIZE_IN.heightIn).toBeCloseTo(11.69);

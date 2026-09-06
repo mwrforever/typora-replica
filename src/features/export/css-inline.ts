@@ -10,9 +10,6 @@ import katexCss from "katex/dist/katex.min.css?raw";
 /** A4 纸张尺寸（英寸；WebView2 PrintSettings 单位为英寸） */
 export const A4_SIZE_IN = { widthIn: 8.27, heightIn: 11.69 } as const;
 
-/** PDF 默认页边距（英寸，四边同值；与 Rust 侧常量对齐） */
-export const PDF_MARGIN_IN = 0.4;
-
 /** 导出专用基础样式（正文容器 / 代码块 / 表格 / 大纲；明色为基线，不含暗色段） */
 export const EXPORT_BASE_CSS = `
 body { margin: 0; }
@@ -26,8 +23,8 @@ body { margin: 0; }
 .mw-export-outline { border: 1px solid #d0d7de; border-radius: 6px; padding: 12px 24px; margin-bottom: 2em; background: #f6f8fa; }
 `;
 
-/** 暗色段样式（AC-X2-4 暗色导出载体；仅 darkMode 时并入 style 块） */
-export const EXPORT_DARK_CSS = `
+/** 暗色段样式（AC-X2-4 暗色导出载体；仅 darkMode 时并入 style 块，模块内私有） */
+const EXPORT_DARK_CSS = `
 html.markwell-dark, html.markwell-dark body { background: #1e1e1e; color: #d4d4d4; }
 html.markwell-dark .mw-export-body pre { background: #2d2d2d; }
 html.markwell-dark .mw-export-outline { background: #2d2d2d; border-color: #444; }
@@ -131,7 +128,6 @@ function toContentExpr(template: string, title: string): string {
   }
   const tail = template.slice(last);
   if (tail !== "") pushString(tokens, tail);
-  if (tokens.length === 0) return '""';
   return tokens.map((t) => (t.kind === "str" ? escapeCssString(t.text) : t.expr)).join(" ");
 }
 
@@ -142,7 +138,16 @@ function pushString(tokens: ContentToken[], text: string): void {
   else tokens.push({ kind: "str", text });
 }
 
-/** CSS 字符串字面转义（引号/反斜杠，防 content 表达式注入） */
+/** CSS 字符串字面转义（反斜杠/控制字符/引号，防 content 表达式注入） */
 function escapeCssString(text: string): string {
-  return `"${text.split("\\").join("\\\\").split('"').join('\\"')}"`;
+  // 控制字符（\r \n）转为字面反斜杠序列：CSS content 字符串中裸换行破坏语法
+  return `"${text
+    .split("\\")
+    .join("\\\\")
+    .split("\r")
+    .join("\\r")
+    .split("\n")
+    .join("\\n")
+    .split('"')
+    .join('\\"')}"`;
 }

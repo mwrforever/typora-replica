@@ -4,6 +4,11 @@
 // 渲染器经 hooks 注入：测试用桩，生产由 mermaid-export.ts / katex 封装提供。
 // plainMode（AC-X3-1）：包装 div 不携带 mw-* 类——HTML 无样式导出「无包裹类」语义。
 // math_inline 无需处理——其 toDOM 序列化时已内联 KaTeX HTML（crepe latex 实证）。
+//
+// 围栏形态契约（批2 R1 实证）：preset-commonmark fence toDOM 把 data-language 挂在
+// **pre** 上（`<pre data-language="mermaid"><code>…</code></pre>`，lib/index.js:811-816），
+// 旧形态挂 code（历史产物）——双选择器互斥收集做向后兼容，形态契约回归用例见 spec，
+// 防序列化器变更再静默断裂（旧选择器失配即静默空转，无任何报错）。
 /** 后处理渲染钩子（渲染能力注入面） */
 export interface PostProcessHooks {
   /** mermaid 源码 → SVG 字符串（异步） */
@@ -16,12 +21,23 @@ export interface PostProcessHooks {
   plainMode?: boolean;
 }
 
+/** 围栏替换候选（双形态收集产物；pre 为待替换围栏元素，language 已小写归一） */
+interface FenceCandidate {
+  /** 待整体替换的 pre 围栏元素 */
+  pre: Element;
+  /** 围栏语言（data-language 小写归一） */
+  language: string;
+  /** 围栏内文（code 子元素文本，缺 code 时整段 textContent 兜底） */
+  text: string;
+}
+
 /**
  * 对序列化产物根元素执行全部后处理（原地修改副本）
  *
  * 处理项：
- * 1. `pre>code[data-language=mermaid]`（大小写不敏感）→ div（mw-mermaid/plain 无类）内嵌 SVG；
- * 2. `pre>code[data-language=latex]` → div（mw-math-block/plain 无类）内嵌 KaTeX HTML；
+ * 1. `pre[data-language=mermaid]` / 旧形态 `pre>code[data-language=mermaid]`（大小写不敏感）
+ *    → div（mw-mermaid/plain 无类）内嵌 SVG；
+ * 2. latex 同形态 → div（mw-math-block/plain 无类）内嵌 KaTeX HTML；
  * 3. `div[data-node-type=toc]` → 大纲内容替换并剥离自定义属性。
  * @param root 序列化产物根元素（副本）
  * @param hooks 渲染钩子
@@ -32,16 +48,12 @@ export async function postProcessExportHtml(
 ): Promise<void> {
   const wrapperClass = hooks.plainMode === true ? undefined : "mw-mermaid";
   const mathClass = hooks.plainMode === true ? undefined : "mw-math-block";
-  const fences = root.querySelectorAll("pre > code[data-language]");
-  for (const code of Array.from(fences)) {
-    const language = (code.getAttribute("data-language") ?? "").toLowerCase();
-    const pre = code.parentElement;
-    if (pre === null) continue;
+  for (const { pre, language, text } of collectFences(root)) {
     if (language === "mermaid") {
-      const svg = await hooks.renderMermaid(code.textContent ?? "");
+      const svg = await hooks.renderMermaid(text);
       replaceWithWrapper(pre, wrapperClass, svg);
     } else if (language === "latex") {
-      replaceWithWrapper(pre, mathClass, hooks.renderMathBlock(code.textContent ?? ""));
+      replaceWithWrapper(pre, mathClass, hooks.renderMathBlock(text));
     }
   }
   // [toc] 节点替换（大纲内容；无大纲时以注释占位保持文档结构完整）
@@ -51,6 +63,29 @@ export async function postProcessExportHtml(
     replacement.innerHTML = hooks.outlineHtml ?? "<!-- [toc] 无大纲内容 -->";
     toc.replaceWith(replacement);
   }
+}
+
+/** 双形态收集围栏候选（新形态 data-language 在 pre / 旧形态在 code；两选择器互斥不重叠） */
+function collectFences(root: HTMLElement): FenceCandidate[] {
+  const fences: FenceCandidate[] = [];
+  for (const pre of Array.from(root.querySelectorAll("pre[data-language]"))) {
+    // 选择器已约束 data-language 必在、textContent 对元素节点运行时恒为 string
+    // （DOM lib 将 Node.textContent 宽松标注为可空）——非空断言消除不可达守卫分支
+    fences.push({
+      pre,
+      language: pre.getAttribute("data-language")!.toLowerCase(),
+      text: pre.querySelector("code")?.textContent ?? pre.textContent!,
+    });
+  }
+  for (const code of Array.from(root.querySelectorAll("pre > code[data-language]"))) {
+    // 旧形态：父节点由选择器约束为 pre，同以非空断言消除不可达守卫
+    fences.push({
+      pre: code.parentElement!,
+      language: code.getAttribute("data-language")!.toLowerCase(),
+      text: code.textContent!,
+    });
+  }
+  return fences;
 }
 
 /** 用包装 div 替换目标元素（className 为 undefined 时输出无类 div——plain 语义） */
