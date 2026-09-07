@@ -62,6 +62,8 @@ vi.mock("../editor/editor-manager", () => ({
 vi.mock("../../services/settings", () => ({
   loadSettings: (...a: unknown[]) => h.loadSettings(...a),
   updateSettings: (...a: unknown[]) => h.updateSettings(...a),
+  // 失效事件常量（10 对接契约自 features/image 迁入 services）：mock 面须与真实模块导出对齐
+  SETTINGS_INVALIDATED_EVENT: "markwell-settings-updated",
 }));
 
 import OutlinePanel from "./OutlinePanel.vue";

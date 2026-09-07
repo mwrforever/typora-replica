@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { resolveLaunch } from "./launch-behavior";
 import type { AppSettings } from "./settings";
 
-/** 构造测试设置（默认 restore-folder；outline/image/theme/export 为 05/07/08/09 新增必选键，补基准值） */
+/** 构造测试设置（默认 restore-folder；outline/image/theme/export/appearance/editor/markdown 为 05/07/08/09/10 新增必选键，补基准值） */
 function makeSettings(over: Partial<AppSettings> = {}): AppSettings {
   return {
     autoSave: { enabled: true, timerMinutes: 5 },
@@ -16,6 +16,7 @@ function makeSettings(over: Partial<AppSettings> = {}): AppSettings {
       relativePathEnabled: false,
       dotSlashPrefixEnabled: false,
       urlEscapeEnabled: false,
+      insertBehavior: "local-only",
     },
     theme: { lightTheme: "markwell-light", darkTheme: "markwell-dark" },
     export: {
@@ -25,6 +26,29 @@ function makeSettings(over: Partial<AppSettings> = {}): AppSettings {
       pdfHeader: "",
       pdfFooter: "",
       pdfPageBreakH1: false,
+      yamlOverrides: false,
+      htmlAppendHeadBody: false,
+      htmlThemeOverride: "",
+      pdfMarginIn: 0.4,
+    },
+    appearance: { showStatusBar: true, readingSpeed: 200 },
+    editor: { autoPairBrackets: true, autoPairMarkdown: true },
+    markdown: {
+      inlineMath: false,
+      diagrams: false,
+      strictMode: false,
+      highlight: false,
+      superscript: false,
+      subscript: false,
+      spellcheck: false,
+      codeFence: {
+        lineNumbers: false,
+        wrapLongLines: false,
+        shiftTabIndent: true,
+        indentWidth: 4,
+        defaultLanguage: "",
+        useLastUsedLanguage: true,
+      },
     },
     ...over,
   };

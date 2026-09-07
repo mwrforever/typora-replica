@@ -145,6 +145,10 @@ describe("偏好设置（store 持久化）", () => {
       pdfHeader: "",
       pdfFooter: "",
       pdfPageBreakH1: false,
+      yamlOverrides: false,
+      htmlAppendHeadBody: false,
+      htmlThemeOverride: "",
+      pdfMarginIn: 0.4,
     });
   });
 
@@ -163,6 +167,82 @@ describe("偏好设置（store 持久化）", () => {
       pdfHeader: "",
       pdfFooter: "",
       pdfPageBreakH1: false,
+      yamlOverrides: false,
+      htmlAppendHeadBody: false,
+      htmlThemeOverride: "",
+      pdfMarginIn: 0.4,
     }); // 已写回 store
+  });
+
+  // ── 10 设置面板新键组（12.1-12.5 全集存储面）──
+
+  it("appearance 组缺失键逐层回落默认（状态栏开/字号跟随主题/阅读速度 200）", async () => {
+    // 无存储键（beforeEach 已清空）→ appearance 组逐字段回落默认值
+    const s = await loadSettings();
+    // 逐字段钉死默认（toEqual 对 undefined 宽容，防静默漏字段）
+    expect(s.appearance.showStatusBar).toBe(true);
+    expect(s.appearance.fontSize).toBeUndefined(); // 跟随主题
+    expect(s.appearance.readingSpeed).toBe(200);
+  });
+
+  it("appearance 字号设置后持久化保留（undefined 与数值双形态往返）", async () => {
+    // 增量补丁只传 fontSize 与 readingSpeed——showStatusBar 未触及，深合并保持默认开
+    await updateSettings({ appearance: { fontSize: 18, readingSpeed: 250 } });
+    const reloaded = await loadSettings();
+    expect(reloaded.appearance.fontSize).toBe(18);
+    expect(reloaded.appearance.readingSpeed).toBe(250);
+    expect(reloaded.appearance.showStatusBar).toBe(true); // 未触及键保持
+  });
+
+  it("editor 组默认全开（auto pair 括号与 Markdown 语法，01 实测口径）", async () => {
+    const s = await loadSettings();
+    expect(s.editor.autoPairBrackets).toBe(true);
+    expect(s.editor.autoPairMarkdown).toBe(true);
+  });
+
+  it("markdown 组默认全关 + codeFence 子组六项默认（调研 §6 自定口径）", async () => {
+    const s = await loadSettings();
+    expect(s.markdown.inlineMath).toBe(false);
+    expect(s.markdown.diagrams).toBe(false);
+    expect(s.markdown.strictMode).toBe(false);
+    expect(s.markdown.highlight).toBe(false);
+    expect(s.markdown.superscript).toBe(false);
+    expect(s.markdown.subscript).toBe(false);
+    expect(s.markdown.spellcheck).toBe(false);
+    expect(s.markdown.codeFence).toEqual({
+      lineNumbers: false,
+      wrapLongLines: false,
+      shiftTabIndent: true,
+      indentWidth: 4,
+      defaultLanguage: "",
+      useLastUsedLanguage: true,
+    });
+  });
+
+  it("image.insertBehavior 默认仅本地（12.4 插入时行为）", async () => {
+    const s = await loadSettings();
+    expect(s.image.insertBehavior).toBe("local-only");
+    await updateSettings({ image: { insertBehavior: "all" } });
+    const reloaded = await loadSettings();
+    expect(reloaded.image.insertBehavior).toBe("all");
+    expect(reloaded.image.copyToFolderEnabled).toBe(false); // 既有键不受波及
+  });
+
+  it("export 预留键默认值（YAML 覆盖关/head-body 关/主题空/边距 0.4）", async () => {
+    const s = await loadSettings();
+    expect(s.export.yamlOverrides).toBe(false);
+    expect(s.export.htmlAppendHeadBody).toBe(false);
+    expect(s.export.htmlThemeOverride).toBe("");
+    expect(s.export.pdfMarginIn).toBe(0.4);
+  });
+
+  it("updateSettings 增量合并 markdown.codeFence 单字段且不影响其他组", async () => {
+    // 只改缩进宽度（codeFence 子组单字段增量）——同组其余键与 inlineMath 等未触及键保持，
+    // export 等其他组不受影响；codeFence 需嵌套深合并（浅合并会整组覆盖丢失 lineNumbers）
+    const s = await updateSettings({ markdown: { codeFence: { indentWidth: 2 } } });
+    expect(s.markdown.codeFence.indentWidth).toBe(2);
+    expect(s.markdown.codeFence.lineNumbers).toBe(false); // 组内未触及键保持
+    expect(s.markdown.inlineMath).toBe(false);
+    expect(s.export.includeOutline).toBe(false); // 其他组不受影响
   });
 });

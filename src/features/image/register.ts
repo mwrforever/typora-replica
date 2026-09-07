@@ -12,7 +12,11 @@
 // 本模块无 UI、不持编辑器引用；重复装配幂等：处理器覆盖注入无害，事件监听模块级仅注册
 // 一次，keymap 注册表为 push 数组故以 hasEditorKeymap 守卫防重复叠加。
 import { invoke } from "@tauri-apps/api/core";
-import { DEFAULT_SETTINGS, loadSettings } from "../../services/settings";
+import {
+  DEFAULT_SETTINGS,
+  loadSettings,
+  SETTINGS_INVALIDATED_EVENT,
+} from "../../services/settings";
 import type { ImageSettings } from "../../services/settings";
 import { getActiveFrontMatter, getActiveSession } from "../tabs/editor-registry";
 import { addEditorKeymap, hasEditorKeymap } from "../editor/keymaps";
@@ -21,8 +25,9 @@ import { insertLocalImagesAction } from "./insert-local-image";
 import { createImageUploadHandler } from "./upload-flow";
 import type { ImageDocContext } from "./upload-flow";
 
-/** 设置失效事件名（10 模块保存设置后 dispatch 即可刷新本模块设置快照） */
-export const SETTINGS_INVALIDATED_EVENT = "markwell-settings-updated";
+// 设置失效事件常量落位 services 层（10 设置模块保存后 dispatch 即可刷新本模块设置快照）；
+// 此处 re-export 保持既有公共导出面不变（历史消费方无需改导入路径）
+export { SETTINGS_INVALIDATED_EVENT };
 
 /** Ctrl+Shift+I 插图入口键位串（ProseMirror keymap 语法，Mod=i 的 Shift 修饰组合） */
 const INSERT_LOCAL_IMAGE_KEY = "Shift-Mod-i";
