@@ -4,7 +4,8 @@
 // launch（启动行为：模式/自定义路径/上次文件夹/上次文件）、
 // outline（大纲视图：折叠开关）、
 // image（图片插入：copy to folder 开关+目标目录+相对路径+./ 前缀+URL 转义）、
-// theme（主题：亮/暗模式主题名）。
+// theme（主题：亮/暗模式主题名）、
+// export（导出：位置三模式+自定义目录+Include Outline+PDF 页眉页脚+h1 分页）。
 // 自动保存默认开（差异化于 Typora 默认关——spec 待把关项按调研建议裁决，数据安全优先）。
 import { load } from "@tauri-apps/plugin-store";
 import type { LineEnding } from "./file-io";
@@ -60,6 +61,22 @@ export interface ThemeSettings {
   darkTheme: string;
 }
 
+/** 导出设置（09；HTML/PDF 导出共用面） */
+export interface ExportSettings {
+  /** 导出位置三选项：auto（文档目录优先）/ document-dir（同目录）/ custom（自定义目录） */
+  locationMode: "auto" | "document-dir" | "custom";
+  /** 自定义目录绝对路径（空串 = 未配置，custom 模式回落 auto 语义） */
+  customDir: string;
+  /** HTML 导出 Include Outline（body 前置大纲，默认关） */
+  includeOutline: boolean;
+  /** PDF 页眉模板（${title}/${pageNo}/${pageCount}；空串 = 不启用页眉） */
+  pdfHeader: string;
+  /** PDF 页脚模板（空串 = 不启用页脚） */
+  pdfFooter: string;
+  /** PDF h1 章节分页开关（默认关） */
+  pdfPageBreakH1: boolean;
+}
+
 /** 应用偏好 */
 export interface AppSettings {
   autoSave: AutoSaveSettings;
@@ -71,6 +88,8 @@ export interface AppSettings {
   image: ImageSettings;
   /** 主题（08 模块消费） */
   theme: ThemeSettings;
+  /** 导出（09 模块消费） */
+  export: ExportSettings;
 }
 
 /** 默认偏好（缺失键回落基准） */
@@ -88,6 +107,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   // 默认名与 Rust BUILT_IN_THEMES 预置文件同名，首启即可解析到主题
   theme: { lightTheme: "markwell-light", darkTheme: "markwell-dark" },
+  // 导出默认：位置 auto、大纲关、页眉页脚空、h1 分页关（不改变用户最小导出预期）
+  export: {
+    locationMode: "auto",
+    customDir: "",
+    includeOutline: false,
+    pdfHeader: "",
+    pdfFooter: "",
+    pdfPageBreakH1: false,
+  },
 };
 
 /** store 文件名（tauri-plugin-store 自动持久化到 app 数据目录） */
@@ -103,6 +131,7 @@ export async function loadSettings(): Promise<AppSettings> {
     outline: ((await store.get("outline")) ?? {}) as Partial<OutlineSettings>,
     image: ((await store.get("image")) ?? {}) as Partial<ImageSettings>,
     theme: ((await store.get("theme")) ?? {}) as Partial<ThemeSettings>,
+    export: ((await store.get("export")) ?? {}) as Partial<ExportSettings>,
   };
   return {
     autoSave: {
@@ -134,20 +163,31 @@ export async function loadSettings(): Promise<AppSettings> {
       lightTheme: stored.theme.lightTheme ?? DEFAULT_SETTINGS.theme.lightTheme,
       darkTheme: stored.theme.darkTheme ?? DEFAULT_SETTINGS.theme.darkTheme,
     },
+    export: {
+      locationMode: stored.export.locationMode ?? DEFAULT_SETTINGS.export.locationMode,
+      // 空串是合法存量值（=未配置），仅 undefined 回落默认
+      customDir: stored.export.customDir ?? DEFAULT_SETTINGS.export.customDir,
+      includeOutline: stored.export.includeOutline ?? DEFAULT_SETTINGS.export.includeOutline,
+      pdfHeader: stored.export.pdfHeader ?? DEFAULT_SETTINGS.export.pdfHeader,
+      pdfFooter: stored.export.pdfFooter ?? DEFAULT_SETTINGS.export.pdfFooter,
+      pdfPageBreakH1: stored.export.pdfPageBreakH1 ?? DEFAULT_SETTINGS.export.pdfPageBreakH1,
+    },
   };
 }
 
 /** 更新偏好（深合并后写回并返回新值；调用方拿返回值继续链路） */
 export async function updateSettings(
-  // launch/outline/image/theme 允许部分字段且均走纯 Partial（文档会话等调用方只传
+  // launch/outline/image/theme/export 允许部分字段且均走纯 Partial（文档会话等调用方只传
   // lastFile/lastFolder、05 大纲只传 collapsible、07 图片粘贴只传 image 组内
-  // 增量、08 主题切换只传 lightTheme/darkTheme 单键）——与 launch/outline 同一
-  // 收口机制：排除在 Omit 外单独声明 Partial，避免「整组必填」误约束增量调用方
-  patch: Partial<Omit<AppSettings, "launch" | "outline" | "image" | "theme">> & {
+  // 增量、08 主题切换只传 lightTheme/darkTheme 单键、09 导出装配只传 export 组内
+  // 增量）——与 launch/outline 同一收口机制：排除在 Omit 外单独声明 Partial，
+  // 避免「整组必填」误约束增量调用方
+  patch: Partial<Omit<AppSettings, "launch" | "outline" | "image" | "theme" | "export">> & {
     launch?: Partial<LaunchSettings>;
     outline?: Partial<OutlineSettings>;
     image?: Partial<ImageSettings>;
     theme?: Partial<ThemeSettings>;
+    export?: Partial<ExportSettings>;
   },
 ): Promise<AppSettings> {
   const current = await loadSettings();
@@ -158,6 +198,7 @@ export async function updateSettings(
     outline: { ...current.outline, ...patch.outline },
     image: { ...current.image, ...patch.image },
     theme: { ...current.theme, ...patch.theme },
+    export: { ...current.export, ...patch.export },
   };
   const store = await load(STORE_FILE, { autoSave: true });
   await store.set("autoSave", next.autoSave);
@@ -166,5 +207,6 @@ export async function updateSettings(
   await store.set("outline", next.outline);
   await store.set("image", next.image);
   await store.set("theme", next.theme);
+  await store.set("export", next.export);
   return next;
 }

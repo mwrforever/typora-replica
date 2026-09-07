@@ -32,6 +32,7 @@
     "allow-open-theme-folder",
     "allow-watch-themes",
     "allow-unwatch-themes",
+    "allow-export-pdf",
     "allow-toggle-devtools"
   ]
 }

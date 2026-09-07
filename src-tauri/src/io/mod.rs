@@ -10,6 +10,8 @@ pub mod encoding;
 pub mod file_ops;
 pub mod fs;
 pub mod images;
+// 09 PDF 导出：隐藏 WebView2 打印管线（PrintToPdfStream）
+pub mod pdf;
 pub mod search;
 pub mod themes;
 pub mod watch;

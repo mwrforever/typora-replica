@@ -1,0 +1,224 @@
+// 重复导出会话级记忆测试（X6 登记面 + 复用/覆盖两命令：登记/读取/按 tab 隔离/重置/重执行分派）
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// tabs-store 桩：activeTabId 经外部可变变量控制，模拟多标签切换
+const tabsState = vi.hoisted(() => ({ activeTabId: "tab-1" as string | undefined }));
+vi.mock("../tabs/tabs-store", () => ({
+  useTabsStore: () => ({
+    get activeTabId() {
+      return tabsState.activeTabId;
+    },
+  }),
+}));
+
+// 导出管线桩：rerunSnapshot 经动态 import 加载，vi.mock 对动态 import 同样生效
+const exportMocks = vi.hoisted(() => ({
+  exportHtml: vi.fn(),
+  exportPlainHtml: vi.fn(),
+  exportPdf: vi.fn(),
+}));
+vi.mock("./html-export", () => ({
+  exportHtml: exportMocks.exportHtml,
+  exportPlainHtml: exportMocks.exportPlainHtml,
+}));
+vi.mock("./pdf-export", () => ({
+  exportPdf: exportMocks.exportPdf,
+}));
+
+import {
+  exportOverwriteWithPrevious,
+  exportWithPrevious,
+  getPreviousSnapshot,
+  recordExportSnapshot,
+  resetExportPreviousForTest,
+} from "./export-previous";
+
+describe("export-previous（X6 登记面）", () => {
+  beforeEach(() => {
+    resetExportPreviousForTest();
+    tabsState.activeTabId = "tab-1";
+  });
+
+  afterEach(() => {
+    // 覆盖警告经 window.confirm 弹出，桩须逐用例还原；导出桩实现与调用记录逐用例清零
+    vi.unstubAllGlobals();
+    exportMocks.exportHtml.mockReset();
+    exportMocks.exportPlainHtml.mockReset();
+    exportMocks.exportPdf.mockReset();
+  });
+
+  it("登记后读取到完整快照（format/destinationPath/options）", () => {
+    recordExportSnapshot("html", "D:/out/手册.html", { includeOutline: true });
+    const snap = getPreviousSnapshot();
+    expect(snap?.format).toBe("html");
+    expect(snap?.destinationPath).toBe("D:/out/手册.html");
+    expect(snap?.options).toEqual({ includeOutline: true });
+    expect(typeof snap?.savedAt).toBe("number");
+  });
+
+  it("无登记时返回 undefined", () => {
+    expect(getPreviousSnapshot()).toBeUndefined();
+  });
+
+  it("切换 tab 后读取的是新 tab 的快照（按文档隔离）", () => {
+    recordExportSnapshot("html", "D:/out/tab1.html", {});
+    tabsState.activeTabId = "tab-2";
+    // tab-2 尚无登记 → undefined；登记后读到 tab-2 自己的快照
+    expect(getPreviousSnapshot()).toBeUndefined();
+    recordExportSnapshot("html-plain", "D:/out/tab2.html", {});
+    expect(getPreviousSnapshot()?.destinationPath).toBe("D:/out/tab2.html");
+    // 切回 tab-1：仍是 tab-1 原快照（互不串扰）
+    tabsState.activeTabId = "tab-1";
+    expect(getPreviousSnapshot()?.destinationPath).toBe("D:/out/tab1.html");
+  });
+
+  it("同文档重复导出覆盖旧快照（保留最新）", () => {
+    recordExportSnapshot("html", "D:/out/old.html", {});
+    recordExportSnapshot("pdf", "D:/out/new.pdf", { header: "t" });
+    const snap = getPreviousSnapshot();
+    expect(snap?.format).toBe("pdf");
+    expect(snap?.destinationPath).toBe("D:/out/new.pdf");
+  });
+
+  it("reset 清空全部会话记忆（用例间隔离）", () => {
+    recordExportSnapshot("html", "D:/out/a.html", {});
+    resetExportPreviousForTest();
+    expect(getPreviousSnapshot()).toBeUndefined();
+  });
+});
+
+describe("export-previous（X6 复用/覆盖两命令）", () => {
+  beforeEach(() => {
+    resetExportPreviousForTest();
+    tabsState.activeTabId = "tab-a";
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    exportMocks.exportHtml.mockReset();
+    exportMocks.exportPlainHtml.mockReset();
+    exportMocks.exportPdf.mockReset();
+  });
+
+  it("AC-X6-1：有快照时复用上次选项重新导出（HTML；位置走正常导出流程）", async () => {
+    recordExportSnapshot("html", "D:/old.html", { includeOutline: true });
+    exportMocks.exportHtml.mockResolvedValue({ path: "D:/new.html", format: "html" });
+    const result = await exportWithPrevious();
+    // 快照选项原样复用；不携带 destinationPath——「使用上一次设置导出」只复用设置，
+    // 位置由导出管线正常解析（位置设置 + 对话框），不静默覆盖上次导出文件
+    expect(exportMocks.exportHtml).toHaveBeenCalledTimes(1);
+    expect(exportMocks.exportHtml).toHaveBeenCalledWith({ includeOutline: true });
+    expect(result).toEqual({ path: "D:/new.html", format: "html" });
+  });
+
+  it("with Previous 复用选项但不复用路径（路径锁定语义只归 overwrite 命令）", async () => {
+    recordExportSnapshot("html", "D:/old.html", { includeOutline: true, fileNameBase: "手册" });
+    exportMocks.exportHtml.mockResolvedValue({ path: "D:/new.html", format: "html" });
+    await exportWithPrevious();
+    // 复导出参数不含 destinationPath 键：路径语义专属「导出并覆盖」（confirm 知情后锁定）；
+    // with Previous 锁路径会在用户无感知时覆盖旧导出文件（数据丢失风险，review 裁量修复）
+    const arg = exportMocks.exportHtml.mock.calls[0]?.[0];
+    expect(arg).toEqual({ includeOutline: true, fileNameBase: "手册" });
+    expect(arg).not.toHaveProperty("destinationPath");
+  });
+
+  it("AC-X6-1：无快照回落正常 HTML 导出（无参调用、不弹错不打断）", async () => {
+    const result = await exportWithPrevious();
+    expect(exportMocks.exportHtml).toHaveBeenCalledWith();
+    expect(result).toBeUndefined();
+  });
+
+  it("AC-X6-2：确认覆盖后按快照格式走 PDF 管线并锁定快照路径", async () => {
+    recordExportSnapshot("pdf", "D:/out/report.pdf", {});
+    const confirmSpy = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirmSpy);
+    exportMocks.exportPdf.mockResolvedValue({ path: "D:/out/report.pdf", format: "pdf" });
+    const result = await exportOverwriteWithPrevious();
+    // 覆盖警告文案必须携带快照目标路径（M2 钉桩：用户知情权）
+    expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("D:/out/report.pdf"));
+    expect(exportMocks.exportPdf).toHaveBeenCalledTimes(1);
+    expect(exportMocks.exportPdf).toHaveBeenCalledWith({ destinationPath: "D:/out/report.pdf" });
+    expect(exportMocks.exportHtml).not.toHaveBeenCalled();
+    expect(result).toEqual({ path: "D:/out/report.pdf", format: "pdf" });
+  });
+
+  it("AC-X6-2：用户取消覆盖警告则不执行任何导出", async () => {
+    recordExportSnapshot("pdf", "D:/out/report.pdf", {});
+    const confirmSpy = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirmSpy);
+    const result = await exportOverwriteWithPrevious();
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(exportMocks.exportPdf).not.toHaveBeenCalled();
+    expect(result).toBeUndefined();
+  });
+
+  it("AC-X6-3：切换文档后无快照，覆盖导出静默返回 undefined（按文档隔离）", async () => {
+    recordExportSnapshot("html", "D:/old.html", {});
+    tabsState.activeTabId = "tab-z";
+    const result = await exportOverwriteWithPrevious();
+    expect(result).toBeUndefined();
+    expect(exportMocks.exportHtml).not.toHaveBeenCalled();
+    expect(exportMocks.exportPdf).not.toHaveBeenCalled();
+  });
+
+  it("AC-X6-2：HTML 快照覆盖导出走 HTML 管线（按快照格式分派）", async () => {
+    recordExportSnapshot("html", "D:/out/page.html", { includeOutline: true });
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
+    exportMocks.exportHtml.mockResolvedValue({ path: "D:/out/page.html", format: "html" });
+    const result = await exportOverwriteWithPrevious();
+    expect(exportMocks.exportPdf).not.toHaveBeenCalled();
+    expect(exportMocks.exportHtml).toHaveBeenCalledWith({
+      includeOutline: true,
+      destinationPath: "D:/out/page.html",
+    });
+    expect(result).toEqual({ path: "D:/out/page.html", format: "html" });
+  });
+
+  it("AC-X6-1：plain 快照复导出走无样式管线（格式保真，不误走 styled HTML；位置走正常导出流程）", async () => {
+    recordExportSnapshot("html-plain", "D:/old/plain.html", {});
+    exportMocks.exportPlainHtml.mockResolvedValue({
+      path: "D:/new/plain.html",
+      format: "html-plain",
+    });
+    const result = await exportWithPrevious();
+    expect(exportMocks.exportPlainHtml).toHaveBeenCalledTimes(1);
+    // 复用选项但不复用路径（无 destinationPath，同 with Previous 语义）
+    expect(exportMocks.exportPlainHtml).toHaveBeenCalledWith({});
+    expect(exportMocks.exportHtml).not.toHaveBeenCalled();
+    expect(exportMocks.exportPdf).not.toHaveBeenCalled();
+    expect(result).toEqual({ path: "D:/new/plain.html", format: "html-plain" });
+  });
+
+  it("AC-X6-1：pdf 快照复导出走 PDF 管线（复用选项；位置走正常导出流程）", async () => {
+    recordExportSnapshot("pdf", "D:/old/report.pdf", { header: "页眉" });
+    exportMocks.exportPdf.mockResolvedValue({ path: "D:/new/report.pdf", format: "pdf" });
+    const result = await exportWithPrevious();
+    expect(exportMocks.exportPdf).toHaveBeenCalledTimes(1);
+    // 复用选项但不复用路径（无 destinationPath，同 with Previous 语义；不经覆盖确认）
+    expect(exportMocks.exportPdf).toHaveBeenCalledWith({ header: "页眉" });
+    expect(exportMocks.exportHtml).not.toHaveBeenCalled();
+    expect(exportMocks.exportPlainHtml).not.toHaveBeenCalled();
+    expect(result).toEqual({ path: "D:/new/report.pdf", format: "pdf" });
+  });
+
+  it("AC-X6-2：plain 快照确认覆盖同样走无样式管线（按快照格式分派）", async () => {
+    recordExportSnapshot("html-plain", "D:/out/plain.html", {});
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
+    exportMocks.exportPlainHtml.mockResolvedValue({
+      path: "D:/out/plain.html",
+      format: "html-plain",
+    });
+    const result = await exportOverwriteWithPrevious();
+    expect(exportMocks.exportPlainHtml).toHaveBeenCalledWith({
+      destinationPath: "D:/out/plain.html",
+    });
+    expect(exportMocks.exportHtml).not.toHaveBeenCalled();
+    expect(result).toEqual({ path: "D:/out/plain.html", format: "html-plain" });
+  });
+});
