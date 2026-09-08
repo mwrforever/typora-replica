@@ -61,8 +61,9 @@ const SYMBOL_KEYS = new Set(["`", "-", "=", "[", "]", ";", "'", ",", ".", "/", "
  * 窗口保留组合（canonical pmKey）：各窗口级快捷键服务当前实际注册、window 层恒消费的组合。
  * 名单来源（与各 shortcuts 服务保持同步，12 模块接管后随窗口注册表统一维护）：
  * 02 Ctrl+S 保存 / Ctrl+P 快速打开；03 Ctrl+Shift+L 侧栏 / Ctrl+Shift+F 全局搜索 /
- * Ctrl+Shift+1/2/3 面板切换；04 Ctrl+N 新建标签 / Ctrl+W 关闭标签 / Ctrl+Tab 轮换 /
- * Ctrl+Shift+T 重开关闭标签；06 Ctrl+F 搜索 / Ctrl+H 替换；10 Ctrl+, 面板开合。
+ * Ctrl+Shift+1/2/3 面板切换；04 Ctrl+N 新建标签 / Ctrl+W 关闭标签 / Ctrl+Tab 轮换
+ * （tab 分支按 Shift 双向轮换，Ctrl+Shift+Tab 反向轮换同属窗口消费面）/ Ctrl+Shift+T
+ * 重开关闭标签；06 Ctrl+F 搜索 / Ctrl+H 替换；10 Ctrl+, 面板开合。
  * （F3/Shift+F3/Escape 无 Ctrl 修饰，parseShortcutCombo 本就拒绝，不入集。）
  */
 const WINDOW_RESERVED_PM_KEYS: ReadonlySet<string> = new Set([
@@ -76,6 +77,7 @@ const WINDOW_RESERVED_PM_KEYS: ReadonlySet<string> = new Set([
   "Mod-n",
   "Mod-w",
   "Mod-Tab",
+  "Mod-Shift-Tab",
   "Mod-Shift-t",
   "Mod-f",
   "Mod-h",
@@ -136,7 +138,7 @@ export function isWindowReservedCombo(combo: string): boolean {
  * @param combo 用户配置组合串（如 "Ctrl+Shift+P"、"Ctrl+F12"）
  * @returns ProseMirror 键名（单字符主键如 "Mod-Shift-p"；具名主键为 canonical 事件键名，
  *          如 "Mod-F12" / "Mod-ArrowUp"）；非法输入或窗口保留组合（Ctrl+S/N/W/P/F/H/,/
- *          Shift+L/Shift+F/Shift+T/Tab/Shift+1/2/3，见 WINDOW_RESERVED_PM_KEYS）均 undefined
+ *          Shift+L/Shift+F/Shift+T/Tab/Shift+Tab/Shift+1/2/3，见 WINDOW_RESERVED_PM_KEYS）均 undefined
  */
 export function parseShortcutCombo(combo: string): string | undefined {
   const pmKey = parseCanonical(combo);

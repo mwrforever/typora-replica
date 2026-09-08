@@ -77,6 +77,7 @@ describe("parseShortcutCombo 窗口保留组合拒绝（code-review M-1②）", 
     expect(parseShortcutCombo("Ctrl+W")).toBeUndefined(); // 04 关闭标签
     expect(parseShortcutCombo("Ctrl+Shift+T")).toBeUndefined(); // 04 重开关闭标签
     expect(parseShortcutCombo("Ctrl+Tab")).toBeUndefined(); // 04 标签轮换
+    expect(parseShortcutCombo("Ctrl+Shift+Tab")).toBeUndefined(); // 04 标签轮换 Shift 反向（R-1）
     expect(parseShortcutCombo("Ctrl+F")).toBeUndefined(); // 06 搜索面板
     expect(parseShortcutCombo("Ctrl+H")).toBeUndefined(); // 06 替换面板
     expect(parseShortcutCombo("Ctrl+Shift+L")).toBeUndefined(); // 03 侧栏开关
