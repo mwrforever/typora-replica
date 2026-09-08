@@ -78,6 +78,15 @@ describe("useSettingsStore 装载与合并快照", () => {
     expect(store.merged.autoSave.timerMinutes).toBe(5);
   });
 
+  it("高级读取拒绝非 Error 值时回退兜底文案（instanceof 假侧不产生不可读提示）", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    readAdvancedMock.mockRejectedValueOnce("IPC 通道意外关闭");
+    const store = useSettingsStore();
+    await store.load();
+    expect(store.advancedError).toBe("读取高级设置失败");
+    expect(store.advanced?.autoSaveTimer).toBe(5);
+  });
+
   it("未装载时 merged 回落 DEFAULT_SETTINGS（消费方启动窗口期安全）", () => {
     const store = useSettingsStore();
     expect(store.merged).toEqual(DEFAULT_SETTINGS);
@@ -148,6 +157,38 @@ describe("useSettingsStore 变更与事件广播", () => {
     const store = useSettingsStore();
     await store.openConfFile();
     expect(openAdvancedMock).toHaveBeenCalledOnce();
+  });
+
+  it("无 window 环境下 updateGui 写回不崩且跳过广播（typeof 守卫假侧）", async () => {
+    const store = useSettingsStore();
+    await store.load();
+    vi.stubGlobal("window", undefined);
+    try {
+      const next = await store.updateGui({ appearance: { showStatusBar: false } });
+      expect(next.appearance.showStatusBar).toBe(false);
+      expect(memory.get("appearance")).toMatchObject({ showStatusBar: false });
+    } finally {
+      vi.unstubAllGlobals();
+      // 清理调用痕迹：后续面板开合用例以 toHaveBeenCalledOnce 钉死装载次数
+      readAdvancedMock.mockClear();
+    }
+  });
+
+  it("无 window 环境下 resetAdvanced 快照回默认不崩（typeof 守卫假侧）", async () => {
+    resetAdvancedMock.mockClear(); // 前序用例已触发过重置命令，先清历史再钉死本用例计数
+    const store = useSettingsStore();
+    await store.load();
+    vi.stubGlobal("window", undefined);
+    try {
+      await store.resetAdvanced();
+      expect(resetAdvancedMock).toHaveBeenCalledOnce();
+      expect(store.advanced?.autoHideMenuBar).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+      // 同上：清空本用例对 read/reset 两 mock 的调用痕迹，不污染后续计数断言
+      readAdvancedMock.mockClear();
+      resetAdvancedMock.mockClear();
+    }
   });
 });
 

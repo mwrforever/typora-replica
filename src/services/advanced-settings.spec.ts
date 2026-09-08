@@ -108,6 +108,16 @@ describe("resetAdvancedSettings / openAdvancedSettings", () => {
     await openAdvancedSettings();
     expect(invokeMock).toHaveBeenCalledWith("open_advanced_settings");
   });
+
+  it("reset 拒绝时包装为 AdvancedSettingsError 上抛（Rust 中文 string 错误透传，AC-S2-3 失败面）", async () => {
+    invokeMock.mockRejectedValueOnce("落盘失败：目标文件只读");
+    await expect(resetAdvancedSettings()).rejects.toThrow("落盘失败：目标文件只读");
+  });
+
+  it("open 拒绝时包装为 AdvancedSettingsError 上抛（中文兜底文案，AC-S2-4 失败面）", async () => {
+    invokeMock.mockRejectedValueOnce(undefined);
+    await expect(openAdvancedSettings()).rejects.toThrow("打开高级设置文件失败");
+  });
 });
 
 describe("DEFAULT_ADVANCED_SETTINGS", () => {

@@ -33,6 +33,14 @@ describe("registerSettingsShortcuts", () => {
     expect(onTogglePanel).not.toHaveBeenCalled();
   });
 
+  it("Ctrl+非逗号键不触发（修饰链全假侧 + 键名判定早退，让位其余 Ctrl 组合）", () => {
+    const onTogglePanel = vi.fn();
+    cleanup = registerSettingsShortcuts({ onTogglePanel });
+    pressKey("x", { ctrlKey: true });
+    pressKey("F5", { ctrlKey: true });
+    expect(onTogglePanel).not.toHaveBeenCalled();
+  });
+
   it("注销函数移除监听（App 卸载清理）", () => {
     const onTogglePanel = vi.fn();
     const dispose = registerSettingsShortcuts({ onTogglePanel });

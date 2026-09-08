@@ -1,5 +1,6 @@
 // keymap 注册表：注册/查询行为 + 内置键位清单（100% 覆盖核心语法转换）
 import { describe, expect, it } from "vitest";
+import { makeTestEditor } from "../../test/editor-test-utils";
 import { addEditorKeymap, bindMenuShortcut, hasEditorKeymap, listEditorKeymaps } from "./keymaps";
 
 describe("keymap 注册表", () => {
@@ -69,7 +70,9 @@ describe("bindMenuShortcut（10 keyBinding 注入目录）", () => {
   });
 
   it("目录覆盖编辑器域十命令", () => {
-    for (const commandId of [
+    // 占位键名必须是合法 ProseMirror 键名（本文件后续用例会真实 create 编辑器，
+    // 非法修饰符段会在 KeymapManager 键名归一化时抛错）；Mod-Alt-F* 与内置键位无冲突
+    for (const [index, commandId] of [
       "Heading 1",
       "Heading 2",
       "Heading 3",
@@ -81,10 +84,67 @@ describe("bindMenuShortcut（10 keyBinding 注入目录）", () => {
       "Inline Code",
       "Bold",
       "Italic",
-    ]) {
-      // Bold/Italic 为 11 项（十命令口径见披露 3 注：Heading×6 + Paragraph + Code Fences + Inline Code + Bold + Italic）
-      // 键名串仅为注册互斥占位（同一测试内逐条注册不同键），不表达真实键位
-      expect(bindMenuShortcut(commandId, `Mod-f11-${commandId.length}`)).toBe(true);
+    ].entries()) {
+      expect(bindMenuShortcut(commandId, `Mod-Alt-F${index + 1}`)).toBe(true);
     }
+  });
+});
+
+describe("keyBinding 注入键位真实生效（AC-C1-2 端到端：注册表 → keymap 链 → 命令消费）", () => {
+  // 注入目录工厂在 KeymapManager.build（create 时）解析 ctx、按键时执行命令——
+  // 本组用例走真实 create + DOM keydown 链路，断言注入键位在编辑器内实际生效。
+  it("注入 Bold/Italic 键位后按键切换行内标记（可叠加）", async () => {
+    bindMenuShortcut("Bold", "Mod-F10");
+    bindMenuShortcut("Italic", "Mod-F11");
+    const te = await makeTestEditor("选中文字");
+    te.setSelection(1, 5);
+    te.press("F10", { ctrl: true });
+    expect(te.getMarkdown()).toBe("**选中文字**");
+    te.press("F11", { ctrl: true });
+    expect(te.getMarkdown()).toBe("***选中文字***");
+  });
+
+  it("注入 Inline Code 键位后按键包裹反引号（commandsCtx 调用路径）", async () => {
+    bindMenuShortcut("Inline Code", "Mod-F12");
+    const te = await makeTestEditor("选中文字");
+    te.setSelection(1, 5);
+    te.press("F12", { ctrl: true });
+    expect(te.getMarkdown()).toBe("`选中文字`");
+  });
+
+  it("注入 Paragraph 键位后按键将标题转为正文段落（setBlockType 路径）", async () => {
+    bindMenuShortcut("Paragraph", "Mod-F9");
+    const te = await makeTestEditor("# 标题文字");
+    te.setSelection(2, 2);
+    te.press("F9", { ctrl: true });
+    expect(te.getMarkdown()).toBe("标题文字");
+  });
+
+  it("注入 Heading 1~6 与 Code Fences 键位后按键切换块级形态", async () => {
+    bindMenuShortcut("Heading 1", "Mod-F1");
+    bindMenuShortcut("Heading 2", "Mod-F2");
+    bindMenuShortcut("Heading 3", "Mod-F3");
+    bindMenuShortcut("Heading 4", "Mod-F4");
+    bindMenuShortcut("Heading 5", "Mod-F5");
+    bindMenuShortcut("Heading 6", "Mod-F6");
+    bindMenuShortcut("Code Fences", "Mod-F8");
+    const te = await makeTestEditor("正文文字");
+    te.setSelection(1, 1);
+    // 六级逐级设档（Typora Ctrl+1~6 口径：当前块直接设为对应级别）
+    te.press("F3", { ctrl: true });
+    expect(te.getMarkdown()).toBe("### 正文文字");
+    te.press("F4", { ctrl: true });
+    expect(te.getMarkdown()).toBe("#### 正文文字");
+    te.press("F5", { ctrl: true });
+    expect(te.getMarkdown()).toBe("##### 正文文字");
+    te.press("F2", { ctrl: true });
+    expect(te.getMarkdown()).toBe("## 正文文字");
+    te.press("F1", { ctrl: true });
+    expect(te.getMarkdown()).toBe("# 正文文字");
+    te.press("F6", { ctrl: true });
+    expect(te.getMarkdown()).toBe("###### 正文文字");
+    te.press("F8", { ctrl: true });
+    // 围栏块序列化以换行收尾（e6 同款形态：内容行后闭合围栏 + 尾随换行）
+    expect(te.getMarkdown()).toBe("```\n正文文字\n```\n");
   });
 });
