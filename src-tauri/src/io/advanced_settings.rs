@@ -409,9 +409,9 @@ pub enum AdvancedSettingsError {
     /// 值形态不合法（消息含目标形态说明）
     #[error("{0}")]
     InvalidValue(String),
-    /// 打开文件失败
-    #[error("打开高级设置文件失败: {0}")]
-    Open(String),
+    /// 打开文件失败（固定文案：opener 插件错误 Display 可含完整路径，不进 IPC 错误面——A.3.3）
+    #[error("打开高级设置文件失败，请检查系统文件关联")]
+    Open,
 }
 
 impl Serialize for AdvancedSettingsError {
@@ -497,7 +497,12 @@ pub fn open_advanced_settings_at<R: tauri::Runtime>(
     ensure_default(path)?;
     app.opener()
         .open_path(path.to_string_lossy(), None::<&str>)
-        .map_err(|e| AdvancedSettingsError::Open(e.to_string()))
+        .map_err(|e| {
+            // 插件错误细节（Display 可含完整路径）仅本地诊断日志呈现，对外固定中文文案
+            // （A.3.3 敏感信息红线，code-review Low-2）
+            eprintln!("[MarkWell] 打开高级设置文件失败: {e}");
+            AdvancedSettingsError::Open
+        })
 }
 
 /// 读高级设置命令（KB 级小文件同步 IO，与 read_file 同口径——A.3.4 先例）
@@ -749,6 +754,18 @@ mod tests {
             serde_json::Value::String(
                 "非法的高级设置键: evil（白名单七键之外拒绝写入）".to_string()
             )
+        );
+    }
+
+    #[test]
+    fn open_error_serializes_fixed_message_without_path() {
+        // A.3.3 敏感信息红线：Open 变体对外固定中文文案，不透传 opener 插件错误细节
+        // （其 Display 可含完整文件路径，仅本地 eprintln 诊断呈现，code-review Low-2）
+        let err = AdvancedSettingsError::Open;
+        let value = serde_json::to_value(&err).expect("测试上下文允许 expect");
+        assert_eq!(
+            value,
+            serde_json::Value::String("打开高级设置文件失败，请检查系统文件关联".to_string())
         );
     }
 

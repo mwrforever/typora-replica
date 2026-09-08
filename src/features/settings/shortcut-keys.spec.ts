@@ -4,7 +4,7 @@
 // 永不生效（批 3 审核 Important-1）——缝合用例组以真实按键验证防字符串层钉错期望。
 import { keydownHandler } from "@milkdown/kit/prose/keymap";
 import { describe, expect, it } from "vitest";
-import { parseShortcutCombo } from "./shortcut-keys";
+import { isWindowReservedCombo, parseShortcutCombo } from "./shortcut-keys";
 
 describe("parseShortcutCombo 合法组合", () => {
   it("AC-C1-2 示例：Ctrl+Shift+P → Mod-Shift-p", () => {
@@ -64,6 +64,49 @@ describe("parseShortcutCombo 非法组合（返回 undefined，调用方告警�
     expect(parseShortcutCombo("Ctrl+NotAKey")).toBeUndefined();
     // 白名单外单字符符号（@ 不可绑定）同拒绝
     expect(parseShortcutCombo("Ctrl+@")).toBeUndefined();
+  });
+});
+
+describe("parseShortcutCombo 窗口保留组合拒绝（code-review M-1②）", () => {
+  // 编辑器 keymap 命中仅 preventDefault 不阻断传播，同名窗口快捷键（保存/新建标签/搜索
+  // 面板等）将与编辑器动作双重执行——keyBinding 入口不得产生该类冲突组合
+  it("窗口层已注册的组合拒绝（保存/快速打开/标签/搜索/侧栏/面板开合）", () => {
+    expect(parseShortcutCombo("Ctrl+S")).toBeUndefined(); // 02 保存
+    expect(parseShortcutCombo("Ctrl+P")).toBeUndefined(); // 02 快速打开
+    expect(parseShortcutCombo("Ctrl+N")).toBeUndefined(); // 04 新建标签
+    expect(parseShortcutCombo("Ctrl+W")).toBeUndefined(); // 04 关闭标签
+    expect(parseShortcutCombo("Ctrl+Shift+T")).toBeUndefined(); // 04 重开关闭标签
+    expect(parseShortcutCombo("Ctrl+Tab")).toBeUndefined(); // 04 标签轮换
+    expect(parseShortcutCombo("Ctrl+F")).toBeUndefined(); // 06 搜索面板
+    expect(parseShortcutCombo("Ctrl+H")).toBeUndefined(); // 06 替换面板
+    expect(parseShortcutCombo("Ctrl+Shift+L")).toBeUndefined(); // 03 侧栏开关
+    expect(parseShortcutCombo("Ctrl+Shift+F")).toBeUndefined(); // 03 全局搜索
+    expect(parseShortcutCombo("Ctrl+Shift+1")).toBeUndefined(); // 03 面板切换
+    expect(parseShortcutCombo("Ctrl+,")).toBeUndefined(); // 10 面板开合
+  });
+
+  it("大小写与修饰键别名归一后同样命中拒绝（canonical 化比对防绕过）", () => {
+    expect(parseShortcutCombo("ctrl+s")).toBeUndefined();
+    expect(parseShortcutCombo("Control+S")).toBeUndefined();
+    expect(parseShortcutCombo("Ctrl+Shift+l")).toBeUndefined();
+  });
+
+  it("非保留组合不受影响（Ctrl+J 正常解析）", () => {
+    expect(parseShortcutCombo("Ctrl+J")).toBe("Mod-j");
+  });
+});
+
+describe("isWindowReservedCombo 冲突判定（调用方区分告警文案）", () => {
+  it("窗口保留组合返回 true（含大小写与别名形态）", () => {
+    expect(isWindowReservedCombo("Ctrl+S")).toBe(true);
+    expect(isWindowReservedCombo("Ctrl+Shift+L")).toBe(true);
+    expect(isWindowReservedCombo("ctrl+n")).toBe(true);
+  });
+
+  it("非保留组合与非法组合返回 false", () => {
+    expect(isWindowReservedCombo("Ctrl+J")).toBe(false);
+    expect(isWindowReservedCombo("Shift+B")).toBe(false); // 非法组合非窗口冲突
+    expect(isWindowReservedCombo("Ctrl+NotAKey")).toBe(false);
   });
 });
 

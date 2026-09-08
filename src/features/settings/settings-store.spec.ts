@@ -159,6 +159,25 @@ describe("useSettingsStore 变更与事件广播", () => {
     expect(openAdvancedMock).toHaveBeenCalledOnce();
   });
 
+  it("openConfFile 失败不上抛：错误写入 advancedError 由提示条呈现（Low-2 收口）", async () => {
+    // 模板直调通道无 catch 面，上抛即 unhandled rejection——store 内 catch 落 advancedError
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    openAdvancedMock.mockRejectedValueOnce(new Error("打开高级设置文件失败，请检查系统文件关联"));
+    const store = useSettingsStore();
+    await store.load();
+    await expect(store.openConfFile()).resolves.toBeUndefined();
+    expect(store.advancedError).toContain("请检查系统文件关联");
+  });
+
+  it("openConfFile 失败拒绝非 Error 值时落兜底文案（可读提示不缺位）", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    openAdvancedMock.mockRejectedValueOnce("IPC 通道意外关闭");
+    const store = useSettingsStore();
+    await store.load();
+    await store.openConfFile();
+    expect(store.advancedError).toBe("打开高级设置文件失败");
+  });
+
   it("无 window 环境下 updateGui 写回不崩且跳过广播（typeof 守卫假侧）", async () => {
     const store = useSettingsStore();
     await store.load();

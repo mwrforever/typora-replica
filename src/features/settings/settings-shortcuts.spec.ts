@@ -41,6 +41,18 @@ describe("registerSettingsShortcuts", () => {
     expect(onTogglePanel).not.toHaveBeenCalled();
   });
 
+  it("编辑器已消费的按键不重复开面板（defaultPrevented 守卫，code-review M-1①）", () => {
+    const onTogglePanel = vi.fn();
+    cleanup = registerSettingsShortcuts({ onTogglePanel });
+    // 模拟编辑器 keymap 命中 Ctrl+, 后的事件：keymap 命中仅 preventDefault 不阻断传播，
+    // 事件仍冒泡到 window——处理器必须检查 defaultPrevented 早退，否则编辑器动作与
+    // 面板开合双重执行
+    const event = new KeyboardEvent("keydown", { key: ",", ctrlKey: true, cancelable: true });
+    event.preventDefault();
+    window.dispatchEvent(event);
+    expect(onTogglePanel).not.toHaveBeenCalled();
+  });
+
   it("注销函数移除监听（App 卸载清理）", () => {
     const onTogglePanel = vi.fn();
     const dispose = registerSettingsShortcuts({ onTogglePanel });

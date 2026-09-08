@@ -11,6 +11,10 @@
  */
 export function registerSettingsShortcuts(handlers: { onTogglePanel: () => void }): () => void {
   const onKeydown = (event: KeyboardEvent): void => {
+    // 编辑器 keymap 已消费的按键不得重复触发开面板：prosemirror-view 命中键位仅
+    // preventDefault 不阻断传播，事件仍冒泡到 window——keyBinding 把编辑器命令绑到
+    // Ctrl+, 时，编辑器动作已执行，面板开合不得二次触发（code-review M-1①）
+    if (event.defaultPrevented) return;
     // 纯 Ctrl 单修饰组合（排除 Shift/Alt/Meta，与全仓窗口快捷键同口径）
     if (!event.ctrlKey || event.shiftKey || event.altKey || event.metaKey) return;
     if (event.key !== ",") return;

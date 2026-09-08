@@ -116,9 +116,18 @@ export const useSettingsStore = defineStore("settings", () => {
     }
   }
 
-  /** 打开 conf.user.json（系统默认应用；12.6 Open Advanced Settings 入口） */
+  /**
+   * 打开 conf.user.json（系统默认应用；12.6 Open Advanced Settings 入口）。
+   * 失败不上抛：模板直调通道无 catch 面，上抛即 unhandled rejection——错误写入
+   * advancedError 复用面板顶部提示条呈现（code-review Low-2）。
+   */
   async function openConfFile(): Promise<void> {
-    await openAdvancedSettings();
+    try {
+      await openAdvancedSettings();
+    } catch (error: unknown) {
+      advancedError.value = error instanceof Error ? error.message : "打开高级设置文件失败";
+      console.warn("[MarkWell] conf.user.json 打开失败:", advancedError.value);
+    }
   }
 
   /** 打开面板（未装载则触发装载——首次打开读盘，此后复用快照） */

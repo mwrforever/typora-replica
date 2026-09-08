@@ -68,7 +68,8 @@ vi.mock("../../services/theme-io", () => ({
 
 import SettingsPanel from "./SettingsPanel.vue";
 import { useSettingsStore } from "./settings-store";
-import { writeAdvancedSetting } from "../../services/advanced-settings";
+import { writeAdvancedSetting, readAdvancedSettings } from "../../services/advanced-settings";
+import { loadSettings, DEFAULT_SETTINGS } from "../../services/settings";
 
 /**
  * 装配辅助：预装载 store 后渲染面板，返回 store 供绑定断言。
@@ -231,5 +232,46 @@ describe("数字输入清空收口（批1 审查 M2：空串禁止穿透 number 
     const input = screen.getByRole("spinbutton", { name: "PDF 页边距（英寸）" });
     await fireEvent.update(input, "");
     await waitFor(() => expect(memory.get("export")).toMatchObject({ pdfMarginIn: 0.4 }));
+  });
+});
+
+describe("高级层降级与失败反馈收口（code-review Low-2/3/4）", () => {
+  it("高级层降级期间切自动保存开关：写回间隔取 GUI 真值 10 而非降级回退值 5（Low-3）", async () => {
+    // GUI store 真实间隔 10 分钟；高级读取失败 → merged 回退默认 5——开关写回若取
+    // merged 值会把用户原间隔静默覆盖为 5，修复 conf 后不可回溯
+    vi.mocked(loadSettings).mockResolvedValueOnce({
+      ...DEFAULT_SETTINGS,
+      autoSave: { ...DEFAULT_SETTINGS.autoSave, timerMinutes: 10 },
+    });
+    vi.mocked(readAdvancedSettings).mockRejectedValueOnce(
+      new Error("conf.user.json 不是合法 JSON"),
+    );
+    const { store } = await renderPanel();
+    expect(store.advancedError).toBeTruthy(); // 降级态确证
+    expect(store.merged.autoSave.timerMinutes).toBe(5);
+    await fireEvent.click(screen.getByRole("button", { name: "Save & Recover" }));
+    await fireEvent.click(screen.getByRole("checkbox", { name: "自动保存" }));
+    await waitFor(() =>
+      expect(memory.get("autoSave")).toMatchObject({ enabled: false, timerMinutes: 10 }),
+    );
+  });
+
+  it("保存间隔手输 0 夹取为 1 写入（Rust 白名单 n>0 静默拒绝的前端收口，Low-4）", async () => {
+    await renderPanel();
+    await fireEvent.click(screen.getByRole("button", { name: "Save & Recover" }));
+    const input = screen.getByRole("spinbutton", { name: "保存间隔（分钟）" });
+    await fireEvent.update(input, "0");
+    await waitFor(() =>
+      expect(vi.mocked(writeAdvancedSetting)).toHaveBeenCalledWith("autoSaveTimer", 1),
+    );
+  });
+
+  it("保存间隔 conf 写失败呈现错误提示且不再产生 unhandled rejection（Low-4）", async () => {
+    vi.mocked(writeAdvancedSetting).mockRejectedValueOnce(new Error("conf.user.json 写入失败"));
+    const { store } = await renderPanel();
+    await fireEvent.click(screen.getByRole("button", { name: "Save & Recover" }));
+    const input = screen.getByRole("spinbutton", { name: "保存间隔（分钟）" });
+    await fireEvent.update(input, "3");
+    await waitFor(() => expect(store.advancedError).toContain("conf.user.json 写入失败"));
   });
 });

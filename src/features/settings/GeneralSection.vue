@@ -8,6 +8,7 @@ import SettingRow from "./SettingRow.vue";
 import { useSettingsStore } from "./settings-store";
 import { normalizeNumberInput } from "./number-input";
 import { DEFAULT_ADVANCED_SETTINGS } from "../../services/advanced-settings";
+import { DEFAULT_SETTINGS } from "../../services/settings";
 import { openThemeFolder } from "../../services/theme-io";
 import { openFolderDialog } from "../../services/open-commands";
 
@@ -29,24 +30,36 @@ const launchCustomPath = computed({
   },
 });
 
-/** 自动保存开关联动（Save & Recover 内部区；写回时带上合并快照的间隔，避免丢字段） */
+/** 自动保存开关联动（Save & Recover 内部区；写回时带上间隔，避免丢字段）。
+ * 间隔写回取 GUI store 真值：高级层降级期间 merged.autoSave.timerMinutes 是回退默认值，
+ * 以其写回会把用户原存储间隔静默覆盖为默认（code-review Low-3） */
 const autoSaveEnabled = computed({
   get: () => store.merged.autoSave.enabled,
   set: (enabled: boolean) => {
     void store.updateGui({
-      autoSave: { enabled, timerMinutes: store.merged.autoSave.timerMinutes },
+      autoSave: {
+        enabled,
+        timerMinutes: store.gui?.autoSave.timerMinutes ?? DEFAULT_SETTINGS.autoSave.timerMinutes,
+      },
     });
   },
 });
 
 /** 自动保存间隔（write-through 双写 conf autoSaveTimer——Task 4 双层一致性契约）；
- * 清空 / 非法输入经归一回退默认 5 分钟，禁止空串穿透 number 契约写穿 conf（批1 M2） */
+ * 清空 / 非法输入经归一回退默认 5 分钟，禁止空串穿透 number 契约写穿 conf（批1 M2）；
+ * 0/负数夹取 ≥1——min 属性只约束 spinner 步进，手输可达，Rust 白名单对 n≤0 静默拒绝
+ * 且无反馈，前端先行收口（code-review Low-4）；
+ * conf 写失败经 catch 落 advancedError 提示条，不再产生 unhandled rejection（Low-4） */
 const autoSaveTimer = computed<number>({
   get: () => store.merged.autoSave.timerMinutes,
   set: (value: number | string) => {
-    void store.updateAutoSaveTimer(
+    const minutes = Math.max(
+      1,
       normalizeNumberInput(value, DEFAULT_ADVANCED_SETTINGS.autoSaveTimer),
     );
+    store.updateAutoSaveTimer(minutes).catch((error: unknown) => {
+      store.advancedError = error instanceof Error ? error.message : "保存间隔写入失败";
+    });
   },
 });
 

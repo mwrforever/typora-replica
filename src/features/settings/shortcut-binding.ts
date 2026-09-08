@@ -6,7 +6,7 @@
 // ②菜单展示数据接口——默认表 + keyBinding 覆盖合并，12 菜单装配消费（AC-C1-1 接口级验收，
 // 披露 1：菜单渲染与窗口域命令执行归 12）。
 import { bindMenuShortcut } from "../editor/keymaps";
-import { parseShortcutCombo } from "./shortcut-keys";
+import { isWindowReservedCombo, parseShortcutCombo } from "./shortcut-keys";
 import { SHORTCUT_COMMANDS } from "./shortcut-catalog";
 
 /** 本进程已成功注入注册表的 ProseMirror 键（applyKeyBindings 跨调用幂等收敛的依据） */
@@ -34,11 +34,28 @@ export function applyKeyBindings(keyBinding: Record<string, string>): void {
   // 同键去重：同一 ProseMirror 键只保留最后配置的命令（registry push 后无注销）
   const resolved = new Map<string, string>();
   for (const [commandId, combo] of Object.entries(keyBinding)) {
+    // 窗口保留组合先行区分告警（parseShortcutCombo 对其返回 undefined，仅凭返回值
+    // 无法区分「语法非法」与「窗口冲突」，冲突组合必须向用户说明原因——M-1②）
+    if (isWindowReservedCombo(combo)) {
+      console.warn(
+        `[MarkWell] 忽略与窗口快捷键冲突的组合: ${commandId} = "${combo}"` +
+          "（该组合由窗口层消费，为避免双重执行编辑器命令不可绑定）",
+      );
+      continue;
+    }
     const pmKey = parseShortcutCombo(combo);
     if (pmKey === undefined) {
       // AC-C1-4：非法组合告警忽略，不崩溃
       console.warn(`[MarkWell] 忽略非法快捷键配置: ${commandId} = "${combo}"`);
       continue;
+    }
+    const previous = resolved.get(pmKey);
+    if (previous !== undefined) {
+      // 同键多命令：registry push 后无注销仅保留最后配置，被淘汰的先配置命令必须
+      // 可诊断（此前为静默丢弃，用户配置丢失无任何线索——code-review Low-5）
+      console.warn(
+        `[MarkWell] 快捷键 ${pmKey} 被重复绑定，忽略 ${previous}（仅保留后配置的 ${commandId}）`,
+      );
     }
     resolved.set(pmKey, commandId);
   }

@@ -36,10 +36,24 @@ describe("applyKeyBindings 启动注入（AC-C1-2/3/4）", () => {
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Always on Top"));
   });
 
+  it("窗口保留组合专门告警（与窗口快捷键冲突文案区分于非法组合，M-1②）且不注入", () => {
+    applyKeyBindings({ Bold: "Ctrl+S" });
+    expect(listEditorKeymaps().some((e) => e.key === "Mod-s" && e.priority === 300)).toBe(false);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("窗口快捷键冲突"));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Bold"));
+  });
+
   it("同键多命令去重：后配置覆盖先配置（registry 无注销机制，注入前收敛）", () => {
     applyKeyBindings({ Bold: "Ctrl+J", Italic: "Ctrl+J" });
     const bound = listEditorKeymaps().filter((e) => e.key === "Mod-j" && e.priority === 300);
     expect(bound).toHaveLength(1);
+  });
+
+  it("同键多命令去重时被淘汰的先配置命令补告警（含 commandId 与 pmKey，Low-5）", () => {
+    applyKeyBindings({ Bold: "Ctrl+J", Italic: "Ctrl+J" });
+    // 仅保留后配置的 Italic；被淘汰的 Bold 必须可诊断（此前为静默丢弃）
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Mod-j"));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Bold"));
   });
 
   it("空 keyBinding 零注入零告警（未配置场景）", () => {
