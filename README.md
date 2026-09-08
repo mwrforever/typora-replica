@@ -17,3 +17,11 @@ This template should help get you started developing with Vue 3 and TypeScript i
 - **自定义字体**：字体文件放主题目录 `fonts/` 子目录，主题 CSS 内以相对路径引用（如 `url(./fonts/x.woff2)`，相对基准 = 主题目录；建议文件名用小写字母与连字符）。
 - **Typora 主题兼容**：官方常用变量（`--bg-color`/`--text-color`/`--primary-color` 等）经映射层尽力转换；DOM 结构差异导致的还原度损失属预期。
 - **DevTools**：`Shift+F12` 开合（debug 构建默认可用；release 构建需启用 `devtools` cargo feature）。
+
+## 功能说明：偏好设置与快捷键（10 模块）
+
+- **偏好面板**：`Ctrl+,` 开合；7 分区导航（General 含 Save & Recover 内部区 → Editor → Image → Appearance → Markdown → Export）；面板内 `Ctrl+F` 搜索设置项。
+- **双层设置**：面板偏好存于应用数据目录（store 插件，即时生效项改后即用）；高级键存于 `%APPDATA%\com.markwell.app\conf.user.json`（JSON 支持 `//` 注释；面板写值保留注释与格式；一般重启生效）。
+- **高级键**：defaultFontFamily / autoHideMenuBar（true 启用自动隐藏）/ searchService / monocolorEmoji / flags / autoSaveTimer / keyBinding。General 分区提供「打开高级设置」与「重置高级设置」。
+- **自定义快捷键**：conf.user.json 的 keyBinding（键 = 菜单命令名、值 = 组合串，如 `"Always on Top": "Ctrl+Shift+P"`），重启生效；非法组合自动忽略；与内置冲突时自定义优先。
+- **autoSaveTimer 双写**：面板「Save & Recover」的保存间隔与 conf.user.json 同步双写；手工改文件后重启以文件为准。
