@@ -73,3 +73,18 @@ describe("getMenuShortcutEntries 菜单展示数据（AC-C1-1 接口面）", () 
     expect(entries.find((e) => e.commandId === "Always on Top")!.combo).toBe("");
   });
 });
+
+// 启动时序契约（AC-C1-2 重启生效的装配评审锚点）：App.vue onMounted 中
+// 「await settingsStore.load() → applyKeyBindings(...) → 启动决策 → tabs.createUntitled()」
+// 四行顺序保证双层装载与 keyBinding 注入先于首标签编辑器 create()（applyEditorKeymaps
+// 在 config 阶段消费注册表）——纯函数面无可断言的 App 时序，装配顺序由代码评审 +
+// E2E 冒烟兜底；此处可断言面为注入幂等性（装载链路重放不得叠加注册）。
+describe("启动时序契约（装配评审锚点）", () => {
+  it("applyKeyBindings 幂等性：重复调用不产生重复注册（同键去重收敛）", () => {
+    const countOf = (key: string) =>
+      listEditorKeymaps().filter((e) => e.key === key && e.priority === 300).length;
+    applyKeyBindings({ Bold: "Ctrl+J" });
+    applyKeyBindings({ Bold: "Ctrl+J" });
+    expect(countOf("Mod-j")).toBe(1);
+  });
+});

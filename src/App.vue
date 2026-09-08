@@ -31,10 +31,11 @@ import { useSearchStore } from "./features/search/search-store";
 import SettingsPanel from "./features/settings/SettingsPanel.vue";
 import { registerSettingsShortcuts } from "./features/settings/settings-shortcuts";
 import { useSettingsStore } from "./features/settings/settings-store";
+import { applyKeyBindings } from "./features/settings/shortcut-binding";
 import { getCliArgs, probePathExists } from "./services/file-io";
 import { resolveLaunch } from "./services/launch-behavior";
 import { openFolderDialog, saveAsDialog } from "./services/open-commands";
-import { loadSettings } from "./services/settings";
+import { DEFAULT_SETTINGS } from "./services/settings";
 import { registerAppShortcuts } from "./services/app-shortcuts";
 import { RecentFiles } from "./services/recent-files";
 
@@ -225,8 +226,16 @@ onMounted(async () => {
   registerImageFeature();
   // 08 主题装配（cleanup 含色系退订与防抖定时器清理）
   cleanupThemeFeature = registerThemeFeature();
-  // 启动链路：cli 参数 + 偏好 → 决策 → 多标签装配（失败回退新建，提示不崩溃）
-  const [cli, settings] = await Promise.all([getCliArgs(), loadSettings()]);
+  // 10 设置快捷键：双层设置装载必须先于启动决策——conf.user.json 的 keyBinding 注入
+  // （applyKeyBindings）要赶在首标签编辑器 create() 之前（applyEditorKeymaps 在 config
+  // 阶段消费注册表）。装载失败不阻断（store 内部已回退默认值）
+  await settingsStore.load();
+  // keyBinding 注入（AC-C1-2 重启生效 / AC-C1-3 自定义优先 / AC-C1-4 非法告警忽略）
+  applyKeyBindings(settingsStore.advanced?.keyBinding ?? {});
+  // 启动链路：cli 参数 + 偏好 → 决策 → 多标签装配（失败回退新建，提示不崩溃）。
+  // 偏好复用 settingsStore 已装载的 GUI 快照（避免二次读盘；undefined 防御回落默认）
+  const cli = await getCliArgs();
+  const settings = settingsStore.gui ?? DEFAULT_SETTINGS;
   // 路径存在性探测（I-1 修复）：listDir 优先——readFile 对目录必失败，
   // 旧内联 readFile 探测令文件夹存在性恒 false（AC-F14-1/2 失效根因）
   const decision = await resolveLaunch(cli, settings, probePathExists);

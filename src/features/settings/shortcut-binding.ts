@@ -9,6 +9,9 @@ import { bindMenuShortcut } from "../editor/keymaps";
 import { parseShortcutCombo } from "./shortcut-keys";
 import { SHORTCUT_COMMANDS } from "./shortcut-catalog";
 
+/** 本进程已成功注入注册表的 ProseMirror 键（applyKeyBindings 跨调用幂等收敛的依据） */
+const appliedPmKeys = new Set<string>();
+
 /** 菜单快捷键展示条目（12 菜单装配消费；label 拼接 "命令名\tCtrl+B" 形态归 12） */
 export interface MenuShortcutEntry {
   /** 菜单命令名（conf.user.json keyBinding 的键） */
@@ -40,12 +43,18 @@ export function applyKeyBindings(keyBinding: Record<string, string>): void {
     resolved.set(pmKey, commandId);
   }
   for (const [pmKey, commandId] of resolved) {
+    // 跨调用幂等：装载链路若重放（重复 apply），已注入的键直接跳过——注册表
+    // push 后无注销，重复注入会叠加同键条目（启动时序契约用例钉住此收敛）
+    if (appliedPmKeys.has(pmKey)) continue;
     // 目录外命令（含窗口域）：告警忽略，执行接线归 12（披露 1）
     if (!bindMenuShortcut(commandId, pmKey)) {
       console.warn(
         `[MarkWell] 忽略不可绑定的快捷键命令: ${commandId}（目录外命令，12 模块接入后生效）`,
       );
+      continue;
     }
+    // 仅成功注入的键进入幂等集合（未绑定成功的键不阻断后续调用的重新尝试）
+    appliedPmKeys.add(pmKey);
   }
 }
 
