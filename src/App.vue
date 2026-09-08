@@ -28,6 +28,9 @@ import FindReplacePanel from "./features/search/FindReplacePanel.vue";
 import { navigateNext, navigatePrev } from "./features/search/find-controller";
 import { registerSearchShortcuts } from "./features/search/search-shortcuts";
 import { useSearchStore } from "./features/search/search-store";
+import SettingsPanel from "./features/settings/SettingsPanel.vue";
+import { registerSettingsShortcuts } from "./features/settings/settings-shortcuts";
+import { useSettingsStore } from "./features/settings/settings-store";
 import { getCliArgs, probePathExists } from "./services/file-io";
 import { resolveLaunch } from "./services/launch-behavior";
 import { openFolderDialog, saveAsDialog } from "./services/open-commands";
@@ -102,7 +105,11 @@ const cleanupTabsShortcuts = registerTabsShortcuts({
 /** 搜索面板状态与快捷键（06：Ctrl+F/H 开关、F3/Shift+F3 导航、ESC 关闭回焦） */
 const searchStore = useSearchStore();
 const cleanupSearchShortcuts = registerSearchShortcuts({
-  onToggleFind: () => searchStore.toggleFind(),
+  onToggleFind: () => {
+    // 面板可见时 Ctrl+F 归面板内搜索（SettingsPanel 接管聚焦其搜索框）
+    if (settingsStore.visible) return;
+    searchStore.toggleFind();
+  },
   onToggleReplace: () => searchStore.toggleReplace(),
   onNext: () => navigateNext(),
   onPrev: () => navigatePrev(),
@@ -112,6 +119,14 @@ const cleanupSearchShortcuts = registerSearchShortcuts({
     searchStore.close();
     editorManager.getView()?.focus();
   },
+});
+
+/** 偏好设置面板状态（10：Ctrl+, 开合；12 菜单接入后触发入口归 12） */
+const settingsStore = useSettingsStore();
+
+/** 面板开合快捷键（Ctrl+,；注销随组件卸载） */
+const cleanupSettingsShortcuts = registerSettingsShortcuts({
+  onTogglePanel: () => settingsStore.togglePanel(),
 });
 
 /**
@@ -259,6 +274,7 @@ onBeforeUnmount(() => {
   cleanupFileTreeShortcuts();
   cleanupTabsShortcuts();
   cleanupSearchShortcuts();
+  cleanupSettingsShortcuts();
   drafts.stop();
   // 门面销毁由 04 集成层负责（被动挂载不自动 destroy；应用卸载即终态）
   editorManager.destroy();
@@ -336,6 +352,8 @@ function basenameOf(path: string): string {
     @discard="tabs.confirmCloseDiscard"
     @cancel="tabs.cancelClose"
   />
+  <!-- 偏好设置面板浮层（10）：显隐由 settingsStore.visible 驱动，内部自管开合 -->
+  <SettingsPanel />
 </template>
 
 <style scoped>
