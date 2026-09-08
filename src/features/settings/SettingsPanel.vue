@@ -4,7 +4,7 @@
      开合由 settingsStore.visible 驱动（Ctrl+, / 12 菜单）；面板以应用内浮层呈现（披露 5，
      独立窗口归 12）。ESC 关闭。 -->
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useSettingsStore } from "./settings-store";
 import { filterSettingsItems, SETTINGS_ITEMS, SETTINGS_SECTIONS } from "./settings-registry";
 import type { SettingsSectionId } from "./settings-registry";
@@ -64,6 +64,16 @@ function gotoHit(item: { section: SettingsSectionId }): void {
   activeSection.value = item.section === "save-recover" ? "general" : item.section;
   query.value = "";
 }
+
+// 面板关闭时清空搜索态：搜索词不跨开合残留，重开即分区表单视图（导航立即可用）
+watch(
+  () => store.visible,
+  (visible) => {
+    if (!visible) {
+      query.value = "";
+    }
+  },
+);
 
 /**
  * 面板级键盘处理：Ctrl+F 聚焦搜索（AC-S1-2）、ESC 关闭。

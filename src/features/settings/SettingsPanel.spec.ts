@@ -5,6 +5,7 @@
 // 派发 change / 文本派发 input）：@testing-library/user-event 未引入本仓（避免传递性
 // 依赖，tabs-shortcuts.spec.ts 同口径先例——宪法 A.6.4 fireEvent 须注释理由）。
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { nextTick } from "vue";
 import { fireEvent, render, screen, waitFor } from "@testing-library/vue";
 import { createPinia, setActivePinia } from "pinia";
 
@@ -111,6 +112,21 @@ describe("面板内 Ctrl+F 搜索（AC-S1-2）", () => {
     // 点击结果跳转对应分区（清空搜索恢复表单态）
     await fireEvent.click(screen.getByText("行内数学公式"));
     expect(screen.getByRole("heading", { name: "Markdown" })).toBeTruthy();
+  });
+
+  it("面板关闭时清空搜索态，重开回到分区表单视图", async () => {
+    const { store } = await renderPanel();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true }));
+    await fireEvent.update(screen.getByRole("textbox", { name: "搜索设置项" }), "行内数学");
+    expect(screen.getByText("行内数学公式")).toBeTruthy();
+    // ESC 关闭 → 重开：搜索词不跨开合残留（重开即分区表单，导航可用）；
+    // nextTick 对齐真实按键时序（真实 Escape 与重开必跨事件任务，watch 得以观察到关闭态）
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await nextTick();
+    store.open();
+    await nextTick(); // 重挂渲染同样在微任务落地后再断言
+    expect(screen.getByRole("heading", { name: "General" })).toBeTruthy();
+    expect(screen.queryByText("行内数学公式")).toBeNull();
   });
 });
 
