@@ -33,6 +33,10 @@
     "allow-watch-themes",
     "allow-unwatch-themes",
     "allow-export-pdf",
+    "allow-read-advanced-settings",
+    "allow-write-advanced-settings",
+    "allow-reset-advanced-settings",
+    "allow-open-advanced-settings",
     "allow-toggle-devtools"
   ]
 }

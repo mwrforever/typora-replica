@@ -6,6 +6,9 @@
 // 只替换目标键行、保留用户注释与其余格式（AC-S2-2）；落盘复用 io::atomic::atomic_write
 // （同目录临时文件 + fsync + rename，宪法 A.5/BUG-7 语义）。
 // 线程安全：无共享状态（纯函数 + 路径参数）。文件为 KB 级小文本，同步 IO 与 read_file 同口径。
+use std::path::Path;
+
+use serde::Serialize;
 
 /// conf 文件名（app_data_dir 下）
 pub const CONF_FILE_NAME: &str = "conf.user.json";
@@ -322,6 +325,215 @@ pub fn validate_value(key: &str, value: &serde_json::Value) -> Result<(), String
     }
 }
 
+/// defaultFontFamily 子结构（调研 §6 自定简洁键结构；None 序列化时省略键）
+#[derive(Debug, Clone, Default, serde::Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DefaultFontFamilyDto {
+    /// 无衬线族覆盖（缺省 = 不覆盖）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sans_serif: Option<String>,
+    /// 衬线族覆盖（缺省 = 不覆盖）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub serif: Option<String>,
+}
+
+/// 高级设置 DTO（wire camelCase + 全键 default 兜底——缺键回落默认值）
+///
+/// 与前端 `AdvancedSettings`（services/advanced-settings.ts）序列化形状 1:1；
+/// keyBinding 用 BTreeMap 保证键序稳定（重复写回不抖动）；值非字符串整体反序列化失败
+/// （中文错误经 Parse 变体上报，原文件不动）。
+#[derive(Debug, Clone, serde::Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AdvancedSettingsDto {
+    /// 默认字体族覆盖
+    pub default_font_family: DefaultFontFamilyDto,
+    /// true 才启用菜单栏自动隐藏（官方笔误用户实测裁决）
+    pub auto_hide_menu_bar: bool,
+    /// 右键第三方搜索服务列表（用户自由结构透传）
+    pub search_service: serde_json::Value,
+    /// 单色表情开关
+    pub monocolor_emoji: bool,
+    /// Chromium 启动 flags（自由结构透传）
+    pub flags: serde_json::Value,
+    /// 自动保存间隔（分钟）
+    pub auto_save_timer: f64,
+    /// 自定义快捷键（命令名 → 组合串）
+    pub key_binding: std::collections::BTreeMap<String, String>,
+}
+
+impl Default for AdvancedSettingsDto {
+    /// 与 DEFAULT_CONF_TEMPLATE 模板默认值逐键一致
+    fn default() -> Self {
+        Self {
+            default_font_family: DefaultFontFamilyDto::default(),
+            auto_hide_menu_bar: false,
+            search_service: serde_json::Value::Array(Vec::new()),
+            monocolor_emoji: false,
+            flags: serde_json::Value::Object(serde_json::Map::new()),
+            auto_save_timer: 5.0,
+            key_binding: std::collections::BTreeMap::new(),
+        }
+    }
+}
+
+impl AdvancedSettingsDto {
+    /// 从解析值构建 DTO（缺键回落默认；结构不合法报中文错误）
+    pub fn from_value(value: &serde_json::Value) -> Result<Self, AdvancedSettingsError> {
+        serde_json::from_value(value.clone()).map_err(|e| {
+            AdvancedSettingsError::Parse(format!(
+                "conf.user.json 键值结构不合法（已保留原文件）: {e}"
+            ))
+        })
+    }
+}
+
+/// 高级设置错误枚举（A.3.3：thiserror 派生 + 自定义 Serialize 输出中文消息字符串；
+/// 消息不含内部完整路径等敏感面）
+#[derive(Debug, thiserror::Error)]
+pub enum AdvancedSettingsError {
+    /// 应用数据目录解析失败
+    #[error("解析应用数据目录失败: {0}")]
+    DataDir(String),
+    /// 文件读写失败
+    #[error("conf.user.json 读写失败: {0}")]
+    Io(String),
+    /// 解析失败（消息已含「已保留原文件」口径）
+    #[error("{0}")]
+    Parse(String),
+    /// 行级合并失败（键重复 / 缺收括号 / 产出校验不通过）
+    #[error("{0}")]
+    Merge(String),
+    /// 白名单外键
+    #[error("非法的高级设置键: {0}（白名单七键之外拒绝写入）")]
+    UnknownKey(String),
+    /// 值形态不合法（消息含目标形态说明）
+    #[error("{0}")]
+    InvalidValue(String),
+    /// 打开文件失败
+    #[error("打开高级设置文件失败: {0}")]
+    Open(String),
+}
+
+impl Serialize for AdvancedSettingsError {
+    /// 自定义序列化：输出 Display 中文消息字符串（前端 catch string 形态消费，A.3.3）
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+/// conf 文件定位：app_data_dir/conf.user.json（不触盘创建；创建职责在 ensure_default）
+fn conf_path<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Result<std::path::PathBuf, AdvancedSettingsError> {
+    use tauri::Manager;
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AdvancedSettingsError::DataDir(e.to_string()))?;
+    Ok(base.join(CONF_FILE_NAME))
+}
+
+/// 原子写快捷封装（错误映射 Io）
+fn atomic_write_at(path: &Path, content: &str) -> Result<(), AdvancedSettingsError> {
+    crate::io::atomic::atomic_write(path, content).map_err(AdvancedSettingsError::Io)
+}
+
+/// 文件缺失时写入默认模板（首读种子 / 打开前确保存在；幂等）
+fn ensure_default(path: &Path) -> Result<(), AdvancedSettingsError> {
+    if !path.exists() {
+        atomic_write_at(path, DEFAULT_CONF_TEMPLATE)?;
+    }
+    Ok(())
+}
+
+/// 读命令核心（路径参数直测面）：确保存在 → 原文解析 → DTO
+pub fn read_advanced_settings_at(
+    path: &Path,
+) -> Result<AdvancedSettingsDto, AdvancedSettingsError> {
+    ensure_default(path)?;
+    let raw =
+        std::fs::read_to_string(path).map_err(|e| AdvancedSettingsError::Io(e.to_string()))?;
+    let value = parse_advanced_raw(&raw).map_err(AdvancedSettingsError::Parse)?;
+    AdvancedSettingsDto::from_value(&value)
+}
+
+/// 写命令核心：键白名单 → 值形态校验 → 原文必须合法 → 行级合并 → 原子写
+///
+/// 任一步失败即不写盘（原文件保留原样，AC-S2-4）；写盘走 atomic_write（fsync + rename，
+/// 原子性与权限保留由 io::atomic 承担）。
+pub fn write_advanced_settings_at(
+    path: &Path,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<(), AdvancedSettingsError> {
+    if !ADVANCED_KEYS.contains(&key) {
+        return Err(AdvancedSettingsError::UnknownKey(key.to_string()));
+    }
+    validate_value(key, value).map_err(AdvancedSettingsError::InvalidValue)?;
+    ensure_default(path)?;
+    let raw =
+        std::fs::read_to_string(path).map_err(|e| AdvancedSettingsError::Io(e.to_string()))?;
+    let value_json = serde_json::to_string(value)
+        .map_err(|e| AdvancedSettingsError::Merge(format!("高级设置值序列化失败: {e}")))?;
+    let merged =
+        merge_advanced_line(&raw, key, &value_json).map_err(AdvancedSettingsError::Merge)?;
+    atomic_write_at(path, &merged)
+}
+
+/// 重置命令核心：conf.user.json 原子覆写为默认模板（AC-S2-3）
+pub fn reset_advanced_settings_at(path: &Path) -> Result<(), AdvancedSettingsError> {
+    atomic_write_at(path, DEFAULT_CONF_TEMPLATE)
+}
+
+/// 打开命令核心：确保存在后用系统默认应用打开（12.6 Open Advanced Settings 入口）
+///
+/// Rust 侧 opener 而非前端 plugin-opener——opener:default 不含 allow-open-path（披露 2），
+/// 专用命令把可打开面收窄到本文件。泛型 Runtime 与命令层签名对齐（themes.rs 同构）。
+pub fn open_advanced_settings_at<R: tauri::Runtime>(
+    path: &Path,
+    app: &tauri::AppHandle<R>,
+) -> Result<(), AdvancedSettingsError> {
+    use tauri_plugin_opener::OpenerExt;
+    ensure_default(path)?;
+    app.opener()
+        .open_path(path.to_string_lossy(), None::<&str>)
+        .map_err(|e| AdvancedSettingsError::Open(e.to_string()))
+}
+
+/// 读高级设置命令（KB 级小文件同步 IO，与 read_file 同口径——A.3.4 先例）
+#[tauri::command]
+pub fn read_advanced_settings<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+) -> Result<AdvancedSettingsDto, AdvancedSettingsError> {
+    read_advanced_settings_at(&conf_path(&app)?)
+}
+
+/// 写单个高级键命令（行级合并写回；key/value 由前端 camelCase wire 传入）
+#[tauri::command]
+pub fn write_advanced_settings<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    key: String,
+    value: serde_json::Value,
+) -> Result<(), AdvancedSettingsError> {
+    write_advanced_settings_at(&conf_path(&app)?, &key, &value)
+}
+
+/// 重置高级设置命令（覆写默认模板）
+#[tauri::command]
+pub fn reset_advanced_settings<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+) -> Result<(), AdvancedSettingsError> {
+    reset_advanced_settings_at(&conf_path(&app)?)
+}
+
+/// 打开高级设置文件命令（系统默认应用）
+#[tauri::command]
+pub fn open_advanced_settings<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+) -> Result<(), AdvancedSettingsError> {
+    open_advanced_settings_at(&conf_path(&app)?, &app)
+}
+
 #[cfg(test)]
 mod tests {
     // —— 10 conf.user.json 核心：注释剥离 / 解析 / 行级合并 / 值校验（核心 100%）——
@@ -495,5 +707,124 @@ mod tests {
         // 白名单七键之外的键一律拒绝（防任意键注入 conf 文件）
         let err = validate_value("notInList", &serde_json::json!(true)).expect_err("应拒绝");
         assert!(err.contains("非法的高级设置键"));
+    }
+
+    // —— 10 命令层核心（*_at 路径参数直测——A.6.5 命令层逻辑覆盖；AppHandle 薄壳不测，
+    // themes.rs:437 同口径）——
+    fn temp_dir() -> std::path::PathBuf {
+        static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("markwell-adv-{}-{n}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("测试上下文允许 expect");
+        dir
+    }
+
+    #[test]
+    fn dto_deserializes_with_defaults_for_missing_keys() {
+        // 缺键回落默认（serde default）；keyBinding 缺省为空表
+        let dto: AdvancedSettingsDto =
+            serde_json::from_str(r#"{"autoHideMenuBar":true}"#).expect("测试上下文允许 expect");
+        assert!(dto.auto_hide_menu_bar);
+        assert_eq!(dto.auto_save_timer, 5.0);
+        assert!(dto.key_binding.is_empty());
+        assert_eq!(dto.default_font_family.sans_serif, None);
+    }
+
+    #[test]
+    fn dto_rejects_non_string_key_binding_value() {
+        // keyBinding 值非字符串 → 反序列化失败（错误消息中文，由命令层包装 Parse）
+        let result = serde_json::from_value::<AdvancedSettingsDto>(serde_json::json!({
+            "keyBinding": { "Bold": 1 }
+        }));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn error_serializes_as_chinese_message_string() {
+        // A.3.3 错误契约：Serialize 输出 Display 中文消息（前端 catch string 形态）
+        let err = AdvancedSettingsError::UnknownKey("evil".to_string());
+        let value = serde_json::to_value(&err).expect("测试上下文允许 expect");
+        assert_eq!(
+            value,
+            serde_json::Value::String(
+                "非法的高级设置键: evil（白名单七键之外拒绝写入）".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn read_creates_default_file_then_parses_comments() {
+        // 首读种子：文件缺失写入默认模板；含注释模板正确解析（AC-S2-1 全链路）
+        let dir = temp_dir();
+        let path = dir.join(CONF_FILE_NAME);
+        let dto = read_advanced_settings_at(&path).expect("读取应成功");
+        assert_eq!(dto.auto_save_timer, 5.0);
+        assert!(!dto.auto_hide_menu_bar);
+        let raw = std::fs::read_to_string(&path).expect("测试上下文允许 expect");
+        assert!(raw.contains("//")); // 默认模板自带注释
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_replaces_line_preserving_comments_and_other_lines() {
+        // AC-S2-2 全链路：用户注释与格式保留，目标行替换
+        let dir = temp_dir();
+        let path = dir.join(CONF_FILE_NAME);
+        std::fs::write(
+            &path,
+            "{\n  // 我的注释\n  \"autoHideMenuBar\": false,\n  \"flags\": {}\n}\n",
+        )
+        .expect("测试上下文允许 expect");
+        write_advanced_settings_at(&path, "autoHideMenuBar", &serde_json::json!(true))
+            .expect("写入应成功");
+        let raw = std::fs::read_to_string(&path).expect("测试上下文允许 expect");
+        assert!(raw.contains("// 我的注释"));
+        assert!(raw.contains("  \"autoHideMenuBar\": true,"));
+        assert!(raw.contains("  \"flags\": {}"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_illegal_json_source_errors_and_file_untouched() {
+        // AC-S2-4：非法 JSON 报错且原文件逐字节保留原样
+        let dir = temp_dir();
+        let path = dir.join(CONF_FILE_NAME);
+        let broken = "{ // 坏掉的\n  \"a\": \n}\n";
+        std::fs::write(&path, broken).expect("测试上下文允许 expect");
+        let err = write_advanced_settings_at(&path, "flags", &serde_json::json!({}))
+            .expect_err("非法 JSON 应报错");
+        assert!(err.to_string().contains("已保留原文件"));
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("测试上下文允许 expect"),
+            broken
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_rejects_unknown_key_and_bad_value_shape() {
+        let dir = temp_dir();
+        let path = dir.join(CONF_FILE_NAME);
+        let err = write_advanced_settings_at(&path, "notInList", &serde_json::json!(true))
+            .expect_err("白名单外键应拒绝");
+        assert!(err.to_string().contains("非法的高级设置键"));
+        let err = write_advanced_settings_at(&path, "autoHideMenuBar", &serde_json::json!("yes"))
+            .expect_err("值形态错误应拒绝");
+        assert!(err.to_string().contains("布尔值"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reset_overwrites_with_default_template() {
+        // AC-S2-3：Reset 后文件 == 默认模板（用户修改全部丢弃）
+        let dir = temp_dir();
+        let path = dir.join(CONF_FILE_NAME);
+        std::fs::write(&path, "{\n  \"autoSaveTimer\": 99\n}\n").expect("测试上下文允许 expect");
+        reset_advanced_settings_at(&path).expect("重置应成功");
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("测试上下文允许 expect"),
+            DEFAULT_CONF_TEMPLATE
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

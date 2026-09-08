@@ -49,6 +49,12 @@ fn main() {
             // 09 PDF 导出（pdf.rs）：漏声明则 allow-export-pdf 权限不会生成，
             // capabilities 引用即构建失败
             "export_pdf",
+            // 10 高级设置（advanced_settings.rs）：漏声明则 allow-* 权限不会生成，
+            // capabilities 引用即构建失败
+            "read_advanced_settings",
+            "write_advanced_settings",
+            "reset_advanced_settings",
+            "open_advanced_settings",
             // 08 T7 DevTools 开关（devtools.rs）：漏声明则 allow-toggle-devtools
             // 权限不会生成，capabilities 引用即构建失败
             "toggle_devtools",
