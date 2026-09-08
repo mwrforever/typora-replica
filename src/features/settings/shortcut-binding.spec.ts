@@ -1,0 +1,75 @@
+// keyBinding 装配服务测试（注入编排 / 非法告警忽略 / 同键去重 / 菜单展示数据合并）
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const warnSpy = vi.fn();
+vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => warnSpy(...a));
+
+// 01 域注入以真实 keymaps.ts 模块消费（registry 可观测）；不 mock——注入真实落注册表
+import { applyKeyBindings, getMenuShortcutEntries } from "./shortcut-binding";
+import { listEditorKeymaps } from "../editor/keymaps";
+
+describe("applyKeyBindings 启动注入（AC-C1-2/3/4）", () => {
+  beforeEach(() => {
+    warnSpy.mockClear();
+  });
+
+  it("编辑器域命令注入 01 注册表（priority 300）", () => {
+    const before = listEditorKeymaps().length;
+    applyKeyBindings({ "Code Fences": "Ctrl+Alt+K" });
+    const entry = listEditorKeymaps().at(-1)!;
+    expect(listEditorKeymaps().length).toBe(before + 1);
+    expect(entry.priority).toBe(300);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("AC-C1-4 非法组合告警忽略不崩溃", () => {
+    applyKeyBindings({ Bold: "Shift+B" });
+    expect(listEditorKeymaps().some((e) => e.key === "Shift-b" || e.key === "b")).toBe(false);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("非法快捷键"));
+  });
+
+  it("窗口域/目录外命令告警忽略（执行接线归 12，披露 1）", () => {
+    applyKeyBindings({ "Always on Top": "Ctrl+Shift+P" });
+    expect(listEditorKeymaps().some((e) => e.key === "Mod-Shift-p" && e.priority === 300)).toBe(
+      false,
+    );
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Always on Top"));
+  });
+
+  it("同键多命令去重：后配置覆盖先配置（registry 无注销机制，注入前收敛）", () => {
+    applyKeyBindings({ Bold: "Ctrl+J", Italic: "Ctrl+J" });
+    const bound = listEditorKeymaps().filter((e) => e.key === "Mod-j" && e.priority === 300);
+    expect(bound).toHaveLength(1);
+  });
+
+  it("空 keyBinding 零注入零告警（未配置场景）", () => {
+    const before = listEditorKeymaps().length;
+    applyKeyBindings({});
+    expect(listEditorKeymaps().length).toBe(before);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("getMenuShortcutEntries 菜单展示数据（AC-C1-1 接口面）", () => {
+  it("默认表全量返回（默认组合 + source=default）", () => {
+    const entries = getMenuShortcutEntries({});
+    expect(entries.length).toBeGreaterThanOrEqual(14);
+    const heading1 = entries.find((e) => e.commandId === "Heading 1")!;
+    expect(heading1.combo).toBe("Ctrl+1");
+    expect(heading1.source).toBe("default");
+    expect(heading1.domain).toBe("editor");
+  });
+
+  it("keyBinding 覆盖后 combo 替换且 source=custom（12 菜单据此渲染）", () => {
+    const entries = getMenuShortcutEntries({ "Always on Top": "Ctrl+Shift+P" });
+    const alwaysOnTop = entries.find((e) => e.commandId === "Always on Top")!;
+    expect(alwaysOnTop.combo).toBe("Ctrl+Shift+P");
+    expect(alwaysOnTop.source).toBe("custom");
+    expect(alwaysOnTop.domain).toBe("window");
+  });
+
+  it("无默认快捷键的窗口命令未配置时 combo 为空串（12 侧不渲染快捷键段）", () => {
+    const entries = getMenuShortcutEntries({});
+    expect(entries.find((e) => e.commandId === "Always on Top")!.combo).toBe("");
+  });
+});

@@ -1,6 +1,6 @@
 // keymap 注册表：注册/查询行为 + 内置键位清单（100% 覆盖核心语法转换）
 import { describe, expect, it } from "vitest";
-import { addEditorKeymap, hasEditorKeymap, listEditorKeymaps } from "./keymaps";
+import { addEditorKeymap, bindMenuShortcut, hasEditorKeymap, listEditorKeymaps } from "./keymaps";
 
 describe("keymap 注册表", () => {
   it("addEditorKeymap 后可在注册表中查询到该键位", () => {
@@ -49,5 +49,42 @@ describe("keymap 注册表", () => {
   it("默认优先级为 200（压制表格内置 100 与 baseKeymap 50）", () => {
     const entry = listEditorKeymaps().find((e) => e.key === "Mod-[");
     expect(entry?.priority).toBe(200);
+  });
+});
+
+describe("bindMenuShortcut（10 keyBinding 注入目录）", () => {
+  it("目录内命令注入成功且 priority 300 高于内置 200（AC-C1-3 自定义优先）", () => {
+    const before = listEditorKeymaps().length;
+    expect(bindMenuShortcut("Heading 1", "Mod-Shift-p")).toBe(true);
+    const entry = listEditorKeymaps().at(-1)!;
+    expect(entry.key).toBe("Mod-Shift-p");
+    expect(entry.priority).toBe(300);
+    expect(listEditorKeymaps().length).toBe(before + 1);
+  });
+
+  it("目录外命令返回 false 不注册（调用方告警忽略）", () => {
+    const before = listEditorKeymaps().length;
+    expect(bindMenuShortcut("Not A Command", "Mod-j")).toBe(false);
+    expect(listEditorKeymaps().length).toBe(before);
+  });
+
+  it("目录覆盖编辑器域十命令", () => {
+    for (const commandId of [
+      "Heading 1",
+      "Heading 2",
+      "Heading 3",
+      "Heading 4",
+      "Heading 5",
+      "Heading 6",
+      "Paragraph",
+      "Code Fences",
+      "Inline Code",
+      "Bold",
+      "Italic",
+    ]) {
+      // Bold/Italic 为 11 项（十命令口径见披露 3 注：Heading×6 + Paragraph + Code Fences + Inline Code + Bold + Italic）
+      // 键名串仅为注册互斥占位（同一测试内逐条注册不同键），不表达真实键位
+      expect(bindMenuShortcut(commandId, `Mod-f11-${commandId.length}`)).toBe(true);
+    }
   });
 });

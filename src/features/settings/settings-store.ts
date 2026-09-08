@@ -8,8 +8,6 @@
 //   2. 高级读取失败不阻断（回退默认值 + advancedError 提示条），对齐 AC-C1-4 不崩溃精神。
 // 失效广播：updateGui/resetAdvanced 后 dispatch SETTINGS_INVALIDATED_EVENT（07 图片快照
 // 监听刷新——对接契约，T1 已迁入 services 层，image/register 监听行为零变化）。
-// 注：主契约中的 menuShortcutEntries（12 菜单展示数据）标注「Task 11 追加」——其依赖的
-// shortcut-binding.ts 为 Task 10 交付物，本任务不含，届时原位追加（返回面只增不改）。
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import {
@@ -27,6 +25,8 @@ import {
   writeAdvancedSetting,
 } from "../../services/advanced-settings";
 import type { AdvancedSettings } from "../../services/advanced-settings";
+import type { MenuShortcutEntry } from "./shortcut-binding";
+import { getMenuShortcutEntries } from "./shortcut-binding";
 
 /** updateSettings 的 patch 形状透传（避免重复建模 A.7.3 职责隔离） */
 export type SettingsPatch = Parameters<typeof updateSettings>[0];
@@ -54,6 +54,11 @@ export const useSettingsStore = defineStore("settings", () => {
       autoSave: { ...gui.value.autoSave, timerMinutes: advanced.value.autoSaveTimer },
     };
   });
+
+  /** 菜单快捷键展示数据（12 模块装配消费；默认表 + keyBinding 覆盖实时合并） */
+  const menuShortcutEntries = computed<MenuShortcutEntry[]>(() =>
+    getMenuShortcutEntries(advanced.value?.keyBinding ?? {}),
+  );
 
   // —— actions ——
   /** 双层装载（启动链路与面板打开共用；幂等语义由调用方保证） */
@@ -139,6 +144,7 @@ export const useSettingsStore = defineStore("settings", () => {
     advanced,
     advancedError,
     merged,
+    menuShortcutEntries,
     load,
     updateGui,
     updateAutoSaveTimer,

@@ -173,6 +173,47 @@ describe("useSettingsStore 面板开合", () => {
   });
 });
 
+describe("useSettingsStore menuShortcutEntries 菜单展示数据（AC-C1-1 接口面）", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    memory.clear();
+    readAdvancedMock.mockReset();
+  });
+
+  it("未装载窗口期回落默认表：全量条目 + Heading 1 默认组合 source=default", () => {
+    const store = useSettingsStore();
+    const entries = store.menuShortcutEntries;
+    expect(entries.length).toBeGreaterThanOrEqual(14);
+    const heading1 = entries.find((e) => e.commandId === "Heading 1")!;
+    expect(heading1.combo).toBe("Ctrl+1");
+    expect(heading1.source).toBe("default");
+    expect(heading1.domain).toBe("editor");
+  });
+
+  it("keyBinding 覆盖后 combo 替换且 source=custom（12 菜单据此渲染）", async () => {
+    readAdvancedMock.mockResolvedValueOnce({
+      ...advancedSettingsStub(),
+      keyBinding: { Bold: "Ctrl+Alt+B" },
+    });
+    const store = useSettingsStore();
+    await store.load();
+    const bold = store.menuShortcutEntries.find((e) => e.commandId === "Bold")!;
+    expect(bold.combo).toBe("Ctrl+Alt+B");
+    expect(bold.source).toBe("custom");
+  });
+
+  it("高级读取失败回退默认 keyBinding：菜单展示默认表不崩溃（AC-C1-4 精神）", async () => {
+    // 静默降级告警（load 失败回退路径的 console.warn 不进测试输出）
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    readAdvancedMock.mockRejectedValueOnce(new Error("conf.user.json 不是合法 JSON"));
+    const store = useSettingsStore();
+    await store.load();
+    const italic = store.menuShortcutEntries.find((e) => e.commandId === "Italic")!;
+    expect(italic.combo).toBe("Ctrl+I");
+    expect(italic.source).toBe("default");
+  });
+});
+
 /** 高级设置测试桩（默认值形状；用例按需覆盖 autoSaveTimer 等字段） */
 function advancedSettingsStub(): Record<string, unknown> {
   return {
