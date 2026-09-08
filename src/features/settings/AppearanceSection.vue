@@ -6,7 +6,9 @@ import { computed, onMounted, ref } from "vue";
 import type { WritableComputedRef } from "vue";
 import SettingRow from "./SettingRow.vue";
 import { useSettingsStore } from "./settings-store";
+import { normalizeNumberInput } from "./number-input";
 import { listThemes } from "../../services/theme-io";
+import { DEFAULT_SETTINGS } from "../../services/settings";
 import type { ThemeMeta } from "../../services/theme-io";
 import type { ThemeSettings } from "../../services/settings";
 
@@ -58,11 +60,15 @@ const fontSize = computed<string | number>({
   },
 });
 
-/** 阅读速度（词/分钟，阅读时间统计口径） */
+/** 阅读速度（词/分钟，阅读时间统计口径）；清空 / 非法输入回退默认 200（批1 M2 收口） */
 const readingSpeed = computed<number>({
   get: () => store.gui?.appearance.readingSpeed ?? 200,
-  set: (value: number) => {
-    void store.updateGui({ appearance: { readingSpeed: value } });
+  set: (value: number | string) => {
+    void store.updateGui({
+      appearance: {
+        readingSpeed: normalizeNumberInput(value, DEFAULT_SETTINGS.appearance.readingSpeed),
+      },
+    });
   },
 });
 </script>

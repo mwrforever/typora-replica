@@ -67,6 +67,7 @@ vi.mock("../../services/theme-io", () => ({
 
 import SettingsPanel from "./SettingsPanel.vue";
 import { useSettingsStore } from "./settings-store";
+import { writeAdvancedSetting } from "../../services/advanced-settings";
 
 /**
  * 装配辅助：预装载 store 后渲染面板，返回 store 供绑定断言。
@@ -113,6 +114,25 @@ describe("面板内 Ctrl+F 搜索（AC-S1-2）", () => {
   });
 });
 
+describe("面板隐藏时的键盘行为（批1 审查 M1：visible 守卫）", () => {
+  it("面板隐藏时 Ctrl+F 不被面板拦截（不 preventDefault，让位编辑器搜索）", async () => {
+    const store = useSettingsStore();
+    await store.load();
+    render(SettingsPanel); // 刻意不 open：面板保持隐藏
+    const event = new KeyboardEvent("keydown", { key: "f", ctrlKey: true, cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("面板可见时 Ctrl+F 被面板接管（preventDefault 并聚焦搜索框）", async () => {
+    await renderPanel();
+    const event = new KeyboardEvent("keydown", { key: "f", ctrlKey: true, cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(screen.getByRole("textbox", { name: "搜索设置项" })).toHaveFocus();
+  });
+});
+
 describe("禁用占位与徽标（AC-S1-4 / AC-S1-5）", () => {
   it("Image 分区上传器占位禁用并显示原因（AC-S1-4）", async () => {
     await renderPanel();
@@ -156,5 +176,44 @@ describe("设置项绑定（AC-S1-3 面板面）", () => {
     await fireEvent.update(input, "归档格式");
     await fireEvent.click(screen.getByRole("button", { name: "添加导出项" }));
     expect(screen.getByText("归档格式")).toBeTruthy();
+  });
+});
+
+describe("数字输入清空收口（批1 审查 M2：空串禁止穿透 number 契约）", () => {
+  it("Save & Recover 保存间隔清空后回写默认 5 分钟（conf 双写同收口）", async () => {
+    await renderPanel();
+    await fireEvent.click(screen.getByRole("button", { name: "Save & Recover" }));
+    const input = screen.getByRole("spinbutton", { name: "保存间隔（分钟）" });
+    await fireEvent.update(input, "");
+    await waitFor(() =>
+      expect(vi.mocked(writeAdvancedSetting)).toHaveBeenCalledWith("autoSaveTimer", 5),
+    );
+    await waitFor(() => expect(memory.get("autoSave")).toMatchObject({ timerMinutes: 5 }));
+  });
+
+  it("Appearance 阅读速度清空后回写默认 200 词/分钟", async () => {
+    await renderPanel();
+    await fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+    const input = screen.getByRole("spinbutton", { name: "阅读速度" });
+    await fireEvent.update(input, "");
+    await waitFor(() => expect(memory.get("appearance")).toMatchObject({ readingSpeed: 200 }));
+  });
+
+  it("Markdown 代码块缩进宽度清空后回写默认 4 空格（codeFence 子组保留）", async () => {
+    await renderPanel();
+    await fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
+    const input = screen.getByRole("spinbutton", { name: "代码块缩进宽度" });
+    await fireEvent.update(input, "");
+    await waitFor(() =>
+      expect(memory.get("markdown")).toMatchObject({ codeFence: { indentWidth: 4 } }),
+    );
+  });
+
+  it("Export PDF 页边距清空后回写默认 0.4 英寸", async () => {
+    await renderPanel();
+    await fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    const input = screen.getByRole("spinbutton", { name: "PDF 页边距（英寸）" });
+    await fireEvent.update(input, "");
+    await waitFor(() => expect(memory.get("export")).toMatchObject({ pdfMarginIn: 0.4 }));
   });
 });

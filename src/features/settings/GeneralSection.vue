@@ -6,6 +6,8 @@
 import { computed } from "vue";
 import SettingRow from "./SettingRow.vue";
 import { useSettingsStore } from "./settings-store";
+import { normalizeNumberInput } from "./number-input";
+import { DEFAULT_ADVANCED_SETTINGS } from "../../services/advanced-settings";
 import { openThemeFolder } from "../../services/theme-io";
 import { openFolderDialog } from "../../services/open-commands";
 
@@ -37,11 +39,14 @@ const autoSaveEnabled = computed({
   },
 });
 
-/** 自动保存间隔（write-through 双写 conf autoSaveTimer——Task 4 双层一致性契约） */
-const autoSaveTimer = computed({
+/** 自动保存间隔（write-through 双写 conf autoSaveTimer——Task 4 双层一致性契约）；
+ * 清空 / 非法输入经归一回退默认 5 分钟，禁止空串穿透 number 契约写穿 conf（批1 M2） */
+const autoSaveTimer = computed<number>({
   get: () => store.merged.autoSave.timerMinutes,
-  set: (minutes: number) => {
-    void store.updateAutoSaveTimer(minutes);
+  set: (value: number | string) => {
+    void store.updateAutoSaveTimer(
+      normalizeNumberInput(value, DEFAULT_ADVANCED_SETTINGS.autoSaveTimer),
+    );
   },
 });
 

@@ -6,6 +6,8 @@ import { computed } from "vue";
 import type { WritableComputedRef } from "vue";
 import SettingRow from "./SettingRow.vue";
 import { useSettingsStore } from "./settings-store";
+import { normalizeNumberInput } from "./number-input";
+import { DEFAULT_SETTINGS } from "../../services/settings";
 import type { CodeFenceSettings, MarkdownSettings } from "../../services/settings";
 
 const store = useSettingsStore();
@@ -57,11 +59,17 @@ const wrapLongLines = codeFenceFlag("wrapLongLines");
 const shiftTabIndent = codeFenceFlag("shiftTabIndent");
 const useLastUsedLanguage = codeFenceFlag("useLastUsedLanguage");
 
-/** 代码块缩进宽度绑定（空格数 1-8） */
+/** 代码块缩进宽度绑定（空格数 1-8）；清空 / 非法输入回退默认 4（批1 M2 收口） */
 const indentWidth = computed<number>({
   get: () => store.gui?.markdown.codeFence.indentWidth ?? 4,
-  set: (value: number) => {
-    void store.updateGui({ markdown: { codeFence: { indentWidth: value } } });
+  set: (value: number | string) => {
+    void store.updateGui({
+      markdown: {
+        codeFence: {
+          indentWidth: normalizeNumberInput(value, DEFAULT_SETTINGS.markdown.codeFence.indentWidth),
+        },
+      },
+    });
   },
 });
 

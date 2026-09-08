@@ -5,6 +5,8 @@
 import { computed, ref } from "vue";
 import SettingRow from "./SettingRow.vue";
 import { useSettingsStore } from "./settings-store";
+import { normalizeNumberInput } from "./number-input";
+import { DEFAULT_SETTINGS } from "../../services/settings";
 import { useExportStore } from "../export/export-store";
 
 const store = useSettingsStore();
@@ -61,11 +63,14 @@ const htmlThemeOverride = computed({
   },
 });
 
-/** PDF 页边距（英寸，默认 0.4；TODO(export) 预留键，重启生效） */
+/** PDF 页边距（英寸，默认 0.4；TODO(export) 预留键，重启生效）；
+ * 清空 / 非法输入回退默认值，禁止空串穿透 number 契约（批1 M2 收口） */
 const pdfMarginIn = computed<number>({
   get: () => store.gui?.export.pdfMarginIn ?? 0.4,
-  set: (value: number) => {
-    void store.updateGui({ export: { pdfMarginIn: value } });
+  set: (value: number | string) => {
+    void store.updateGui({
+      export: { pdfMarginIn: normalizeNumberInput(value, DEFAULT_SETTINGS.export.pdfMarginIn) },
+    });
   },
 });
 

@@ -67,10 +67,13 @@ function gotoHit(item: { section: SettingsSectionId }): void {
 
 /**
  * 面板级键盘处理：Ctrl+F 聚焦搜索（AC-S1-2）、ESC 关闭。
- * Ctrl+F 采用纯 Ctrl 组合口径（排除 Shift/Alt/Meta，与既有窗口快捷键同口径）；
- * 面板可见时接管 Ctrl+F——App.vue 侧编辑器搜索的 visible 守卫成对约定（Task 6 装配）。
+ * visible 守卫（批1 审查 M1）：组件常驻挂载（浮层由模板 v-if 驱动显隐）而监听器挂
+ * window——面板隐藏时必须让位编辑器搜索（App.vue 侧「可见时归面板」守卫的成对面），
+ * 禁止隐藏态仍 preventDefault 抢占 Ctrl+F。
+ * Ctrl+F 采用纯 Ctrl 组合口径（排除 Shift/Alt/Meta，与既有窗口快捷键同口径）。
  */
 function onKeydown(event: KeyboardEvent): void {
+  if (!store.visible) return;
   if (
     event.ctrlKey &&
     !event.shiftKey &&
