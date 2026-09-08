@@ -1,4 +1,8 @@
 // keyBinding 组合串解析测试（AC-C1-2 典型组合 / AC-C1-4 非法忽略）
+// 具名主键期望 canonical 事件键名形态：prosemirror-keymap 的 keydownHandler 以
+// KeyboardEvent.key 原样查表（大小写敏感），小写产物（如 Mod-f12）解析通过但按键
+// 永不生效（批 3 审核 Important-1）——缝合用例组以真实按键验证防字符串层钉错期望。
+import { keydownHandler } from "@milkdown/kit/prose/keymap";
 import { describe, expect, it } from "vitest";
 import { parseShortcutCombo } from "./shortcut-keys";
 
@@ -15,8 +19,16 @@ describe("parseShortcutCombo 合法组合", () => {
     expect(parseShortcutCombo("Ctrl+Shift+=")).toBe("Mod-Shift-=");
   });
 
-  it("Ctrl+F12 → Mod-f12（具名功能键）", () => {
-    expect(parseShortcutCombo("Ctrl+F12")).toBe("Mod-f12");
+  it("Ctrl+F12 → Mod-F12（具名功能键 canonical 形态，事件键名查表大小写敏感）", () => {
+    expect(parseShortcutCombo("Ctrl+F12")).toBe("Mod-F12");
+  });
+
+  it("Ctrl+Up → Mod-ArrowUp（方向键 canonical 为事件键名 ArrowUp）", () => {
+    expect(parseShortcutCombo("Ctrl+Up")).toBe("Mod-ArrowUp");
+  });
+
+  it("Ctrl+Space → Mod-Space（normalizeKeyName 将 Space 特例归一为空格键 event.key）", () => {
+    expect(parseShortcutCombo("Ctrl+Space")).toBe("Mod-Space");
   });
 
   it("Ctrl+` → Mod-`（反引号主键）", () => {
@@ -50,5 +62,42 @@ describe("parseShortcutCombo 非法组合（返回 undefined，调用方告警�
 
   it("未知具名键拒绝（防脏键面进 keymap）", () => {
     expect(parseShortcutCombo("Ctrl+NotAKey")).toBeUndefined();
+    // 白名单外单字符符号（@ 不可绑定）同拒绝
+    expect(parseShortcutCombo("Ctrl+@")).toBeUndefined();
+  });
+});
+
+describe("parseShortcutCombo 产物经真实按键验证（缝合用例）", () => {
+  // 批 3 审核 Important-1 回归防线：解析产物必须能被 prosemirror-keymap keydownHandler
+  // 的真实事件键名查表命中（handled: true），防止「字符串层钉错期望」类静默失效复发。
+  // 缝合断言只触达 command 调用面（state/dispatch 原样透传给命令），无需完整 EditorView 实例。
+  const fakeView = {
+    state: {},
+    dispatch: () => {},
+  } as unknown as Parameters<ReturnType<typeof keydownHandler>>[0];
+
+  it("Ctrl+F12 产物注册后真实按下 F12 可命中（handled: true）", () => {
+    const key = parseShortcutCombo("Ctrl+F12");
+    expect(key).toBeDefined();
+    const handle = keydownHandler({ [key!]: () => true });
+    expect(handle(fakeView, new KeyboardEvent("keydown", { key: "F12", ctrlKey: true }))).toBe(
+      true,
+    );
+  });
+
+  it("Ctrl+Up 产物注册后真实按下 ArrowUp 可命中（方向键事件键名错位防线）", () => {
+    const key = parseShortcutCombo("Ctrl+Up");
+    expect(key).toBeDefined();
+    const handle = keydownHandler({ [key!]: () => true });
+    expect(handle(fakeView, new KeyboardEvent("keydown", { key: "ArrowUp", ctrlKey: true }))).toBe(
+      true,
+    );
+  });
+
+  it("Ctrl+Space 产物注册后真实按下空格键可命中（Space 归一特例防线）", () => {
+    const key = parseShortcutCombo("Ctrl+Space");
+    expect(key).toBeDefined();
+    const handle = keydownHandler({ [key!]: () => true });
+    expect(handle(fakeView, new KeyboardEvent("keydown", { key: " ", ctrlKey: true }))).toBe(true);
   });
 });
