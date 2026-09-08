@@ -13,7 +13,9 @@ import {
   listItemSchema,
   paragraphSchema,
   setBlockTypeCommand,
+  toggleEmphasisCommand,
   toggleInlineCodeCommand,
+  toggleStrongCommand,
   wrapInHeadingCommand,
 } from "@milkdown/kit/preset/commonmark";
 import { addRowWithAlignment } from "@milkdown/kit/preset/gfm";
@@ -264,3 +266,55 @@ export function makeTableTabAddRowCommand() {
 // Tab 末格加行：priority 默认 200，先于内置 NextCell（100）与 indent 插件判定；
 // 单列表格回落内置下移（用户裁决：保导航），多列表格行末格加行
 addEditorKeymap({ key: "Tab", onRun: makeTableTabAddRowCommand() });
+
+// ── 10 设置快捷键：keyBinding 注入目录（AC-C1-2/3）──
+//
+// 命令名 → onRun 工厂目录持有在 01 域内（A.7.4：Ctx/Command 编辑器域类型不离开本文件）；
+// 10 模块只传 JSON 值对象（命令名字符串 + 解析后的键名字符串）。
+// 复用本文件既有命令路径（commandsCtx 调用 / 既有工厂），不新增命令实现。
+// 目录范围 = 编辑器域十命令（披露 3）：Heading×6 / Paragraph / Code Fences / Inline Code /
+// Bold / Italic；窗口域命令（Always on Top 等）不在本目录——执行接线归 12 menuRouter。
+
+/** 目录内命令的 onRun 工厂（ctx 在 KeymapManager.build 时解析——与内置注册同时序） */
+const BINDABLE_EDITOR_COMMANDS: Record<string, (ctx: Ctx) => Command> = {
+  Bold: (ctx) => {
+    const commands = ctx.get(commandsCtx);
+    return () => commands.call(toggleStrongCommand.key);
+  },
+  Italic: (ctx) => {
+    const commands = ctx.get(commandsCtx);
+    return () => commands.call(toggleEmphasisCommand.key);
+  },
+  "Inline Code": (ctx) => {
+    const commands = ctx.get(commandsCtx);
+    return () => commands.call(toggleInlineCodeCommand.key);
+  },
+  "Code Fences": insertCodeFenceCommand,
+  Paragraph: (ctx) => {
+    const commands = ctx.get(commandsCtx);
+    return () => commands.call(setBlockTypeCommand.key, { nodeType: paragraphSchema.type(ctx) });
+  },
+  "Heading 1": (ctx) => turnIntoHeadingCommand(ctx, 1),
+  "Heading 2": (ctx) => turnIntoHeadingCommand(ctx, 2),
+  "Heading 3": (ctx) => turnIntoHeadingCommand(ctx, 3),
+  "Heading 4": (ctx) => turnIntoHeadingCommand(ctx, 4),
+  "Heading 5": (ctx) => turnIntoHeadingCommand(ctx, 5),
+  "Heading 6": (ctx) => turnIntoHeadingCommand(ctx, 6),
+};
+
+/**
+ * 注册 keyBinding 自定义键位（10 模块启动注入；必须在编辑器 create() 前调用——
+ * applyEditorKeymaps 在 config 阶段消费注册表）
+ *
+ * priority 300 高于内置键位的 200/100/50：keymap 链按优先级降序执行、命中即消费，
+ * 冲突时自定义优先（AC-C1-3 keymap priority 规则）。
+ * @param commandId 菜单命令名（conf.user.json keyBinding 的键）
+ * @param pmKey ProseMirror 键名（10 模块 parseShortcutCombo 解析产物）
+ * @returns true = 已注入注册表；false = 命令名不在目录（调用方告警忽略）
+ */
+export function bindMenuShortcut(commandId: string, pmKey: string): boolean {
+  const factory = BINDABLE_EDITOR_COMMANDS[commandId];
+  if (factory === undefined) return false;
+  addEditorKeymap({ key: pmKey, priority: 300, onRun: factory });
+  return true;
+}

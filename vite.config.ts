@@ -77,6 +77,21 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 10 设置快捷键核心 100%：设置项注册表/设置快照 store/keyBinding 解析与注入链/
+        // 菜单展示数据 + conf.user.json IPC 契约封装（宪法 A.6.2 核心域同步阈值；
+        // 面板 .vue 组件走全局 ≥80% + E2E）
+        "src/features/settings/**/*.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        "src/services/advanced-settings.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
         // 09 导入导出核心 100%：HTML 管线（变量替换防 XSS / 大纲 / CSS 内联 / 后处理）、
         // PDF 编排、导出项管理与会话级记忆（宪法 A.6.2 核心域同步阈值）
         "src/features/export/**/*.ts": {

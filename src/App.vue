@@ -28,10 +28,14 @@ import FindReplacePanel from "./features/search/FindReplacePanel.vue";
 import { navigateNext, navigatePrev } from "./features/search/find-controller";
 import { registerSearchShortcuts } from "./features/search/search-shortcuts";
 import { useSearchStore } from "./features/search/search-store";
+import SettingsPanel from "./features/settings/SettingsPanel.vue";
+import { registerSettingsShortcuts } from "./features/settings/settings-shortcuts";
+import { useSettingsStore } from "./features/settings/settings-store";
+import { applyKeyBindings } from "./features/settings/shortcut-binding";
 import { getCliArgs, probePathExists } from "./services/file-io";
 import { resolveLaunch } from "./services/launch-behavior";
 import { openFolderDialog, saveAsDialog } from "./services/open-commands";
-import { loadSettings } from "./services/settings";
+import { DEFAULT_SETTINGS } from "./services/settings";
 import { registerAppShortcuts } from "./services/app-shortcuts";
 import { RecentFiles } from "./services/recent-files";
 
@@ -102,7 +106,11 @@ const cleanupTabsShortcuts = registerTabsShortcuts({
 /** 搜索面板状态与快捷键（06：Ctrl+F/H 开关、F3/Shift+F3 导航、ESC 关闭回焦） */
 const searchStore = useSearchStore();
 const cleanupSearchShortcuts = registerSearchShortcuts({
-  onToggleFind: () => searchStore.toggleFind(),
+  onToggleFind: () => {
+    // 面板可见时 Ctrl+F 归面板内搜索（SettingsPanel 接管聚焦其搜索框）
+    if (settingsStore.visible) return;
+    searchStore.toggleFind();
+  },
   onToggleReplace: () => searchStore.toggleReplace(),
   onNext: () => navigateNext(),
   onPrev: () => navigatePrev(),
@@ -112,6 +120,14 @@ const cleanupSearchShortcuts = registerSearchShortcuts({
     searchStore.close();
     editorManager.getView()?.focus();
   },
+});
+
+/** 偏好设置面板状态（10：Ctrl+, 开合；12 菜单接入后触发入口归 12） */
+const settingsStore = useSettingsStore();
+
+/** 面板开合快捷键（Ctrl+,；注销随组件卸载） */
+const cleanupSettingsShortcuts = registerSettingsShortcuts({
+  onTogglePanel: () => settingsStore.togglePanel(),
 });
 
 /**
@@ -210,8 +226,16 @@ onMounted(async () => {
   registerImageFeature();
   // 08 主题装配（cleanup 含色系退订与防抖定时器清理）
   cleanupThemeFeature = registerThemeFeature();
-  // 启动链路：cli 参数 + 偏好 → 决策 → 多标签装配（失败回退新建，提示不崩溃）
-  const [cli, settings] = await Promise.all([getCliArgs(), loadSettings()]);
+  // 10 设置快捷键：双层设置装载必须先于启动决策——conf.user.json 的 keyBinding 注入
+  // （applyKeyBindings）要赶在首标签编辑器 create() 之前（applyEditorKeymaps 在 config
+  // 阶段消费注册表）。装载失败不阻断（store 内部已回退默认值）
+  await settingsStore.load();
+  // keyBinding 注入（AC-C1-2 重启生效 / AC-C1-3 自定义优先 / AC-C1-4 非法告警忽略）
+  applyKeyBindings(settingsStore.advanced?.keyBinding ?? {});
+  // 启动链路：cli 参数 + 偏好 → 决策 → 多标签装配（失败回退新建，提示不崩溃）。
+  // 偏好复用 settingsStore 已装载的 GUI 快照（避免二次读盘；undefined 防御回落默认）
+  const cli = await getCliArgs();
+  const settings = settingsStore.gui ?? DEFAULT_SETTINGS;
   // 路径存在性探测（I-1 修复）：listDir 优先——readFile 对目录必失败，
   // 旧内联 readFile 探测令文件夹存在性恒 false（AC-F14-1/2 失效根因）
   const decision = await resolveLaunch(cli, settings, probePathExists);
@@ -259,6 +283,7 @@ onBeforeUnmount(() => {
   cleanupFileTreeShortcuts();
   cleanupTabsShortcuts();
   cleanupSearchShortcuts();
+  cleanupSettingsShortcuts();
   drafts.stop();
   // 门面销毁由 04 集成层负责（被动挂载不自动 destroy；应用卸载即终态）
   editorManager.destroy();
@@ -336,6 +361,8 @@ function basenameOf(path: string): string {
     @discard="tabs.confirmCloseDiscard"
     @cancel="tabs.cancelClose"
   />
+  <!-- 偏好设置面板浮层（10）：显隐由 settingsStore.visible 驱动，内部自管开合 -->
+  <SettingsPanel />
 </template>
 
 <style scoped>

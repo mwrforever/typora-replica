@@ -28,6 +28,9 @@ vi.mock("../../services/file-io", () => ({
 vi.mock("../../services/settings", () => ({
   loadSettings: (...a: unknown[]) => mockLoadSettings(...a),
   updateSettings: (...a: unknown[]) => mockUpdateSettings(...a),
+  // 失效事件常量（10 对接契约自 features/image 迁入 services）：register.ts 模块级
+  // addEventListener 消费，mock 面须与真实模块导出对齐
+  SETTINGS_INVALIDATED_EVENT: "markwell-settings-updated",
 }));
 vi.mock("../../services/recent-files", () => ({
   // 同构导出 RecentFiles 类：record 委托 mock（document-session 用 new + .catch 消费）

@@ -76,6 +76,11 @@ pub fn run() {
             io::themes::unwatch_themes,
             // 09 PDF 导出（pdf.rs）：隐藏 WebView2 打印管线（PrintToPdfStream）
             io::pdf::export_pdf,
+            // 10 高级设置（advanced_settings.rs）：conf.user.json 注释剥离解析 + 行级合并写回
+            io::advanced_settings::read_advanced_settings,
+            io::advanced_settings::write_advanced_settings,
+            io::advanced_settings::reset_advanced_settings,
+            io::advanced_settings::open_advanced_settings,
             // 08 T7 DevTools 开关（devtools.rs）：debug 构建可用，release 须 devtools
             // feature（未启用时命令无操作返回 false）
             devtools::toggle_devtools

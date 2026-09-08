@@ -31,6 +31,8 @@ vi.mock("../../services/theme-io", () => ({
 vi.mock("../../services/settings", () => ({
   loadSettings: mocks.loadSettings,
   updateSettings: mocks.updateSettings,
+  // 失效事件常量（10 对接契约自 features/image 迁入 services）：mock 面须与真实模块导出对齐
+  SETTINGS_INVALIDATED_EVENT: "markwell-settings-updated",
 }));
 vi.mock("@tauri-apps/api/core", () => ({ convertFileSrc: mocks.convert }));
 vi.mock("./color-scheme", () => ({

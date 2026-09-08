@@ -1,0 +1,287 @@
+// 设置快照 store 测试（合并快照唯一入口 / 失效事件广播 / write-through / Reset / 开合）
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createPinia, setActivePinia } from "pinia";
+
+// store 插件内存 mock（settings.spec.ts 同构；loadSettings 桩恒回默认值——本文件用例
+// 只断言 updateSettings 写入 memory 的持久化面，不依赖读回路径）
+const memory = vi.hoisted(() => new Map<string, unknown>());
+vi.mock("../../services/settings", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../services/settings")>();
+  return {
+    ...actual,
+    loadSettings: vi.fn(async () => ({ ...actual.DEFAULT_SETTINGS })),
+    updateSettings: vi.fn(async (patch: Record<string, unknown>) => {
+      for (const [k, v] of Object.entries(patch)) memory.set(k, v);
+      return { ...actual.DEFAULT_SETTINGS, ...patch };
+    }),
+  };
+});
+const readAdvancedMock = vi.hoisted(() => vi.fn());
+const writeAdvancedMock = vi.hoisted(() => vi.fn(async () => undefined));
+const resetAdvancedMock = vi.hoisted(() => vi.fn(async () => undefined));
+const openAdvancedMock = vi.hoisted(() => vi.fn(async () => undefined));
+vi.mock("../../services/advanced-settings", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../services/advanced-settings")>();
+  return {
+    ...actual,
+    readAdvancedSettings: readAdvancedMock,
+    writeAdvancedSetting: writeAdvancedMock,
+    resetAdvancedSettings: resetAdvancedMock,
+    openAdvancedSettings: openAdvancedMock,
+  };
+});
+
+import { useSettingsStore } from "./settings-store";
+import { DEFAULT_SETTINGS } from "../../services/settings";
+
+describe("useSettingsStore 装载与合并快照", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    memory.clear();
+    readAdvancedMock.mockReset();
+  });
+
+  it("load 并行装载双层设置（GUI + conf.user.json）", async () => {
+    readAdvancedMock.mockResolvedValueOnce({
+      ...advancedSettingsStub(),
+      autoSaveTimer: 10,
+    });
+    const store = useSettingsStore();
+    expect(store.gui).toBeUndefined();
+    await store.load();
+    expect(store.gui?.launch.mode).toBe(DEFAULT_SETTINGS.launch.mode);
+    expect(store.advanced?.autoSaveTimer).toBe(10);
+    expect(store.advancedError).toBeUndefined();
+  });
+
+  it("merged 合并快照：conf.user.json autoSaveTimer 覆盖面板间隔（手改文件重启后生效口径）", async () => {
+    readAdvancedMock.mockResolvedValueOnce({
+      ...advancedSettingsStub(),
+      autoSaveTimer: 10,
+    });
+    const store = useSettingsStore();
+    await store.load();
+    expect(store.merged.autoSave.timerMinutes).toBe(10); // 高级覆盖
+    expect(store.merged.autoSave.enabled).toBe(true); // 其余字段取面板值
+  });
+
+  it("高级读取失败不阻断：回退默认高级值 + advancedError 提示（合并回退面板值）", async () => {
+    // 静默降级告警（load 失败回退路径的 console.warn 不进测试输出，保持输出整洁）
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    readAdvancedMock.mockRejectedValueOnce(
+      new Error("conf.user.json 不是合法 JSON（已保留原文件）"),
+    );
+    const store = useSettingsStore();
+    await store.load();
+    expect(store.advancedError).toContain("已保留原文件");
+    expect(store.advanced?.autoSaveTimer).toBe(5); // DEFAULT_ADVANCED_SETTINGS
+    expect(store.merged.autoSave.timerMinutes).toBe(5);
+  });
+
+  it("高级读取拒绝非 Error 值时回退兜底文案（instanceof 假侧不产生不可读提示）", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    readAdvancedMock.mockRejectedValueOnce("IPC 通道意外关闭");
+    const store = useSettingsStore();
+    await store.load();
+    expect(store.advancedError).toBe("读取高级设置失败");
+    expect(store.advanced?.autoSaveTimer).toBe(5);
+  });
+
+  it("未装载时 merged 回落 DEFAULT_SETTINGS（消费方启动窗口期安全）", () => {
+    const store = useSettingsStore();
+    expect(store.merged).toEqual(DEFAULT_SETTINGS);
+  });
+});
+
+describe("useSettingsStore 变更与事件广播", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    memory.clear();
+    readAdvancedMock.mockReset();
+    readAdvancedMock.mockResolvedValue({
+      ...advancedSettingsStub(),
+      autoSaveTimer: 5,
+    });
+  });
+
+  it("updateGui 深合并写回 + gui 快照更新 + 广播失效事件（07 图片快照刷新契约）", async () => {
+    const spy = vi.fn();
+    window.addEventListener("markwell-settings-updated", spy);
+    const store = useSettingsStore();
+    await store.load();
+    await store.updateGui({ outline: { collapsible: true } });
+    expect(store.gui?.outline.collapsible).toBe(true);
+    expect(spy).toHaveBeenCalledOnce();
+    window.removeEventListener("markwell-settings-updated", spy);
+  });
+
+  it("updateAutoSaveTimer write-through：先写 conf autoSaveTimer 再写面板 autoSave（顺序钉死）", async () => {
+    const store = useSettingsStore();
+    await store.load();
+    await store.updateAutoSaveTimer(15);
+    expect(writeAdvancedMock).toHaveBeenCalledWith("autoSaveTimer", 15);
+    expect(memory.get("autoSave")).toMatchObject({ timerMinutes: 15 });
+    expect(store.merged.autoSave.timerMinutes).toBe(15);
+  });
+
+  it("未装载窗口期 updateAutoSaveTimer 不崩溃：conf 写入落盘且 merged 直取面板值", async () => {
+    // 边界：load 前调用（装配时序外的防御路径）——advanced 未装载时 merged 走 gui 面，
+    // 面板值仍写回持久层，不因高级快照缺失而中断
+    const store = useSettingsStore();
+    await store.updateAutoSaveTimer(15);
+    expect(writeAdvancedMock).toHaveBeenCalledWith("autoSaveTimer", 15);
+    expect(store.merged.autoSave.timerMinutes).toBe(15);
+  });
+
+  it("conf 写入失败时 updateAutoSaveTimer 上抛且面板值不写（双层一致性优先）", async () => {
+    writeAdvancedMock.mockRejectedValueOnce(new Error("写入失败"));
+    const store = useSettingsStore();
+    await store.load();
+    await expect(store.updateAutoSaveTimer(15)).rejects.toThrow("写入失败");
+    expect(memory.get("autoSave")).toBeUndefined();
+  });
+
+  it("resetAdvanced 调用重置命令 + 高级快照回默认 + 广播失效", async () => {
+    const spy = vi.fn();
+    window.addEventListener("markwell-settings-updated", spy);
+    const store = useSettingsStore();
+    await store.load();
+    await store.resetAdvanced();
+    expect(resetAdvancedMock).toHaveBeenCalledOnce();
+    expect(store.advanced?.autoHideMenuBar).toBe(false);
+    expect(spy).toHaveBeenCalledOnce();
+    window.removeEventListener("markwell-settings-updated", spy);
+  });
+
+  it("openConfFile 调用打开命令（12.6 入口）", async () => {
+    const store = useSettingsStore();
+    await store.openConfFile();
+    expect(openAdvancedMock).toHaveBeenCalledOnce();
+  });
+
+  it("openConfFile 失败不上抛：错误写入 advancedError 由提示条呈现（Low-2 收口）", async () => {
+    // 模板直调通道无 catch 面，上抛即 unhandled rejection——store 内 catch 落 advancedError
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    openAdvancedMock.mockRejectedValueOnce(new Error("打开高级设置文件失败，请检查系统文件关联"));
+    const store = useSettingsStore();
+    await store.load();
+    await expect(store.openConfFile()).resolves.toBeUndefined();
+    expect(store.advancedError).toContain("请检查系统文件关联");
+  });
+
+  it("openConfFile 失败拒绝非 Error 值时落兜底文案（可读提示不缺位）", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    openAdvancedMock.mockRejectedValueOnce("IPC 通道意外关闭");
+    const store = useSettingsStore();
+    await store.load();
+    await store.openConfFile();
+    expect(store.advancedError).toBe("打开高级设置文件失败");
+  });
+
+  it("无 window 环境下 updateGui 写回不崩且跳过广播（typeof 守卫假侧）", async () => {
+    const store = useSettingsStore();
+    await store.load();
+    vi.stubGlobal("window", undefined);
+    try {
+      const next = await store.updateGui({ appearance: { showStatusBar: false } });
+      expect(next.appearance.showStatusBar).toBe(false);
+      expect(memory.get("appearance")).toMatchObject({ showStatusBar: false });
+    } finally {
+      vi.unstubAllGlobals();
+      // 清理调用痕迹：后续面板开合用例以 toHaveBeenCalledOnce 钉死装载次数
+      readAdvancedMock.mockClear();
+    }
+  });
+
+  it("无 window 环境下 resetAdvanced 快照回默认不崩（typeof 守卫假侧）", async () => {
+    resetAdvancedMock.mockClear(); // 前序用例已触发过重置命令，先清历史再钉死本用例计数
+    const store = useSettingsStore();
+    await store.load();
+    vi.stubGlobal("window", undefined);
+    try {
+      await store.resetAdvanced();
+      expect(resetAdvancedMock).toHaveBeenCalledOnce();
+      expect(store.advanced?.autoHideMenuBar).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+      // 同上：清空本用例对 read/reset 两 mock 的调用痕迹，不污染后续计数断言
+      readAdvancedMock.mockClear();
+      resetAdvancedMock.mockClear();
+    }
+  });
+});
+
+describe("useSettingsStore 面板开合", () => {
+  beforeEach(() => setActivePinia(createPinia()));
+
+  it("open/close/togglePanel 状态机；首次打开触发 load，再次开关不重复装载", async () => {
+    readAdvancedMock.mockResolvedValue({
+      ...advancedSettingsStub(),
+      autoSaveTimer: 5,
+    });
+    const store = useSettingsStore();
+    store.togglePanel();
+    expect(store.visible).toBe(true);
+    await vi.waitFor(() => expect(store.gui).toBeDefined()); // 异步 load 完成
+    store.togglePanel(); // 关闭
+    expect(store.visible).toBe(false);
+    store.togglePanel(); // 再开：loaded 已就绪不重复读
+    expect(store.visible).toBe(true);
+    expect(readAdvancedMock).toHaveBeenCalledOnce();
+    store.close();
+    expect(store.visible).toBe(false);
+  });
+});
+
+describe("useSettingsStore menuShortcutEntries 菜单展示数据（AC-C1-1 接口面）", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    memory.clear();
+    readAdvancedMock.mockReset();
+  });
+
+  it("未装载窗口期回落默认表：全量条目 + Heading 1 默认组合 source=default", () => {
+    const store = useSettingsStore();
+    const entries = store.menuShortcutEntries;
+    expect(entries.length).toBeGreaterThanOrEqual(14);
+    const heading1 = entries.find((e) => e.commandId === "Heading 1")!;
+    expect(heading1.combo).toBe("Ctrl+1");
+    expect(heading1.source).toBe("default");
+    expect(heading1.domain).toBe("editor");
+  });
+
+  it("keyBinding 覆盖后 combo 替换且 source=custom（12 菜单据此渲染）", async () => {
+    readAdvancedMock.mockResolvedValueOnce({
+      ...advancedSettingsStub(),
+      keyBinding: { Bold: "Ctrl+Alt+B" },
+    });
+    const store = useSettingsStore();
+    await store.load();
+    const bold = store.menuShortcutEntries.find((e) => e.commandId === "Bold")!;
+    expect(bold.combo).toBe("Ctrl+Alt+B");
+    expect(bold.source).toBe("custom");
+  });
+
+  it("高级读取失败回退默认 keyBinding：菜单展示默认表不崩溃（AC-C1-4 精神）", async () => {
+    // 静默降级告警（load 失败回退路径的 console.warn 不进测试输出）
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    readAdvancedMock.mockRejectedValueOnce(new Error("conf.user.json 不是合法 JSON"));
+    const store = useSettingsStore();
+    await store.load();
+    const italic = store.menuShortcutEntries.find((e) => e.commandId === "Italic")!;
+    expect(italic.combo).toBe("Ctrl+I");
+    expect(italic.source).toBe("default");
+  });
+});
+
+/** 高级设置测试桩（默认值形状；用例按需覆盖 autoSaveTimer 等字段） */
+function advancedSettingsStub(): Record<string, unknown> {
+  return {
+    defaultFontFamily: {},
+    autoHideMenuBar: false,
+    searchService: [],
+    monocolorEmoji: false,
+    flags: {},
+    keyBinding: {},
+  };
+}
