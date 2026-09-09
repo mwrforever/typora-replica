@@ -156,6 +156,7 @@ typora/
 | 目录                                     | 边界                                                                                                                                                   |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `src/services/`                          | 无 UI 依赖的应用服务（IPC invoke 封装、序列化、纯逻辑）；禁止 import Vue 组件与 `.vue` 文件                                                            |
+| `src/utils/`                             | 纯函数工具（无 UI 依赖、无 IPC——如 11 word-count 统计口径）；禁止 import Vue 组件与业务状态                                                            |
 | `src/features/`                          | 功能域（按 12 模块组织：editor / document / tabs / file-tree / outline / search / image / open-quickly）；域内状态机与编排；禁止直接操作其他域内部实现 |
 | `src/components/`                        | 展示与页面级装配；禁止堆业务逻辑（抽 features / composables）                                                                                          |
 | `src/styles/`                            | 全局样式仅 tokens.css / crepe-overrides.css，限 `.markwell-dark` 作用域                                                                                |
