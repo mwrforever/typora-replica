@@ -189,6 +189,27 @@ describe("useStatusBarData 统计装配", () => {
     dispose();
   });
 
+  it("启动窗口期（视图存在但 state 未就绪）的挂载拉取静默复位为全零且不抛错——同型缺陷挂载路径回修", async () => {
+    // 同型缺陷第二处（8eb5b3c 修了选区回调，本用例钉挂载拉取路径）：应用启动窗口期
+    // StatusBar 挂载 → watch immediate → nextTick 续延 → pullFromFacade，该时点可能
+    // 早于 Editor.create() 完成——门面 view 已存在但 state 尚未构造完，旧实现读
+    // view.state.doc 在 async 续延内抛 TypeError → unhandled rejection，首帧统计
+    // 不初始化。语义：与 !view 分支同型复位而非跳过——门面未就绪 = 统计归零待
+    // 事件补发（adopt 晚挂号快照广播 / docUpdated 防抖重算）。
+    const store = useStatusBarStore();
+    // 前置：既有统计已就位（挂载拉取须将其复位，证明拉取链完整走完）
+    store.applyDocStats({ words: 3, characters: 8, lines: 1 });
+    store.applySelectionStats({ words: 1, characters: 3, lines: 1 });
+    // create 中期视图桩：view 已存在但 state 未就绪（复现缺陷的最小形态）
+    h.view = { state: undefined };
+    const { dispose } = useStatusBarData(); // 挂载即触发 immediate watch → nextTick 续延内拉取
+    await nextTick(); // 续延执行完再断言：旧实现此处抛 unhandled rejection、统计停留前值
+    // 不抛 unhandled rejection 的行为证据：拉取链走完复位全零与无选中（抛错即停留前值）
+    expect(store.docStats).toEqual({ words: 0, characters: 0, lines: 0 });
+    expect(store.selectionStats).toBeUndefined();
+    dispose();
+  });
+
   it("dispose 成对解除双通道订阅与标签 watch", async () => {
     const tabsStore = useTabsStore();
     h.view = makeView(helloDoc());

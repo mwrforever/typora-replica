@@ -32,10 +32,16 @@ export function useStatusBarData(): { dispose(): void } {
   const selectionStatsOf = (doc: ProseMirrorNode, selection: Selection) =>
     selection.from === selection.to ? undefined : countSelection(doc, selection.from, selection.to);
 
-  // 主动拉取（挂载/标签切换）：门面空态复位全零与无选中，否则按当前视图重算双统计
+  // 主动拉取（挂载/标签切换）：门面未就绪复位全零与无选中，否则按当前视图重算双统计
   const pullFromFacade = (): void => {
     const view = editorManager.getView();
-    if (!view) {
+    // 启动窗口期守卫（与下方选区回调同型）：挂载拉取经 watch immediate → nextTick
+    // 续延执行，时点可能早于 Editor.create() 完成——此时 view 已存在但 state 尚未
+    // 构造完，读 view.state.doc 会在 async 续延内抛 TypeError → unhandled rejection，
+    // 首帧统计不初始化。走与 !view 相同的复位全零分支而非跳过：门面未就绪 =
+    // 统计归零待事件补发（adopt 晚挂号快照广播 / docUpdated 防抖重算），
+    // 与 !view 分支保持「未就绪 = 全零待补发」语义一致。
+    if (!view || !view.state) {
       store.applyDocStats({ words: 0, characters: 0, lines: 0 });
       store.applySelectionStats(undefined);
       return;
