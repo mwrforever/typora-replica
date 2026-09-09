@@ -140,3 +140,48 @@ describe("StatusBar 统计弹面板", () => {
     expect(screen.queryByRole("dialog", { name: "统计详情" })).toBeNull();
   });
 });
+
+describe("StatusBar 单位切换与选中显示", () => {
+  it("点击面板字符数条目切换默认计数单位且按钮即时跟随（AC-S3-3）", async () => {
+    // 先等装配层空门面初始拉取落地（复位全零，T6 时序先例），再注入统计
+    renderBar();
+    await flushPromises();
+    useStatusBarStore().applyDocStats({ words: 120, characters: 456, lines: 7 });
+    await flushPromises(); // 等按钮文案按注入值重渲染为「120 词」方可按可访问名点击
+    await fireEvent.click(screen.getByRole("button", { name: "120 词" }));
+    await fireEvent.click(screen.getByRole("button", { name: "字符数 456" }));
+    // 按钮切换为字符数口径；面板保持打开且 ✓ 勾选标记迁移到新单位条目
+    expect(screen.getByRole("button", { name: "456 字符" })).toBeTruthy();
+    const panel = screen.getByRole("dialog", { name: "统计详情" });
+    expect(within(panel).getByRole("button", { name: "✓ 字符数 456" })).toBeTruthy();
+    expect(within(panel).queryByRole("button", { name: "✓ 字数 120" })).toBeNull();
+  });
+
+  it("选中文字时按钮显示选中与总量并排且随单位换算（AC-S3-4，调研自定并排形态）", async () => {
+    const store = useStatusBarStore();
+    renderBar();
+    await flushPromises(); // 首拉落地后再注入统计（T6 时序先例）
+    store.applyDocStats({ words: 120, characters: 456, lines: 7 });
+    store.applySelectionStats({ words: 2, characters: 4, lines: 1 });
+    await flushPromises(); // 等按钮文案重渲染为选中形态
+    // 默认字数单位：两个 N 均为词口径（N 单位 = 当前默认计数单位，本计划口径定稿）
+    expect(screen.getByRole("button", { name: "选中 2 / 总 120" })).toBeTruthy();
+    // 经面板切到字符数单位后两个 N 同步换算为字符口径
+    await fireEvent.click(screen.getByRole("button", { name: "选中 2 / 总 120" }));
+    await fireEvent.click(screen.getByRole("button", { name: "字符数 456" }));
+    expect(screen.getByRole("button", { name: "选中 4 / 总 456" })).toBeTruthy();
+  });
+
+  it("清除选区恢复全量计数显示", async () => {
+    const store = useStatusBarStore();
+    renderBar();
+    await flushPromises(); // 首拉落地后再注入统计（T6 时序先例）
+    store.applyDocStats({ words: 120, characters: 456, lines: 7 });
+    store.applySelectionStats({ words: 2, characters: 4, lines: 1 });
+    await flushPromises();
+    expect(screen.getByRole("button", { name: "选中 2 / 总 120" })).toBeTruthy();
+    store.applySelectionStats(undefined); // 光标/取消选中（装配层清除通道）
+    await flushPromises(); // 等按钮文案回落全量口径后断言
+    expect(screen.getByRole("button", { name: "120 词" })).toBeTruthy();
+  });
+});

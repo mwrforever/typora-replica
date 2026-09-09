@@ -9,7 +9,11 @@ import { useFileTreeStore } from "../file-tree/file-tree-store";
 import { useSettingsStore } from "../settings/settings-store";
 import { useStatusBarStore } from "./status-bar-store";
 import { useStatusBarData } from "./use-status-bar-data";
-import { estimateReadingMinutes, type WordCountUnit } from "../../utils/word-count";
+import {
+  estimateReadingMinutes,
+  type WordCountStats,
+  type WordCountUnit,
+} from "../../utils/word-count";
 
 const store = useStatusBarStore();
 const settings = useSettingsStore();
@@ -44,16 +48,44 @@ const UNITS: Array<{ id: WordCountUnit; label: string; suffix: string }> = [
 // 默认计数单位（会话内 UI 状态仅本组件消费——不入 store，B.2.4；默认字数 = 调研 §2.1 用户实测）
 const unit = ref<WordCountUnit>("words");
 
-// 按单位取全量统计值（面板条目数值与「总 N」共用的取值口）
-function totalFor(id: WordCountUnit): number {
+/** 按单位从统计值中取对应计数（面板条目数值与按钮两个 N 共用的取值口，全文/选区同构） */
+function pickByUnit(stats: WordCountStats, id: WordCountUnit): number {
   switch (id) {
     case "lines":
-      return store.docStats.lines;
+      return stats.lines;
     case "characters":
-      return store.docStats.characters;
+      return stats.characters;
     case "words":
-      return store.docStats.words;
+      return stats.words;
   }
+}
+
+/** 按单位取全量统计值（面板条目数值的取值口） */
+function totalFor(id: WordCountUnit): number {
+  return pickByUnit(store.docStats, id);
+}
+
+/** 当前单位的全量统计值 */
+const totalByUnit = computed(() => totalFor(unit.value));
+
+/**
+ * 计数按钮文案（口径定稿见计划「口径定稿」节）：有选区时「选中 N / 总 N」（两个 N 恒取
+ * 当前单位口径，两 N 同单位换算——AC-S3-4）；否则「N 词/字符/行」（默认字数）
+ */
+const buttonLabel = computed(() => {
+  const selection = store.selectionStats;
+  if (selection) {
+    // 选区值与全量值共用 pickByUnit：两个 N 恒同单位换算（口径定稿）
+    const selected = pickByUnit(selection, unit.value);
+    return `选中 ${selected} / 总 ${totalByUnit.value}`;
+  }
+  const current = UNITS.find((u) => u.id === unit.value)!;
+  return `${totalByUnit.value} ${current.suffix}`;
+});
+
+/** 点击单位条目切换默认计数单位（面板保持打开，按钮即时跟随——AC-S3-3） */
+function selectUnit(id: WordCountUnit): void {
+  unit.value = id;
 }
 
 // 字数按钮点击：开合统计弹面板（面板与按钮自身 @click.stop 不冒泡，见模板）
@@ -91,7 +123,7 @@ onUnmounted(() => {
     >
       ☰
     </button>
-    <!-- 右区：字数按钮（默认字数单位；选中态「选中 N / 总 N」由 Task 7 扩展）。
+    <!-- 右区：计数按钮（默认「N 词/字符/行」随单位；有选区时「选中 N / 总 N」并排同单位换算）。
          @click.stop 防开面板的这次点击冒泡到 document 立即触发 click-away -->
     <button
       type="button"
@@ -100,7 +132,7 @@ onUnmounted(() => {
       :aria-expanded="panelOpen"
       @click.stop="togglePanel"
     >
-      {{ store.docStats.words }} 词
+      {{ buttonLabel }}
     </button>
     <!-- 统计弹面板：锚定字数按钮上方（调研 §4 自定形态；绝对定位随状态栏右缘）。
          @click.stop 面板内点击不冒泡——面板内点击不触发 click-away 关闭 -->
@@ -112,14 +144,14 @@ onUnmounted(() => {
       data-status-bar-panel
       @click.stop
     >
-      <!-- 单位条目：渲染四项中前三项（行数/字数/字符数，调研 §2.1 自定顺序）；
-           当前单位带 ✓（等宽占位防抖动）。本任务只渲染，点击切换行为由 Task 7 补 -->
+      <!-- 单位条目：点击切换默认计数单位（AC-S3-3）；当前单位带 ✓（等宽占位防抖动） -->
       <button
         v-for="u in UNITS"
         :key="u.id"
         type="button"
         class="status-bar__row"
         :data-status-bar-unit="u.id"
+        @click="selectUnit(u.id)"
       >
         <span class="status-bar__check">{{ unit === u.id ? "✓" : "" }}</span>
         {{ u.label }} {{ totalFor(u.id) }}
