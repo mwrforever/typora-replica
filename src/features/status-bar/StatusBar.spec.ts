@@ -7,7 +7,8 @@
 // 查询优先 role > text > data-status-bar-* testid 兜底；断言不存在用 queryBy*。
 // mock/构造模式沿 OutlinePanel.spec（vi.hoisted 桩容器 + editorManager 事件桥桩）。
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/vue";
+import { fireEvent, render, screen, within } from "@testing-library/vue";
+import { flushPromises } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 
 const h = vi.hoisted(() => ({
@@ -100,5 +101,42 @@ describe("StatusBar 显隐与字数按钮", () => {
     renderBar({ showStatusBar: false });
     expect(screen.queryByTestId("status-bar")).toBeNull();
     expect(screen.queryByRole("button", { name: "切换侧栏" })).toBeNull();
+  });
+});
+
+describe("StatusBar 统计弹面板", () => {
+  it("点击字数按钮弹出统计面板并按序渲染四项（AC-S3-2）", async () => {
+    renderBar(); // 默认 readingSpeed=200 → ceil(120/200)=1 分钟
+    // 先等装配层空门面初始拉取落地（watch immediate → nextTick → 复位全零，AC-S3-7 生产行为；
+    // OutlinePanel.spec 同款时序先例），再注入统计——真实链路中文档统计恒来自门面、晚于首拉
+    await flushPromises();
+    useStatusBarStore().applyDocStats({ words: 120, characters: 456, lines: 7 });
+    // 再 flush：等按钮文案按注入值重渲染为「120 词」，方可按可访问名点击
+    await flushPromises();
+    await fireEvent.click(screen.getByRole("button", { name: "120 词" }));
+    const panel = screen.getByRole("dialog", { name: "统计详情" });
+    // 四项顺序 = 调研 §2.1 自定：行数/字数/字符数/阅读时间（前三项为单位条目，阅读时间殿后非条目）；
+    // 默认单位为字数 → 字数行带 ✓；textContent 原始空白归一后断言
+    const unitRows = within(panel)
+      .getAllByRole("button")
+      .map((b) => b.textContent?.replace(/\s+/g, " ").trim());
+    expect(unitRows).toEqual(["行数 7", "✓ 字数 120", "字符数 456"]);
+    expect(within(panel).getByText("估计阅读时间 1 分钟")).toBeTruthy();
+  });
+
+  it("阅读速度为 0 时不渲染阅读时间行（AC-S3-6 组件面）", async () => {
+    useStatusBarStore().applyDocStats({ words: 120, characters: 456, lines: 7 });
+    renderBar({ readingSpeed: 0 });
+    await fireEvent.click(screen.getByRole("button", { name: "120 词" }));
+    const panel = screen.getByRole("dialog", { name: "统计详情" });
+    expect(within(panel).queryByText(/估计阅读时间/)).toBeNull();
+  });
+
+  it("点击面板外区域关闭面板（click-away，outline 菜单同模式）", async () => {
+    renderBar(); // 初始全零：按钮显示「0 词」（AC-S3-8 初始形态的组件呈现）
+    await fireEvent.click(screen.getByRole("button", { name: "0 词" }));
+    expect(screen.getByRole("dialog", { name: "统计详情" })).toBeTruthy();
+    await fireEvent.click(document.body);
+    expect(screen.queryByRole("dialog", { name: "统计详情" })).toBeNull();
   });
 });
