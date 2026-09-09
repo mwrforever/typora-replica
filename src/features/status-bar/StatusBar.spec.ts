@@ -185,3 +185,11 @@ describe("StatusBar 单位切换与选中显示", () => {
     expect(screen.getByRole("button", { name: "120 词" })).toBeTruthy();
   });
 });
+
+describe("StatusBar 侧栏开关转发", () => {
+  it("点击侧栏开关按钮转发 fileTree.toggleSidebar（AC-S3-9，渲染归 11 逻辑转发 03/12）", async () => {
+    renderBar();
+    await fireEvent.click(screen.getByRole("button", { name: "切换侧栏" }));
+    expect(h.toggleSidebar).toHaveBeenCalledTimes(1);
+  });
+});

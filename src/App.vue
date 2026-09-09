@@ -29,6 +29,7 @@ import { navigateNext, navigatePrev } from "./features/search/find-controller";
 import { registerSearchShortcuts } from "./features/search/search-shortcuts";
 import { useSearchStore } from "./features/search/search-store";
 import SettingsPanel from "./features/settings/SettingsPanel.vue";
+import StatusBar from "./features/status-bar/StatusBar.vue";
 import { registerSettingsShortcuts } from "./features/settings/settings-shortcuts";
 import { useSettingsStore } from "./features/settings/settings-store";
 import { applyKeyBindings } from "./features/settings/shortcut-binding";
@@ -327,6 +328,8 @@ function basenameOf(path: string): string {
         <TabHost />
       </div>
     </div>
+    <!-- 状态栏（11）：临时装配点（D1；fixed 底部浮层，12 窗口外壳迁移时随组件走） -->
+    <StatusBar />
   </div>
   <!-- 文件树右键菜单浮层（fixed 定位；状态由 App 层 menu ref 持有，v-if 控制渲染） -->
   <FileTreeMenu
