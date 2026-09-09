@@ -165,6 +165,30 @@ describe("useStatusBarData 统计装配", () => {
     dispose();
   });
 
+  it("编辑器 create 中期（视图已存在但 state 未就绪）到达的选区事件被静默忽略且不抛错——E2E 实证缺陷回修", () => {
+    // 缺陷出处（E2E 实证 + 二分定位 5549ee7 挂载起生效）：milkdown listener 插件在
+    // Editor.create() 过程中同步触发 selectionUpdated 桥，此时门面 view 已存在但
+    // state 尚未构造完，回调读 view.state.doc 抛 TypeError 沿同步栈上抛，炸断 create
+    // 整链（编辑器永久停留 OnCreate、门面事件流全死、自动保存不落盘）。
+    // 语义：create 中期事件静默忽略——create 完成后 adopt 晚挂号快照广播会补发当前
+    // doc/selection，统计不丢失。
+    const store = useStatusBarStore();
+    // 前置：既有统计已就位（create 中期事件不得破坏前值）
+    store.applyDocStats({ words: 3, characters: 8, lines: 1 });
+    store.applySelectionStats({ words: 1, characters: 3, lines: 1 });
+    // create 中期视图桩：view 已存在但 state 未就绪（复现缺陷的最小形态）
+    h.view = { state: undefined };
+    const { dispose } = useStatusBarData();
+    // 投递不沿同步栈抛错（TypeError 上抛即 create 链断裂的根因路径）
+    expect(() => {
+      for (const cb of h.selCbs) cb({ from: 3, to: 11 });
+    }).not.toThrow();
+    // 前值不被中期事件破坏（doc 统计同样不受影响）
+    expect(store.selectionStats).toEqual({ words: 1, characters: 3, lines: 1 });
+    expect(store.docStats).toEqual({ words: 3, characters: 8, lines: 1 });
+    dispose();
+  });
+
   it("dispose 成对解除双通道订阅与标签 watch", async () => {
     const tabsStore = useTabsStore();
     h.view = makeView(helloDoc());

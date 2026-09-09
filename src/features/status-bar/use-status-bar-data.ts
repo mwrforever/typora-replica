@@ -52,7 +52,11 @@ export function useStatusBarData(): { dispose(): void } {
   // 即时通道：选区变更 → 区间统计（doc 从门面取当前值，不缓存旧引用）
   const offSelection = editorManager.subscribeSelectionUpdated((selection) => {
     const view = editorManager.getView();
-    if (!view) return;
+    // create 中期事件静默忽略：Editor.create() 过程中 listener 插件会同步触发本桥，
+    // 此时 view 已存在但 state 尚未构造完，读 view.state.doc 会沿同步栈上抛 TypeError
+    // 炸断 create 整链（E2E 实证：编辑器停留 OnCreate、事件流全死）。create 完成后
+    // adopt 的晚挂号快照广播会补发当前 doc/selection，此处忽略不丢统计。
+    if (!view || !view.state) return;
     store.applySelectionStats(selectionStatsOf(view.state.doc, selection));
   });
 
