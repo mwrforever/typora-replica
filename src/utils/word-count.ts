@@ -97,6 +97,8 @@ export function countDocument(doc: CountableDoc): WordCountStats {
  *
  * 口径：首尾部分选中的文本节点按选区切片（Math.max/min 夹取），杜绝整节点误计；
  * 行 = 选区命中的行内内容容器块计数（被选中即计 1，自定口径，披露 3）。
+ * 契约：真实 ProseMirror selection 恒 from ≤ to；倒置坐标（from > to）属防御路径——
+ * 切片守卫拦截后词/字符恒 0，lines 仍按 nodesBetween 相交块命中计数（spec 用例钉桩）。
  * @param doc 可统计文档
  * @param from 选区起点（ProseMirror 文档坐标，来源 selection.from）
  * @param to 选区终点（来源 selection.to）；from === to（光标态）返回全零

@@ -99,7 +99,8 @@ describe("StatusBar 显隐与字数按钮", () => {
 
   it("showStatusBar 关闭时不渲染状态栏（AC-S3-10）", () => {
     renderBar({ showStatusBar: false });
-    expect(screen.queryByTestId("status-bar")).toBeNull();
+    // 根元素用 data-status-bar 属性而非 data-testid，按属性选择器断言「根元素不渲染」
+    expect(document.querySelector("[data-status-bar]")).toBeNull();
     expect(screen.queryByRole("button", { name: "切换侧栏" })).toBeNull();
   });
 });
