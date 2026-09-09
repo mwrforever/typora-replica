@@ -249,6 +249,13 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 11 状态栏核心 100%：字数统计纯函数（spec §3「口径是核心数据路径」，宪法 A.6.2）
+        "src/utils/word-count.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },

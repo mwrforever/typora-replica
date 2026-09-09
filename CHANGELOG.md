@@ -2,6 +2,11 @@
 
 > 本文件记录工程规范与体系级变更（先记变更再改正文）。代码级变更走 git 提交历史，不在此重复。
 
+## 2026-09-09 11 状态栏 B.1 表 `src/utils/` 行新增与 features 枚举补全（追认登记）
+
+- **B.1 表新增 `src/utils/` 行**：11 状态栏交付引入 `src/utils/word-count.ts` 统计口径纯函数层后，目录职责边界表补 `src/utils/` 行（纯函数工具：无 UI 依赖、无 IPC；禁止 import Vue 组件与业务状态）——正文先行、随模块计划经用户把关，本条补程序记录（PR #17）。
+- **features 行枚举补 status-bar**：B.1 表 `src/features/` 行的 12 模块枚举末尾追加 `status-bar`，与实际目录对齐。
+
 ## 2026-09-06 09 导入导出模块 Rust unsafe 引入与新增依赖登记（规范变更，A.1.3.2 例外通道）
 
 - **unsafe 引入（批4-F2 追认登记）**：09 PDF 导出在 `src-tauri/src/io/pdf.rs` 引入 WebView2 COM 打印段（`ICoreWebView2_16::PrintToPdfStream` + NavigationCompleted 事件等待 + IStream 流读取），全部 unsafe 块逐块附 `// SAFETY:` 注释——走宪法 A.1.3.2「确需引入属规范变更：须评审并逐块附 SAFETY 注释」例外通道，条款正文不变。**PR 披露追认安排**：本变更随 09 分支 PR 合入 test 时在 PR 描述强制披露清单中列明，用户把关合入即追认完成。

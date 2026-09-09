@@ -25,3 +25,12 @@ This template should help get you started developing with Vue 3 and TypeScript i
 - **高级键**：defaultFontFamily / autoHideMenuBar（true 启用自动隐藏）/ searchService / monocolorEmoji / flags / autoSaveTimer / keyBinding。General 分区提供「打开高级设置」与「重置高级设置」。
 - **自定义快捷键**：conf.user.json 的 keyBinding（键 = 菜单命令名、值 = 组合串，如 `"Always on Top": "Ctrl+Shift+P"`），重启生效；非法组合自动忽略；与内置冲突时自定义优先。
 - **autoSaveTimer 双写**：面板「Save & Recover」的保存间隔与 conf.user.json 同步双写；手工改文件后重启以文件为准。
+
+## 功能说明：状态栏（11 模块）
+
+- **字数统计**：窗口底部状态栏右区计数按钮显示全文行数 / 字数 / 字符数（默认「N 词」）；计词口径为汉字逐字计数、拉丁字母与数字连续串计一词；统计渲染级文本（代码块文字计入，Markdown 标记符不计）。
+- **选中统计**：有选中文字时按钮显示「选中 N / 总 N」，两个数值恒按当前单位同口径换算。
+- **统计详情面板**：点击计数按钮弹出面板，列出行数 / 字数 / 字符数全文三值；点击单位条目切换按钮默认计数单位（当前单位带 ✓ 标记）。
+- **阅读时间**：面板底部显示估计阅读时间（分钟，向上取整），按偏好设置的阅读速度（词/分钟，默认 200）折算；阅读速度 ≤ 0 时隐藏该行。
+- **侧栏开关**：状态栏左区 ☰ 按钮切换文件侧栏显隐。
+- **显隐开关**：状态栏显隐跟随偏好设置 Appearance 分区的「显示状态栏」。
