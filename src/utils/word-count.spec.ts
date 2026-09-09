@@ -56,12 +56,12 @@ describe("estimateReadingMinutes 阅读时间口径", () => {
 
 /** 文本节点构造（ProseMirror text 节点：isText=true 且携带 text） */
 function textNode(t: string): CountableNode {
-  return { isText: true, isBlock: false, type: { name: "text" }, text: t };
+  return { isText: true, type: { name: "text" }, text: t };
 }
 
-/** 非文本节点构造（块/行内叶子按 isBlock 与 type.name 区分） */
-function node(name: string, isBlock: boolean): CountableNode {
-  return { isText: false, isBlock, type: { name }, text: undefined };
+/** 非文本节点构造（叶子/容器节点按 type.name 区分，行判定走 countsAsLine 的类型名集合） */
+function node(name: string): CountableNode {
+  return { isText: false, type: { name }, text: undefined };
 }
 
 interface DocEntry {
@@ -92,12 +92,12 @@ function makeDoc(entries: DocEntry[]): CountableDoc {
 describe("countDocument 全文统计", () => {
   it("混排文档统计词数字符数与逻辑行（含代码块文本与 hardbreak）", () => {
     const doc = makeDoc([
-      { pos: 0, size: 10, node: node("paragraph", true) },
+      { pos: 0, size: 10, node: node("paragraph") },
       { pos: 1, size: 8, node: textNode("Hello 世界") }, // 8 字符（含 1 空格）、3 词
-      { pos: 10, size: 4, node: node("heading", true) },
+      { pos: 10, size: 4, node: node("heading") },
       { pos: 11, size: 2, node: textNode("标题") }, // 2 字符、2 词
-      { pos: 14, size: 1, node: node("hardbreak", false) }, // 断行 +1 行
-      { pos: 15, size: 50, node: node("code_block", true) },
+      { pos: 14, size: 1, node: node("hardbreak") }, // 断行 +1 行
+      { pos: 15, size: 50, node: node("code_block") },
       { pos: 16, size: 48, node: textNode("one two three four five six seven eight nine ten") }, // 48 字符、10 词
     ]);
     expect(countDocument(doc)).toEqual({ words: 15, characters: 58, lines: 4 });
@@ -106,7 +106,7 @@ describe("countDocument 全文统计", () => {
 
   it("代码块文本计入字数且渲染级无标记符（AC-S3-5）", () => {
     const doc = makeDoc([
-      { pos: 0, size: 50, node: node("code_block", true) },
+      { pos: 0, size: 50, node: node("code_block") },
       { pos: 1, size: 48, node: textNode("one two three four five six seven eight nine ten") },
     ]);
     const stats = countDocument(doc);
@@ -118,15 +118,27 @@ describe("countDocument 全文统计", () => {
   it("空文档统计全零（AC-S3-8 基座）", () => {
     expect(countDocument(makeDoc([]))).toEqual({ words: 0, characters: 0, lines: 0 });
   });
+
+  it("非文本不计行节点与空串文本节点不产词字符也不计行（批审 Critical-1：钉 countsAsLine 假分支与空文本短路路径）", () => {
+    // image 等非文本叶子既非行内内容容器也非 hardbreak → 不计行不计词不计字符；
+    // 空串 text 节点走 isText && text 的空文本短路，同样零贡献——两者夹在段落间不得污染统计
+    const doc = makeDoc([
+      { pos: 0, size: 10, node: node("paragraph") },
+      { pos: 1, size: 2, node: textNode("hi") }, // 2 字符、1 词
+      { pos: 3, size: 1, node: node("image") }, // 非文本且不计行（行 88 假分支）
+      { pos: 4, size: 0, node: textNode("") }, // 空串文本短路
+    ]);
+    expect(countDocument(doc)).toEqual({ words: 1, characters: 2, lines: 1 });
+  });
 });
 
 describe("countSelection 选区统计", () => {
   /** 双段落夹具：两段各含 abcdef/ghijkl，块占位 = 文本长 + 2 */
   function twoParagraphDoc(): CountableDoc {
     return makeDoc([
-      { pos: 0, size: 8, node: node("paragraph", true) },
+      { pos: 0, size: 8, node: node("paragraph") },
       { pos: 1, size: 6, node: textNode("abcdef") },
-      { pos: 8, size: 8, node: node("paragraph", true) },
+      { pos: 8, size: 8, node: node("paragraph") },
       { pos: 9, size: 6, node: textNode("ghijkl") },
     ]);
   }
@@ -152,6 +164,39 @@ describe("countSelection 选区统计", () => {
       words: 2,
       characters: 12,
       lines: 2,
+    });
+  });
+
+  it("选区内非文本叶子节点不计词不计字符（批审 Critical-1：钉 !isText 早退分支）", () => {
+    // image 位于选区 [2,9) 内且非行内内容容器：countsAsLine 假后 !isText 直接早退，
+    // 不得被当作文本切片来源（image 无 text 字段，误入切片即 NaN 污染统计）
+    const doc = makeDoc([
+      { pos: 0, size: 8, node: node("paragraph") },
+      { pos: 1, size: 6, node: textNode("abcdef") },
+      { pos: 7, size: 1, node: node("image") },
+    ]);
+    // 命中：paragraph（1 行）+ "bcdef" 切片（文档位 [2,7) = 文本下标 [1,6)，5 字符 1 词）+ image（早退零贡献）
+    expect(countSelection(doc, 2, 9)).toEqual({ words: 1, characters: 5, lines: 1 });
+  });
+
+  it("选区内空串文本节点被跳过不计（批审 Critical-1：钉 !text 早退分支）", () => {
+    // 空串 text 节点 isText=true 但 text 为 falsy → 早退，不产生零长切片与污染
+    const doc = makeDoc([
+      { pos: 0, size: 8, node: node("paragraph") },
+      { pos: 1, size: 0, node: textNode("") },
+      { pos: 3, size: 2, node: textNode("xy") }, // 2 字符、1 词
+    ]);
+    expect(countSelection(doc, 0, 8)).toEqual({ words: 1, characters: 2, lines: 1 });
+  });
+
+  it("倒置坐标（from > to）不因负索引切片回绕误计（批审 Critical-1：钉 end<=start 守卫）", () => {
+    // 守卫语义（按实现实测，勿改）：无 end<=start 守卫时 start>end 会 slice 出回绕片段误计；
+    // 守卫拦截后词与字符恒零。行口径为「命中即计 1」（披露 3）：nodesBetween 仍回调与
+    // [11,10) 相交的尾段块，countsAsLine 判定先于切片守卫 → lines=1 属实现既定口径
+    expect(countSelection(twoParagraphDoc(), 11, 10)).toEqual({
+      words: 0,
+      characters: 0,
+      lines: 1,
     });
   });
 });

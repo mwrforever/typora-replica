@@ -44,12 +44,12 @@ import type { CountableDoc, CountableNode } from "../../utils/word-count";
 
 /** 文本节点构造（同 word-count.spec 桩） */
 function textNode(t: string): CountableNode {
-  return { isText: true, isBlock: false, type: { name: "text" }, text: t };
+  return { isText: true, type: { name: "text" }, text: t };
 }
 
 /** 块节点构造 */
 function blockNode(name: string): CountableNode {
-  return { isText: false, isBlock: true, type: { name }, text: undefined };
+  return { isText: false, type: { name }, text: undefined };
 }
 
 interface DocEntry {

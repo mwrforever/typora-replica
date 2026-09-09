@@ -11,7 +11,6 @@ export type WordCountUnit = "words" | "characters" | "lines";
 /** 可统计节点的最小结构面（与 ProseMirror Node 结构兼容的窄接口，仅供遍历统计消费） */
 export interface CountableNode {
   readonly isText: boolean;
-  readonly isBlock: boolean;
   readonly type: { readonly name: string };
   /** 文本节点内容；非文本节点为 undefined（ProseMirror text 节点恒有值） */
   readonly text?: string;
