@@ -139,6 +139,23 @@ describe("StatusBar 统计弹面板", () => {
     await fireEvent.click(document.body);
     expect(screen.queryByRole("dialog", { name: "统计详情" })).toBeNull();
   });
+
+  it("面板钉住时再点字数按钮关闭面板并解除 click-away 监听（批审 Minor-1：钉面板再点关闭路径）", async () => {
+    // 时序沿既有先例：先等装配层空门面初始拉取落地（复位全零），再注入统计
+    renderBar();
+    await flushPromises();
+    useStatusBarStore().applyDocStats({ words: 120, characters: 456, lines: 7 });
+    await flushPromises(); // 等按钮文案重渲染为「120 词」方可按可访问名点击
+    // 第一次点击：开面板并登记 document 一次性 click-away（togglePanel 开分支）
+    await fireEvent.click(screen.getByRole("button", { name: "120 词" }));
+    expect(screen.getByRole("dialog", { name: "统计详情" })).toBeTruthy();
+    // 第二次点击同一按钮：走 else 分支——closePanel 关面板并解除未消费的 click-away
+    // 监听（StatusBar.vue:99 removeEventListener），面板自 @click.stop 不冒泡故不靠 click-away
+    await fireEvent.click(screen.getByRole("button", { name: "120 词" }));
+    expect(screen.queryByRole("dialog", { name: "统计详情" })).toBeNull();
+    // 防误绑：本用例全程未触侧栏按钮，toggleSidebar 桩不应被误触
+    expect(h.toggleSidebar).not.toHaveBeenCalled();
+  });
 });
 
 describe("StatusBar 单位切换与选中显示", () => {
