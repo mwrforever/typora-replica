@@ -52,6 +52,83 @@ export function countWords(text: string): number {
   return text.match(WORD_TOKEN_RE)?.length ?? 0;
 }
 
+/** 行内内容容器叶子块（渲染级「一行」的块级来源）+ hardbreak 行内断行同权计行 */
+const INLINE_HOST_BLOCKS = new Set(["paragraph", "heading", "code_block"]);
+
+/**
+ * 节点是否计为一行（全文与选区共用的行判定，消除两处遍历的重复表达式）
+ * @param node 遍历中回调到的节点
+ * @returns 行内内容容器块（paragraph/heading/code_block）或 hardbreak 断行返回 true
+ */
+function countsAsLine(node: CountableNode): boolean {
+  return INLINE_HOST_BLOCKS.has(node.type.name) || node.type.name === "hardbreak";
+}
+
+/**
+ * 全文统计（O(n) 单次 descendants 遍历；spec §3「统计 O(n) 字符遍历毫秒级」）
+ *
+ * 口径：全部 text 节点同权累计词与字符——代码块文本天然计入（code_block content='text*'，
+ * CodeMirror 编辑回写 text 节点，调研 §4 + 用户实测 #2），渲染级无格式标记符（加粗星号/
+ * 围栏等是 mark/语法而非 text 节点，「标记符不计」自动成立，AC-S3-5）；
+ * 行数 = 行内内容容器叶子块（paragraph/heading/code_block）计数 + hardbreak 断行计数
+ * （自定口径，调研未载明，披露 2；空文档 0 行）。
+ * @param doc 可统计文档（真 ProseMirror doc 结构兼容直传）
+ * @returns 三值统计；空文档返回全零
+ */
+export function countDocument(doc: CountableDoc): WordCountStats {
+  let words = 0;
+  let characters = 0;
+  let lines = 0;
+  doc.descendants((node) => {
+    if (node.isText && node.text) {
+      words += countWords(node.text);
+      characters += node.text.length;
+      return;
+    }
+    if (countsAsLine(node)) {
+      lines += 1;
+    }
+  });
+  return { words, characters, lines };
+}
+
+/**
+ * 选区统计（nodesBetween 区间遍历，不复制子树——spec §3「nodesBetween 区间遍历不复制子树」；
+ * 相比 doc.cut 省复制、相比 textBetween 无分隔符误计，调研 §4）
+ *
+ * 口径：首尾部分选中的文本节点按选区切片（Math.max/min 夹取），杜绝整节点误计；
+ * 行 = 选区命中的行内内容容器块计数（被选中即计 1，自定口径，披露 3）。
+ * @param doc 可统计文档
+ * @param from 选区起点（ProseMirror 文档坐标，来源 selection.from）
+ * @param to 选区终点（来源 selection.to）；from === to（光标态）返回全零
+ * @returns 三值统计
+ */
+export function countSelection(doc: CountableDoc, from: number, to: number): WordCountStats {
+  // 光标态（from === to）选区为空直接返回全零：nodesBetween 对空区间仍会回调与该位置
+  // 相交的容器块（pos < to && end > from 边界条件），不守卫会把「光标所在块」误计为 1 行
+  if (from === to) {
+    return { words: 0, characters: 0, lines: 0 };
+  }
+  let words = 0;
+  let characters = 0;
+  let lines = 0;
+  doc.nodesBetween(from, to, (node, pos) => {
+    if (countsAsLine(node)) {
+      lines += 1;
+      return;
+    }
+    if (!node.isText || !node.text) return;
+    // 首尾跨界文本节点切片：[max(pos, from), min(pos + len, to))，空区间跳过
+    const start = Math.max(pos, from);
+    const end = Math.min(pos + node.text.length, to);
+    if (end <= start) return;
+    const segment = node.text.slice(start - pos, end - pos);
+    words += countWords(segment);
+    characters += segment.length;
+  });
+  return { words, characters, lines };
+}
+
 /**
  * 估计阅读时间（分钟）
  * @param words 词数（恒按字数口径折算，不随显示单位切换）
