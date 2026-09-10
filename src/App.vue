@@ -1,17 +1,17 @@
 <!-- App.vue
      应用根组件（02 装配：启动决策/文档会话/自动保存/快捷键；
-     03 装配：侧栏/右键菜单/快捷键/拖入插链接/启动目录联动；
-     04 装配：多标签控制器——TabHost 挂载、启动/打开/文件夹/保存改接激活会话；
-     布局为 03 阶段临时形态（编辑器 + 左侧栏），12 窗口外壳替换为完整窗口装配） -->
+     03 装配：右键菜单/拖入联动/启动目录联动（侧栏及其快捷键已迁 12 外壳 AppShell）；
+     04 装配：多标签控制器——启动/打开/文件夹/保存改接激活会话；
+     12 装配：布局骨架归 components/layout/AppShell.vue（侧栏容器/中央区/状态栏容器），
+     本组件保留启动决策链与全局单例浮层（菜单/快速打开/查找替换/关闭确认/设置面板）） -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import AppShell from "./components/layout/AppShell.vue";
 import FileTreeMenu from "./features/file-tree/FileTreeMenu.vue";
-import SidebarPanel from "./features/file-tree/SidebarPanel.vue";
-import { registerFileTreeShortcuts } from "./features/file-tree/file-tree-shortcuts";
 import { useFileTreeStore } from "./features/file-tree/file-tree-store";
 import { RecentLocations } from "./features/file-tree/recent-locations";
-import { normalizePath, relativeLinkPath } from "./features/file-tree/tree-utils";
+import { normalizePath } from "./features/file-tree/tree-utils";
 import OpenQuicklyPanel from "./features/open-quickly/OpenQuicklyPanel.vue";
 import { buildQuickItems } from "./features/open-quickly/open-quickly";
 import type { QuickItem } from "./features/open-quickly/fuzzy";
@@ -19,8 +19,6 @@ import { DraftRecovery } from "./features/document/draft-recovery";
 import { editorManager } from "./features/editor/editor-manager";
 import { registerImageFeature } from "./features/image/register";
 import { registerThemeFeature } from "./features/theme/register";
-import TabHost from "./features/tabs/TabHost.vue";
-import TabBar from "./features/tabs/TabBar.vue";
 import ConfirmCloseDialog from "./features/tabs/ConfirmCloseDialog.vue";
 import { registerTabsShortcuts } from "./features/tabs/tabs-shortcuts";
 import { useTabsController } from "./features/tabs/tabs-controller";
@@ -32,7 +30,6 @@ import SettingsPanel from "./features/settings/SettingsPanel.vue";
 import { registerSettingsShortcuts } from "./features/settings/settings-shortcuts";
 import { useSettingsStore } from "./features/settings/settings-store";
 import { applyKeyBindings } from "./features/settings/shortcut-binding";
-import StatusBar from "./features/status-bar/StatusBar.vue";
 import { getCliArgs, probePathExists } from "./services/file-io";
 import { resolveLaunch } from "./services/launch-behavior";
 import { openFolderDialog, saveAsDialog } from "./services/open-commands";
@@ -76,18 +73,11 @@ const quickOpenVisible = ref(false);
 /** 面板候选（打开时构建） */
 const quickOpenItems = ref<QuickItem[]>([]);
 
-/** 文件树侧栏状态（03：可见性/面板/树数据/展开集合，Pinia 单例） */
+/** 文件树侧栏状态（03：目录数据/展开集合——启动联动与右键菜单消费；显隐/面板切换归 12 外壳） */
 const fileTree = useFileTreeStore();
 
 /** 右键菜单状态（fixed 定位坐标与目标路径；FileTreeMenu 浮层消费） */
 const menu = ref({ visible: false, x: 0, y: 0, targetPath: "" });
-
-/** 侧栏快捷键（03：Ctrl+Shift+L 侧栏开关、Ctrl+Shift+1/2/3 面板切换、Ctrl+Shift+F 搜索；12 可接管） */
-const cleanupFileTreeShortcuts = registerFileTreeShortcuts({
-  toggleSidebar: () => fileTree.toggleSidebar(),
-  switchPanel: (key) => fileTree.switchPanel(key),
-  showSearch: () => fileTree.showSearch(),
-});
 
 /**
  * 标签快捷键（04：Ctrl+N 新建 / Ctrl+W 关闭 / Ctrl+Tab 轮换 / Ctrl+Shift+T 重开；
@@ -179,24 +169,6 @@ function handleMenuOpen(path: string): void {
   }
 }
 
-/**
- * 编辑器宿主容器 drop：文件树拖入插链接（F7，AC-F7-1/2/3 文件与文件夹均支持）
- *
- * 仅接受树内条目（application/x-markwell-path 由 FileTreeItem dragstart 写入，
- * 携带完整路径）；名称取末级，相对路径含扩展名经 relativeLinkPath 计算，
- * 插入 `[名称](相对路径)` 到光标处。相对基准为激活标签会话当前目录
- * （无激活会话/目录时忽略）。dragover 阻止默认行为以允许 drop。
- */
-function onEditorDrop(event: DragEvent): void {
-  const session = tabs.activeSession();
-  const path = event.dataTransfer?.getData("application/x-markwell-path");
-  if (!path || !session?.currentDir) return;
-  event.preventDefault();
-  const name = path.split(/[/\\]/).pop() ?? path;
-  const rel = relativeLinkPath(path, session.currentDir);
-  editorManager.insertMarkdown(`[${name}](${rel})`);
-}
-
 /** 08 主题装配注销句柄（onMounted 赋值；undefined=尚未装配，宪法 A.1.2.3 用 undefined） */
 let cleanupThemeFeature: (() => void) | undefined;
 
@@ -281,7 +253,6 @@ onBeforeUnmount(() => {
   // 08 主题装配注销（含系统色系退订与防抖定时器清理；未装配时 optional chain 落空）
   cleanupThemeFeature?.();
   cleanupShortcuts();
-  cleanupFileTreeShortcuts();
   cleanupTabsShortcuts();
   cleanupSearchShortcuts();
   cleanupSettingsShortcuts();
@@ -304,33 +275,16 @@ function basenameOf(path: string): string {
 </script>
 
 <template>
-  <!-- 03 阶段临时布局：左侧栏 + 编辑器并排（12 窗口外壳替换为完整窗口装配） -->
-  <div class="app-shell">
-    <SidebarPanel
-      @open-file="handleOpenFile"
-      @open-folder="handleOpenFolder"
-      @request-menu="(p) => (menu = { visible: true, x: p.x, y: p.y, targetPath: p.path })"
-      @create-file="
-        menu = { visible: true, x: 0, y: 0, targetPath: tabs.activeSession()?.currentDir ?? '' }
-      "
-    />
-    <!-- 编辑器宿主容器：dragover 阻止默认允许 drop，drop 消费文件树拖拽插链接（F7） -->
-    <div class="editor-host" @dragover.prevent @drop="onEditorDrop">
-      <!-- 标签条（04）：渲染/激活/关闭/脏标记；close 关闭（脏标签挂起 C2 确认） -->
-      <TabBar
-        :tabs="tabs.store.tabs"
-        :active-tab-id="tabs.store.activeTabId"
-        @activate="tabs.activate"
-        @close="(id) => tabs.closeTab(id)"
-      />
-      <!-- 宿主主体：flex:1 占满剩余高度（TabBar 高度固定在上方） -->
-      <div class="editor-host__body">
-        <TabHost />
-      </div>
-    </div>
-    <!-- 状态栏（11）：临时装配点（D1；fixed 底部浮层，12 窗口外壳迁移时随组件走） -->
-    <StatusBar />
-  </div>
+  <!-- 12 窗口外壳：三区布局装配（侧栏容器/中央区/状态栏容器）；
+       业务事件上抛本层处理（打开文件/文件夹、右键菜单、新建） -->
+  <AppShell
+    @open-file="handleOpenFile"
+    @open-folder="handleOpenFolder"
+    @request-menu="(p) => (menu = { visible: true, x: p.x, y: p.y, targetPath: p.path })"
+    @create-file="
+      menu = { visible: true, x: 0, y: 0, targetPath: tabs.activeSession()?.currentDir ?? '' }
+    "
+  />
   <!-- 文件树右键菜单浮层（fixed 定位；状态由 App 层 menu ref 持有，v-if 控制渲染） -->
   <FileTreeMenu
     v-if="menu.visible"
@@ -367,24 +321,3 @@ function basenameOf(path: string): string {
   <!-- 偏好设置面板浮层（10）：显隐由 settingsStore.visible 驱动，内部自管开合 -->
   <SettingsPanel />
 </template>
-
-<style scoped>
-/* 03 阶段临时布局：侧栏（左 260px）+ 编辑器（右弹性填充）并排（12 窗口外壳替换） */
-.app-shell {
-  display: flex;
-  height: 100vh;
-}
-
-/* 04：编辑器宿主改纵向 flex——标签条固定高度，宿主主体弹性占满剩余空间 */
-.editor-host {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.editor-host__body {
-  flex: 1;
-  min-height: 0;
-}
-</style>
