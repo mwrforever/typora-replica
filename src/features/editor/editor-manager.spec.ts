@@ -1,6 +1,7 @@
 // 编辑器实例管理服务：单例生命周期 + 文档存取 + 只读切换（跨模块接口，100% 覆盖）
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Crepe } from "@milkdown/crepe";
+import { undo } from "@milkdown/kit/prose/history";
 import { TextSelection } from "@milkdown/kit/prose/state";
 import type { Node as ProseMirrorNode } from "@milkdown/kit/prose/model";
 import type { Selection } from "@milkdown/kit/prose/state";
@@ -323,6 +324,48 @@ describe("编辑器实例管理", () => {
   it("insertMarkdown 未创建实例时静默 no-op", () => {
     editorManager.destroy();
     expect(() => editorManager.insertMarkdown("x")).not.toThrow();
+  });
+
+  describe("setContent 全文替换（12 源码模式编辑回写；增补接口缺口 B）", () => {
+    it("全文替换文档内容：getMarkdown 与文档树同步更新（AC-M-8）", async () => {
+      await editorManager.create("旧内容");
+      editorManager.setContent("# 新标题\n\n新段落");
+      expect(editorManager.getMarkdown()).toBe("# 新标题\n\n新段落");
+      // 文档树真实替换：标题节点存在（非纯文本拼接）
+      const doc = editorManager.getView()!.state.doc;
+      expect(doc.childCount).toBe(2);
+      expect(doc.firstChild!.type.name).toBe("heading");
+    });
+
+    it("入参可含 Front Matter：剥离入树并更新 FM 暂存（与 getMarkdown 互逆）", async () => {
+      await editorManager.create("---\ntitle: 旧\n---\n# 旧正文");
+      editorManager.setContent("---\ntitle: 新\n---\n# 新正文");
+      expect(editorManager.getMarkdown()).toBe("---\ntitle: 新\n---\n# 新正文");
+    });
+
+    it("单事务保留 undo 栈：撤销一次即回到替换前内容", async () => {
+      await editorManager.create("原始内容");
+      editorManager.setContent("替换后内容");
+      expect(editorManager.getMarkdown()).toBe("替换后内容");
+      const view = editorManager.getView()!;
+      undo(view.state, view.dispatch);
+      expect(editorManager.getMarkdown()).toBe("原始内容");
+    });
+
+    it("应用 transformers.parse（FM 剥离先于外部解析器，与 create 同序）", async () => {
+      await editorManager.create("占位");
+      editorManager.setDocumentTransformers({
+        parse: (doc) => doc.replace("正文", "转换后"),
+      });
+      editorManager.setContent("# 正文");
+      expect(editorManager.getMarkdown()).toBe("# 转换后");
+      editorManager.setDocumentTransformers({});
+    });
+
+    it("未创建实例时静默 no-op", () => {
+      editorManager.destroy();
+      expect(() => editorManager.setContent("x")).not.toThrow();
+    });
   });
 
   describe("subscribeDocUpdated / subscribeSelectionUpdated（05 大纲消费口）", () => {
