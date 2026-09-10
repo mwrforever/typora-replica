@@ -2,6 +2,10 @@
 
 > 本文件记录工程规范与体系级变更（先记变更再改正文）。代码级变更走 git 提交历史，不在此重复。
 
+## 2026-09-10 12 窗口外壳 W4 新增 npm 直接依赖 @codemirror/* 声明化（登记）
+
+- **新增运行时依赖（声明化既有传递依赖，非新装包）**：`@codemirror/state` ^6.4.1 / `@codemirror/view` ^6.16.0 / `@codemirror/language` ^6.10.1 / `@codemirror/commands` ^6.2.4 / `@codemirror/lang-markdown` ^6.0.0 / `@codemirror/theme-one-dark` ^6.1.2。六包此前已随 `@milkdown/crepe@7.22.1`（直依前四者与 one-dark，lang-markdown 经 `@codemirror/language-data` 传递）在锁文件单拷贝存在，12 W4 源码模式需直接 import，按调研报告 §4.1 建议声明化消除 phantom import。版本以 package-lock.json 实测为准：state 6.7.1 / view 6.43.8 / language 6.12.4 / commands 6.10.4 / lang-markdown 6.5.2 / theme-one-dark 6.1.3——依赖范围取 crepe 依赖同源交集，`npm install` 后锁文件 diff 仅根 dependencies 声明 6 行新增，零版本漂移、零新增安装、零 install scripts（allowScripts 白名单不动）。许可 MIT 全系；CM6 无已知 CVE（CVE-2025-6493 仅影响 CM5）；`npm audit --audit-level=critical` 门禁继续把关。依据：docs/progress/2026-09-10-12-窗口外壳-调研报告.md §4.1（实现前置已评估批准）。
+
 ## 2026-09-10 12 窗口外壳 W3 新增 Rust 运行时依赖 tauri-plugin-window-state（登记）
 
 - **新增运行时依赖**（版本以 src-tauri/Cargo.toml 与 Cargo.lock 实测为准）：tauri-plugin-window-state 2.4.1（tauri 官方 plugins-workspace，Rust 侧 only——JS 包 @tauri-apps/plugin-window-state 不引入，被动恢复/退出保存 Rust 侧自足）。用途：12 W3 窗口状态重启恢复（AC-M-17），StateFlags 显式声明 SIZE/POSITION/MAXIMIZED/FULLSCREEN/VISIBLE（含 FULLSCREEN 为 spec 明确要求；显式枚举非 all() 防插件后续新增位静默扩权），注册于 lib.rs Builder 链（A.5.7）。评估结论：许可 `MIT OR Apache-2.0`（deny.toml 现行许可集无需改）；RustSec 无已知 advisory（cargo-deny advisories 门禁继续把关）；无 JS 侧 install scripts（allowScripts 白名单不动）；按窗口 label 分键存储与既有 window-state 语义零冲突。依据：docs/progress/2026-09-10-12-窗口外壳-调研报告.md §4.2（实现前置已评估批准）。AGENTS.md C.2 技术栈表已同步追加。
