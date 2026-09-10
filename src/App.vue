@@ -5,7 +5,8 @@
      12 装配：布局骨架归 components/layout/AppShell.vue（侧栏容器/中央区/状态栏容器），
      本组件保留启动决策链与全局单例浮层（菜单/快速打开/查找替换/关闭确认/设置面板），
      并装配 12 W2 原生菜单（menuRouter 命令依赖注入 + Themes/Open Recent 动态重建
-     + autoHideMenuBar Alt 切换）——菜单项与窗口快捷键统一经 deps 命令函数单一执行） -->
+     + autoHideMenuBar Alt 切换）与 12 W3 窗口控制（全屏/缩放/置顶/新建窗口，
+     菜单项与快捷键统一经 menuDeps/windowControls 同一命令函数单一执行） -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -37,9 +38,18 @@ import { useSettingsStore } from "./features/settings/settings-store";
 import { applyKeyBindings } from "./features/settings/shortcut-binding";
 import { useNativeMenu } from "./features/window-shell/use-native-menu";
 import { useAutoHideMenu } from "./features/window-shell/use-auto-hide-menu";
+import { createWindowControls } from "./features/window-shell/use-window-controls";
 import { registerWindowShellShortcuts } from "./features/window-shell/window-shortcuts";
 import type { MenuRouterDeps } from "./features/window-shell/menu-router";
 import { setNativeMenuVisible } from "./services/menu-io";
+import {
+  createMainWindow,
+  isMainWindow,
+  isWindowFullscreen,
+  setWebviewZoom,
+  toggleAlwaysOnTop,
+  toggleFullscreen,
+} from "./services/window-io";
 import { getCliArgs, probePathExists } from "./services/file-io";
 import { resolveLaunch } from "./services/launch-behavior";
 import {
@@ -156,6 +166,21 @@ function handleMenuOpen(path: string): void {
 let cleanupThemeFeature: (() => void) | undefined;
 
 /**
+ * 窗口控制状态机（12 W3：全屏/缩放/置顶/新窗口的命令编排；IPC 面接 services/window-io）。
+ * 菜单 action 与窗口快捷键共用本控制器方法（AC-M-3 单一执行路径）；菜单栏显隐联动
+ * 经 applyMenuVisible 转 autoHideMenuBar 状态机（onMounted 装配，optional chain 防御
+ * 装配前调用）。
+ */
+const windowControls = createWindowControls({
+  toggleFullscreenIpc: toggleFullscreen,
+  readFullscreenIpc: isWindowFullscreen,
+  toggleAlwaysOnTopIpc: toggleAlwaysOnTop,
+  setZoomIpc: setWebviewZoom,
+  createWindowIpc: () => createMainWindow(),
+  applyMenuVisible: (visible) => autoHideHandle?.applyVisible(visible),
+});
+
+/**
  * 菜单命令路由依赖（12 menuRouter 单一命令函数来源；窗口快捷键回调与菜单 action
  * 共用同一批函数引用——AC-M-3 单一执行路径）。
  * 命令覆盖：文件域（新建/打开/保存）、编辑域（剪贴板/查找）、视图域（侧栏/搜索/
@@ -233,6 +258,13 @@ const menuDeps: MenuRouterDeps = {
       console.error("[MarkWell] DevTools 切换失败", e);
     });
   },
+  // 12 W3 窗口控制（AC-M-13~16）：与快捷键共用 windowControls 同一命令方法
+  toggleFullscreen: () => windowControls.toggleFullscreen(),
+  zoomIn: () => windowControls.zoomIn(),
+  zoomOut: () => windowControls.zoomOut(),
+  zoomReset: () => windowControls.zoomReset(),
+  toggleAlwaysOnTop: () => windowControls.toggleAlwaysOnTop(),
+  newWindow: () => windowControls.newWindow(),
   selectTheme: (mode, name) => void themeStore.selectTheme(mode, name),
   openThemeFolder: () => {
     void openThemeFolder().catch((e: unknown) => {
@@ -283,11 +315,20 @@ const cleanupShortcuts = registerAppShortcuts({
   onQuickOpen: menuDeps.quickOpen,
 });
 
-/** 窗口外壳快捷键（12 W2）：Ctrl+O 打开文件 / Ctrl+Shift+S 另存为（菜单对偶注册） */
+/** 窗口外壳快捷键（12 W2）：Ctrl+O 打开 / Ctrl+Shift+S 另存为；
+ * 12 W3：F11 全屏 / Ctrl+Shift+0/=/- 缩放三键 / Ctrl+Shift+N 新建窗口（菜单对偶注册） */
 const cleanupWindowShellShortcuts = registerWindowShellShortcuts({
   onOpenFile: menuDeps.openFileDialog,
   onSaveAs: menuDeps.saveAs,
+  onToggleFullscreen: menuDeps.toggleFullscreen,
+  onZoomIn: menuDeps.zoomIn,
+  onZoomOut: menuDeps.zoomOut,
+  onZoomReset: menuDeps.zoomReset,
+  onNewWindow: menuDeps.newWindow,
 });
+
+/** Alt 切换状态机句柄（onMounted 赋值；undefined=尚未装配——全屏联动经 optional chain 防御） */
+let autoHideHandle: ReturnType<typeof useAutoHideMenu> | undefined;
 
 /**
  * 原生菜单装配句柄（onMounted 赋值；undefined=尚未装配，optional chain 防御——
@@ -318,39 +359,49 @@ onMounted(async () => {
     isEnabled: () => settingsStore.advanced?.autoHideMenuBar === true,
     setMenuVisible: setNativeMenuVisible,
   });
+  autoHideHandle = autoHide;
   cleanupAutoHideMenu = autoHide.cleanup;
-  // 启动链路：cli 参数 + 偏好 → 决策 → 多标签装配（失败回退新建，提示不崩溃）。
+  // 12 W3 启动对齐（AC-M-17）：window-state 恢复的全屏态同步菜单栏隐藏——
+  // 「进入全屏即隐菜单」语义必须覆盖重启恢复路径；须在 Alt 状态机装配后执行
+  void windowControls.syncFullscreenAtStartup();
+  // 启动链路（仅主窗口）：cli 参数 + 偏好 → 决策 → 多标签装配（失败回退新建，
+  // 提示不崩溃）。12 W3 次窗口（New Window 创建，AC-M-16）不复制主窗口启动决策
+  //——cli 参数/重启恢复偏好属主窗口启动语义，次窗口恒新建空文档标签（独立标签状态）。
   // 偏好复用 settingsStore 已装载的 GUI 快照（避免二次读盘；undefined 防御回落默认）
-  const cli = await getCliArgs();
-  const settings = settingsStore.gui ?? DEFAULT_SETTINGS;
-  // 路径存在性探测（I-1 修复）：listDir 优先——readFile 对目录必失败，
-  // 旧内联 readFile 探测令文件夹存在性恒 false（AC-F14-1/2 失效根因）
-  const decision = await resolveLaunch(cli, settings, probePathExists);
-  switch (decision.action) {
-    case "new":
-      tabs.createUntitled();
-      break;
-    case "open-folder":
-      // 02 语义（openFolder + newDocument）：空文档标签 + 目录登记/侧栏联动
-      tabs.createUntitled();
-      await handleOpenFolder(decision.path);
-      break;
-    case "open-file":
-      // F14-2：restore-both 恢复上次文件夹为侧栏目录（目录先入侧栏再打开文件，
-      // 不再被文件父目录覆盖）；纯 --reopen-file 走 handleOpenFile——F1-2 语义
-      // 父目录进侧栏（内部已含 created 才 loadDir 联动，不重复加载）。
-      // Q 修复：--reopen-file 不恢复文件夹，避免陈旧 lastFolder 置顶污染最近文件列表
-      if (decision.restoreFolder && settings.launch.lastFolder) {
-        await handleOpenFolder(settings.launch.lastFolder);
-        await tabs.openFile(decision.path, basenameOf(decision.path));
-      } else {
-        await handleOpenFile(decision.path);
-      }
-      break;
+  if (isMainWindow()) {
+    const cli = await getCliArgs();
+    const settings = settingsStore.gui ?? DEFAULT_SETTINGS;
+    // 路径存在性探测（I-1 修复）：listDir 优先——readFile 对目录必失败，
+    // 旧内联 readFile 探测令文件夹存在性恒 false（AC-F14-1/2 失效根因）
+    const decision = await resolveLaunch(cli, settings, probePathExists);
+    switch (decision.action) {
+      case "new":
+        tabs.createUntitled();
+        break;
+      case "open-folder":
+        // 02 语义（openFolder + newDocument）：空文档标签 + 目录登记/侧栏联动
+        tabs.createUntitled();
+        await handleOpenFolder(decision.path);
+        break;
+      case "open-file":
+        // F14-2：restore-both 恢复上次文件夹为侧栏目录（目录先入侧栏再打开文件，
+        // 不再被文件父目录覆盖）；纯 --reopen-file 走 handleOpenFile——F1-2 语义
+        // 父目录进侧栏（内部已含 created 才 loadDir 联动，不重复加载）。
+        // Q 修复：--reopen-file 不恢复文件夹，避免陈旧 lastFolder 置顶污染最近文件列表
+        if (decision.restoreFolder && settings.launch.lastFolder) {
+          await handleOpenFolder(settings.launch.lastFolder);
+          await tabs.openFile(decision.path, basenameOf(decision.path));
+        } else {
+          await handleOpenFile(decision.path);
+        }
+        break;
+    }
+    // 启动提示（回退新建原因等）：会话可能尚未挂载（实例上缴前无激活会话），
+    // optional chain 安全投递——挂载前丢弃可接受（P1 控制台通知口径）
+    if (decision.notice) tabs.activeSession()?.notify({ level: "info", message: decision.notice });
+  } else {
+    tabs.createUntitled();
   }
-  // 启动提示（回退新建原因等）：会话可能尚未挂载（实例上缴前无激活会话），
-  // optional chain 安全投递——挂载前丢弃可接受（P1 控制台通知口径）
-  if (decision.notice) tabs.activeSession()?.notify({ level: "info", message: decision.notice });
   // 草稿心跳：门面 markdownUpdated 流（仅激活标签编辑触发，P1 语义）
   drafts.start((cb) => editorManager.subscribeMarkdownUpdated(cb));
   drafts.setupExitBackup(async (onCloseHandler) => {

@@ -9,8 +9,10 @@
 //   （settingsStore.menuShortcutEntries 实时合并 keyBinding 覆盖）取 label 与组合串；
 // 2. 其余项 → 硬编码中文 label + 组合串（逐项对照 00 spec §11 表）。
 // 真实性纪律：可启用项的组合串必须是当前真实注册的快捷键（编辑器内置键位/窗口级
-// keydown）；未注册组合的项不拼 "\t" 段（防虚假快捷键提示）；后续工作包注册组合后
-// 随批补文案。禁用项可保留设计目标组合（AC 禁用态语义，不可点不产生虚假承诺）。
+// keydown/WebView 原生光标行为——Edit 菜单「跳转到顶部/底部」的 Ctrl+Home/End 为
+// WebView 自带编辑键位，前端不拦截由 WebView 执行）；未注册组合的项不拼 "\t" 段
+//（防虚假快捷键提示）；后续工作包注册组合后随批补文案。禁用项可保留设计目标组合
+//（AC 禁用态语义，不可点不产生虚假承诺）。
 import type { MenuNode } from "../../services/menu-io";
 import type { MenuShortcutEntry } from "../settings/shortcut-binding";
 import type { ExportMenuEntry } from "../export/export-commands";
@@ -113,9 +115,11 @@ function buildFileMenu(input: MenuTreeInput): MenuNode {
     id: "menu.file",
     label: "文件",
     items: [
-      catalogItem("file.new-tab", "New Tab", input.shortcutEntries),
-      // 新建窗口：W3 窗口控制接入后启用（Ctrl+Shift+N 随 W3 注册）
-      disabled("file.new-window", "新建窗口\tCtrl+Shift+N"),
+      // 新建标签页：00 spec §11.1 标注 Win 无快捷键（官方 Not Supported）——label
+      // 不拼组合段；Ctrl+N 键盘通路归「新建」（04 tabs-shortcuts 仍注册新建标签）
+      { kind: "item", id: "file.new-tab", label: "新建标签页", enabled: true },
+      // 新建窗口：12 W3 已接入（Ctrl+Shift+N 随 W3 注册，AC-M-16）
+      { kind: "item", id: "file.new-window", label: "新建窗口\tCtrl+Shift+N", enabled: true },
       { kind: "item", id: "file.new", label: "新建\tCtrl+N", enabled: true },
       { kind: "separator" },
       { kind: "item", id: "file.open", label: "打开\tCtrl+O", enabled: true },
@@ -261,8 +265,8 @@ function buildFormatMenu(input: MenuTreeInput): MenuNode {
 }
 
 /**
- * 构建 View 菜单子树（00 spec §11.5；侧栏/面板/搜索/切换文档/DevTools 可执行，
- * 源码模式/专注/打字机/全屏/缩放/置顶属 W3~W5 工作包，先以禁用态占位）
+ * 构建 View 菜单子树（00 spec §11.5；侧栏/面板/搜索/切换文档/DevTools/全屏/缩放/
+ * 置顶可执行，源码模式/专注/打字机属 W4~W5 工作包，先以禁用态占位）
  */
 function buildViewMenu(): MenuNode {
   return {
@@ -282,12 +286,13 @@ function buildViewMenu(): MenuNode {
       // 打字机模式：W5 接入（F9）
       disabled("view.typewriter-mode", "打字机模式\tF9"),
       { kind: "separator" },
-      // 全屏/缩放/置顶：W3 窗口控制接入后启用
-      disabled("view.fullscreen", "切换全屏\tF11"),
-      disabled("view.zoom-actual", "原始尺寸\tCtrl+Shift+0"),
-      disabled("view.zoom-in", "放大\tCtrl+Shift+="),
-      disabled("view.zoom-out", "缩小\tCtrl+Shift+-"),
-      disabled("view.always-on-top", "窗口置顶"),
+      // 全屏/缩放三键：12 W3 已接入（F11 / Ctrl+Shift+0/=/-，AC-M-13/14）
+      { kind: "item", id: "view.fullscreen", label: "切换全屏\tF11", enabled: true },
+      { kind: "item", id: "view.zoom-actual", label: "原始尺寸\tCtrl+Shift+0", enabled: true },
+      { kind: "item", id: "view.zoom-in", label: "放大\tCtrl+Shift+=", enabled: true },
+      { kind: "item", id: "view.zoom-out", label: "缩小\tCtrl+Shift+-", enabled: true },
+      // 窗口置顶：12 W3 已接入（无默认快捷键——00 spec §2.3，可经 10 keyBinding 自定义）
+      { kind: "item", id: "view.always-on-top", label: "窗口置顶", enabled: true },
       { kind: "separator" },
       { kind: "item", id: "view.global-search", label: "全局搜索\tCtrl+Shift+F", enabled: true },
       { kind: "item", id: "view.switch-doc", label: "切换打开的文档\tCtrl+Tab", enabled: true },

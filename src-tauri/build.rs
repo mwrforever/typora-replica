@@ -61,6 +61,13 @@ fn main() {
             // 12 W2 原生菜单栏显隐（window_menu.rs）：漏声明则
             // allow-set-native-menu-visible 权限不会生成，capabilities 引用即构建失败
             "set_native_menu_visible",
+            // 12 W3 窗口控制（window_controls.rs）：漏声明则 allow-* 权限不会生成，
+            // capabilities 引用即构建失败
+            "toggle_fullscreen",
+            "is_window_fullscreen",
+            "toggle_always_on_top",
+            "set_webview_zoom",
+            "create_main_window",
         ]))
         // 关闭 tauri-build 默认 manifest：改由下方 rustc-link-arg 统一嵌入，
         // 否则主程序出现两份 manifest 资源（winres 一份 + 链接器一份）冲突

@@ -62,6 +62,18 @@ export interface MenuRouterDeps {
   switchDocNext: () => void;
   /** 切换 DevTools（08 toggleDevtools） */
   toggleDevtools: () => void;
+  /** 切换全屏并联动菜单栏显隐（12 W3 window-controls，AC-M-13） */
+  toggleFullscreen: () => void;
+  /** 缩放放大一档（12 W3，AC-M-14） */
+  zoomIn: () => void;
+  /** 缩放缩小一档（12 W3，AC-M-14） */
+  zoomOut: () => void;
+  /** 缩放恢复原始尺寸（12 W3，AC-M-14） */
+  zoomReset: () => void;
+  /** 切换窗口置顶（12 W3，AC-M-15 仅当前窗口） */
+  toggleAlwaysOnTop: () => void;
+  /** 新建窗口（12 W3，AC-M-16 空文档独立状态） */
+  newWindow: () => void;
   /** 选择主题（08 selectTheme；mode = 菜单构建时的当前色系） */
   selectTheme: (mode: ThemeMode, name: string) => void;
   /** 打开主题文件夹（08 openThemeFolder） */
@@ -120,6 +132,7 @@ export function createMenuRouter(deps: MenuRouterDeps, input: MenuRouterInput): 
     Object.entries({
       "file.new": () => deps.newTab(),
       "file.new-tab": () => deps.newTab(),
+      "file.new-window": () => deps.newWindow(),
       "file.open": () => deps.openFileDialog(),
       "file.open-quickly": () => deps.quickOpen(),
       "file.clear-recent": () => deps.clearRecent(),
@@ -141,6 +154,11 @@ export function createMenuRouter(deps: MenuRouterDeps, input: MenuRouterInput): 
       "view.global-search": () => deps.globalSearch(),
       "view.switch-doc": () => deps.switchDocNext(),
       "view.toggle-devtools": () => deps.toggleDevtools(),
+      "view.fullscreen": () => deps.toggleFullscreen(),
+      "view.zoom-in": () => deps.zoomIn(),
+      "view.zoom-out": () => deps.zoomOut(),
+      "view.zoom-actual": () => deps.zoomReset(),
+      "view.always-on-top": () => deps.toggleAlwaysOnTop(),
       "themes.open-folder": () => deps.openThemeFolder(),
     } satisfies Record<string, () => void>),
   );

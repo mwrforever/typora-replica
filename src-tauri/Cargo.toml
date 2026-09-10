@@ -36,6 +36,9 @@ trash = "5.2"
 pathdiff = "0.2"
 tauri-plugin-dialog = "2"
 tauri-plugin-store = "2"
+# 12 W3 窗口状态重启恢复（AC-M-17）：全屏/最大化等窗口状态按 label 分键落盘与恢复；
+# StateFlags 显式含 FULLSCREEN（注册见 lib.rs window_state_flags，评估记录见 CHANGELOG 2026-09-10）
+tauri-plugin-window-state = "2"
 # 09 PDF 导出：WebView2 打印管线（PrintToPdfStream）。版本对齐 tauri 2.11 内部
 # webview2-com 0.38（cargo tree 实证），防嵌套双拷贝（宪法 B.2.5 同源精神）
 webview2-com = "0.38.2"

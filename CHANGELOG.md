@@ -2,6 +2,11 @@
 
 > 本文件记录工程规范与体系级变更（先记变更再改正文）。代码级变更走 git 提交历史，不在此重复。
 
+## 2026-09-10 12 窗口外壳 W3 新增 Rust 运行时依赖 tauri-plugin-window-state（登记）
+
+- **新增运行时依赖**（版本以 src-tauri/Cargo.toml 与 Cargo.lock 实测为准）：tauri-plugin-window-state 2.4.1（tauri 官方 plugins-workspace，Rust 侧 only——JS 包 @tauri-apps/plugin-window-state 不引入，被动恢复/退出保存 Rust 侧自足）。用途：12 W3 窗口状态重启恢复（AC-M-17），StateFlags 显式声明 SIZE/POSITION/MAXIMIZED/FULLSCREEN/VISIBLE（含 FULLSCREEN 为 spec 明确要求；显式枚举非 all() 防插件后续新增位静默扩权），注册于 lib.rs Builder 链（A.5.7）。评估结论：许可 `MIT OR Apache-2.0`（deny.toml 现行许可集无需改）；RustSec 无已知 advisory（cargo-deny advisories 门禁继续把关）；无 JS 侧 install scripts（allowScripts 白名单不动）；按窗口 label 分键存储与既有 window-state 语义零冲突。依据：docs/progress/2026-09-10-12-窗口外壳-调研报告.md §4.2（实现前置已评估批准）。AGENTS.md C.2 技术栈表已同步追加。
+- **08#1 多窗口主题守卫（TASK.md 同步收口）**：register.ts 按 window label 判定（services/window-io.isMainWindow）传 `init({ watchFs })`，次窗口跳过 watch_themes 订阅——Rust 监视槽位进程级单槽（后订阅顶掉先订阅），守卫防次窗订阅顶掉主窗句柄、防次窗关闭清共享槽位；dispose 侧以 themeWatchActive 为门不受影响。
+
 ## 2026-09-09 11 状态栏 B.1 表 `src/utils/` 行新增与 features 枚举补全（追认登记）
 
 - **B.1 表新增 `src/utils/` 行**：11 状态栏交付引入 `src/utils/word-count.ts` 统计口径纯函数层后，目录职责边界表补 `src/utils/` 行（纯函数工具：无 UI 依赖、无 IPC；禁止 import Vue 组件与业务状态）——正文先行、随模块计划经用户把关，本条补程序记录（PR #17）。

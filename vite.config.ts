@@ -272,6 +272,14 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 12 W3 窗口控制 IPC 契约封装 100%（全屏/置顶/缩放/新建窗口/全屏态查询 +
+        // 主窗口 label 判定；AC-M-13~17 的 IPC 面，宪法 A.6.2 核心域同步阈值）
+        "src/services/window-io.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },

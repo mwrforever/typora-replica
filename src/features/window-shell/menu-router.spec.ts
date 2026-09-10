@@ -35,6 +35,12 @@ function makeDeps(): MenuRouterDeps {
     globalSearch: vi.fn(),
     switchDocNext: vi.fn(),
     toggleDevtools: vi.fn(),
+    toggleFullscreen: vi.fn(),
+    zoomIn: vi.fn(),
+    zoomOut: vi.fn(),
+    zoomReset: vi.fn(),
+    toggleAlwaysOnTop: vi.fn(),
+    newWindow: vi.fn(),
     selectTheme: vi.fn(),
     openThemeFolder: vi.fn(),
     notifyError: vi.fn(),
@@ -73,6 +79,8 @@ describe("createMenuRouter 精确表域", () => {
     expect(deps.newTab).toHaveBeenCalledOnce();
     router.run("file.new-tab");
     expect(deps.newTab).toHaveBeenCalledTimes(2);
+    router.run("file.new-window");
+    expect(deps.newWindow).toHaveBeenCalledOnce();
     router.run("file.open");
     expect(deps.openFileDialog).toHaveBeenCalledOnce();
     router.run("file.open-quickly");
@@ -180,9 +188,28 @@ describe("createMenuRouter 前缀域", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const deps = makeDeps();
     const router = createMenuRouter(deps, baseInput);
-    router.run("view.fullscreen");
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("view.fullscreen"));
+    router.run("view.source-mode");
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("view.source-mode"));
     expect(deps.notifyError).not.toHaveBeenCalled();
+  });
+});
+
+describe("createMenuRouter 窗口控制域（12 W3：AC-M-13~16 单一执行路径）", () => {
+  it("全屏/缩放三键/置顶/新建窗口 id 派发到 window-controls 命令回调", () => {
+    const deps = makeDeps();
+    const router = createMenuRouter(deps, baseInput);
+    router.run("view.fullscreen");
+    expect(deps.toggleFullscreen).toHaveBeenCalledOnce();
+    router.run("view.zoom-in");
+    expect(deps.zoomIn).toHaveBeenCalledOnce();
+    router.run("view.zoom-out");
+    expect(deps.zoomOut).toHaveBeenCalledOnce();
+    router.run("view.zoom-actual");
+    expect(deps.zoomReset).toHaveBeenCalledOnce();
+    router.run("view.always-on-top");
+    expect(deps.toggleAlwaysOnTop).toHaveBeenCalledOnce();
+    router.run("file.new-window");
+    expect(deps.newWindow).toHaveBeenCalledOnce();
   });
 });
 

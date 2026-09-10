@@ -166,11 +166,20 @@ describe("File 菜单（00 spec §11.1）", () => {
 
   it("catalog 命令项 label/组合串走实时条目（keyBinding 覆盖同步生效）", () => {
     const tree = buildMenuTree(baseInput);
-    // New Tab / Close Tab 为 catalog 窗口域命令：label 与组合串取条目实时值
-    const newTab = findById(tree, "file.new-tab");
-    expect(newTab && newTab.kind === "item" ? newTab.label : undefined).toBe("新建标签页\tCtrl+N");
+    // Close Tab 为 catalog 窗口域命令：label 与组合串取条目实时值
     const close = findById(tree, "file.close");
     expect(close && close.kind === "item" ? close.label : undefined).toBe("关闭标签页\tCtrl+W");
+  });
+
+  it("新建标签页不拼组合段（00 spec §11.1 New Tab Win 无快捷键），新建窗口携 W3 注册组合", () => {
+    const tree = buildMenuTree(baseInput);
+    const newTab = findById(tree, "file.new-tab");
+    expect(newTab && newTab.kind === "item" ? newTab.label : undefined).toBe("新建标签页");
+    const newWindow = findById(tree, "file.new-window");
+    expect(newWindow && newWindow.kind === "item" ? newWindow.label : undefined).toBe(
+      "新建窗口\tCtrl+Shift+N",
+    );
+    expect(newWindow && newWindow.kind === "item" ? newWindow.enabled : undefined).toBe(true);
   });
 
   it("Export 子菜单实时渲染导出项：禁用占位透传 + 固定项前插分隔线", () => {
@@ -220,12 +229,10 @@ describe("File 菜单（00 spec §11.1）", () => {
     ]);
   });
 
-  it("Print 与新建窗口为明确禁用态（无实现面/W3 接入前）", () => {
+  it("Print 为明确禁用态（无打印实现面，用户裁决首版禁用）", () => {
     const tree = buildMenuTree(baseInput);
     const print = findById(tree, "file.print");
     expect(print && print.kind === "item" ? print.enabled : undefined).toBe(false);
-    const newWindow = findById(tree, "file.new-window");
-    expect(newWindow && newWindow.kind === "item" ? newWindow.enabled : undefined).toBe(false);
   });
 
   it("最近列表为空时 Open Recent 仅剩清除项（无分隔线残留）", () => {
@@ -273,7 +280,7 @@ describe("Edit/Paragraph/Format 菜单（00 spec §11.2-11.4）", () => {
     );
   });
 
-  it("无实现面项为明确禁用态（打印/下划线/超链接/图片/清除格式/数学块/拼写检查）", () => {
+  it("无实现面项为明确禁用态（下划线/超链接/图片/清除格式/数学块/拼写检查/源码/专注/打字机）", () => {
     const tree = buildMenuTree(baseInput);
     for (const id of [
       "editor.Underline",
@@ -283,15 +290,33 @@ describe("Edit/Paragraph/Format 菜单（00 spec §11.2-11.4）", () => {
       "editor.Math Block",
       "edit.spell-check",
       "edit.select-line",
+      // 源码/专注/打字机属 W4~W5 工作包，先以禁用态占位
       "view.source-mode",
       "view.focus-mode",
       "view.typewriter-mode",
-      "view.fullscreen",
-      "view.always-on-top",
     ]) {
       const node = findById(tree, id);
       expect(node && node.kind === "item" ? node.enabled : undefined).toBe(false);
     }
+  });
+
+  it("12 W3 窗口控制项为可执行态且携真实注册组合（全屏/缩放三键/置顶）", () => {
+    const tree = buildMenuTree(baseInput);
+    const expected: Record<string, string> = {
+      "view.fullscreen": "切换全屏\tF11",
+      "view.zoom-actual": "原始尺寸\tCtrl+Shift+0",
+      "view.zoom-in": "放大\tCtrl+Shift+=",
+      "view.zoom-out": "缩小\tCtrl+Shift+-",
+    };
+    for (const [id, label] of Object.entries(expected)) {
+      const node = findById(tree, id);
+      expect(node && node.kind === "item" ? node.enabled : undefined).toBe(true);
+      expect(node && node.kind === "item" ? node.label : undefined).toBe(label);
+    }
+    // 置顶无默认快捷键（00 spec §2.3）：可执行且不拼组合段
+    const onTop = findById(tree, "view.always-on-top");
+    expect(onTop && onTop.kind === "item" ? onTop.enabled : undefined).toBe(true);
+    expect(onTop && onTop.kind === "item" ? onTop.label : undefined).toBe("窗口置顶");
   });
 
   it("未注册组合的可执行项不拼虚假快捷键段（表格/删除线/引用/列表/缩进出例外核对）", () => {

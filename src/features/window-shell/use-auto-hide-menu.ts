@@ -22,6 +22,12 @@ export interface AutoHideMenuOptions {
 export interface AutoHideMenuHandle {
   /** 当前菜单可见性标记（内部状态镜像；仅测试/调试消费） */
   visible: () => boolean;
+  /**
+   * 外部状态机驱动的显隐应用（12 W3 全屏联动消费：进入全屏隐藏/退出恢复）。
+   * 与 Alt 单按共用同一可见性标记与 IPC 通道——全屏期间 Alt 唤出菜单仍可用，
+   * 两路径基于同一真值取反，互不抢状态；失败回滚语义同 Alt 路径
+   */
+  applyVisible: (next: boolean) => void;
   /** 移除 window keydown 监听（App 卸载调用；幂等） */
   cleanup: () => void;
 }
@@ -42,6 +48,19 @@ export function useAutoHideMenu(options: AutoHideMenuOptions): AutoHideMenuHandl
   /** 菜单可见性标记（初始可见：原生菜单装配后默认挂载显示） */
   const visible = ref(true);
 
+  /**
+   * 显隐应用共步（Alt 切换与全屏联动共用）：先落标记再发 IPC，快速连按按最终态
+   * 收敛；IPC 失败回滚标记，保证下一轮取反基于真实可见性
+   */
+  const applyVisible = (next: boolean): void => {
+    const prev = visible.value;
+    visible.value = next;
+    setMenuVisible(next).catch((e: unknown) => {
+      visible.value = prev;
+      console.error("[MarkWell] 菜单栏显隐切换失败（autoHideMenuBar）", e);
+    });
+  };
+
   const onKeydown = (event: KeyboardEvent): void => {
     // 编辑器/其他窗口级服务已消费的按键不重复处理（prosemirror-view 命中仅
     // preventDefault 不阻断传播，事件仍冒泡到 window）
@@ -52,18 +71,13 @@ export function useAutoHideMenu(options: AutoHideMenuOptions): AutoHideMenuHandl
     if (event.key !== "Alt") return;
     if (event.ctrlKey || event.shiftKey || event.metaKey || event.repeat) return;
     event.preventDefault();
-    const next = !visible.value;
-    // 先落标记再发 IPC：快速连按按最终态收敛；失败回滚标记保证下轮取反正确
-    visible.value = next;
-    setMenuVisible(next).catch((e: unknown) => {
-      visible.value = !next;
-      console.error("[MarkWell] 菜单栏显隐切换失败（autoHideMenuBar）", e);
-    });
+    applyVisible(!visible.value);
   };
 
   window.addEventListener("keydown", onKeydown);
   return {
     visible: () => visible.value,
+    applyVisible,
     cleanup: () => window.removeEventListener("keydown", onKeydown),
   };
 }

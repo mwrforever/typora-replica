@@ -15,8 +15,8 @@ describe("parseShortcutCombo 合法组合", () => {
     expect(parseShortcutCombo("Ctrl+Alt+1")).toBe("Mod-Alt-1");
   });
 
-  it("Ctrl+Shift+= → Mod-Shift-=（符号主键）", () => {
-    expect(parseShortcutCombo("Ctrl+Shift+=")).toBe("Mod-Shift-=");
+  it("Ctrl+Shift+] → Mod-Shift-]（符号主键；原 Ctrl+Shift+= 样例已入 W3 窗口保留面）", () => {
+    expect(parseShortcutCombo("Ctrl+Shift+]")).toBe("Mod-Shift-]");
   });
 
   it("Ctrl+F12 → Mod-F12（具名功能键 canonical 形态，事件键名查表大小写敏感）", () => {
@@ -86,6 +86,10 @@ describe("parseShortcutCombo 窗口保留组合拒绝（code-review M-1②）", 
     expect(parseShortcutCombo("Ctrl+,")).toBeUndefined(); // 10 面板开合
     expect(parseShortcutCombo("Ctrl+O")).toBeUndefined(); // 12 打开文件（W2 菜单装配）
     expect(parseShortcutCombo("Ctrl+Shift+S")).toBeUndefined(); // 12 另存为（W2 菜单装配）
+    expect(parseShortcutCombo("Ctrl+Shift+N")).toBeUndefined(); // 12 新建窗口（W3，AC-M-16）
+    expect(parseShortcutCombo("Ctrl+Shift+0")).toBeUndefined(); // 12 缩放原始尺寸（W3，AC-M-14）
+    expect(parseShortcutCombo("Ctrl+Shift+=")).toBeUndefined(); // 12 缩放放大（W3，AC-M-14）
+    expect(parseShortcutCombo("Ctrl+Shift+-")).toBeUndefined(); // 12 缩放缩小（W3，AC-M-14）
   });
 
   it("大小写与修饰键别名归一后同样命中拒绝（canonical 化比对防绕过）", () => {

@@ -104,3 +104,48 @@ describe("useAutoHideMenu（AC-M-5 Alt 单按切换）", () => {
     expect(setMenuVisible).not.toHaveBeenCalled();
   });
 });
+
+describe("applyVisible（12 W3 全屏联动出口：外部状态机驱动的显隐应用）", () => {
+  let cleanup: (() => void) | undefined;
+  afterEach(() => {
+    cleanup?.();
+    cleanup = undefined;
+  });
+
+  it("applyVisible(false) 隐藏菜单栏，Alt 下一轮取反基于同一真值（全屏期 Alt 唤出可用）", () => {
+    const setMenuVisible = vi.fn(() => Promise.resolve());
+    const handle = useAutoHideMenu({ isEnabled: () => true, setMenuVisible });
+    cleanup = handle.cleanup;
+    // 全屏进入：全屏状态机驱动的隐藏（不受 isEnabled 门控——AC-M-13 无条件隐藏）
+    handle.applyVisible(false);
+    expect(handle.visible()).toBe(false);
+    expect(setMenuVisible).toHaveBeenCalledWith(false);
+    // 全屏期间 Alt 单按：基于同一标记取反 → 唤出菜单（true）
+    pressAlt();
+    expect(setMenuVisible).toHaveBeenLastCalledWith(true);
+    expect(handle.visible()).toBe(true);
+  });
+
+  it("applyVisible(true) 恢复显示（全屏退出路径）", () => {
+    const setMenuVisible = vi.fn(() => Promise.resolve());
+    const handle = useAutoHideMenu({ isEnabled: () => true, setMenuVisible });
+    cleanup = handle.cleanup;
+    handle.applyVisible(false);
+    handle.applyVisible(true);
+    expect(setMenuVisible).toHaveBeenLastCalledWith(true);
+    expect(handle.visible()).toBe(true);
+  });
+
+  it("applyVisible 的 IPC 失败同样回滚标记（与 Alt 路径同一失败语义）", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const setMenuVisible = vi.fn(() => Promise.reject(new Error("平台失败")));
+    const handle = useAutoHideMenu({ isEnabled: () => true, setMenuVisible });
+    cleanup = handle.cleanup;
+    handle.applyVisible(false);
+    expect(handle.visible()).toBe(false); // 先落标记
+    await vi.waitFor(() => {
+      expect(handle.visible()).toBe(true); // 失败回滚
+      expect(error).toHaveBeenCalled();
+    });
+  });
+});
