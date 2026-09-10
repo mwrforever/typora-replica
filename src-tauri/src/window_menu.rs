@@ -28,9 +28,9 @@ impl Serialize for NativeMenuError {
 
 /// 设置原生菜单栏可见性（AC-M-5：autoHideMenuBar 开启时 Alt 单按切换显隐）
 ///
-/// @param visible true = 显示菜单栏（show_menu）；false = 隐藏菜单栏（hide_menu）
-/// @window 目标窗口（单窗口形态恒为主窗口，由 Tauri 注入）
-/// @returns Ok = 切换完成；Err = 平台调用失败（前端记录告警，不阻断交互）
+/// `visible` 为 true 时显示菜单栏（show_menu），false 时隐藏菜单栏（hide_menu）。
+/// `window` 为目标窗口（单窗口形态恒为主窗口，由 Tauri 注入）。
+/// 返回 Ok 表示切换完成；Err 表示平台调用失败（前端记录告警，不阻断交互）。
 // 泛型运行时（与 search_in_folder 同型）：tauri features:test mock 运行时直呼命令测试（A.6.5）
 #[tauri::command]
 pub fn set_native_menu_visible<R: tauri::Runtime>(

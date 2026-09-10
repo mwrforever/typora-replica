@@ -49,6 +49,7 @@ vi.mock("../../services/settings", async (importOriginal) => {
 
 import AppShell from "./AppShell.vue";
 import { useSettingsStore } from "../../features/settings/settings-store";
+import { useFileTreeStore } from "../../features/file-tree/file-tree-store";
 import { updateSettings, DEFAULT_SETTINGS } from "../../services/settings";
 
 /** 渲染外壳：可选注入设置快照（写入 store.gui；未注入即回落 DEFAULT_SETTINGS） */
@@ -127,11 +128,15 @@ describe("AppShell 侧栏开合与面板切换（AC-M-22）", () => {
     expect(sidebarContainer().style.display).not.toBe("none");
   });
 
-  it("注销后快捷键不再响应（卸载清理，App.vue 迁入语义不变）", async () => {
+  it("注销后快捷键不再响应（卸载清理，spy 断言 store 动作真实未触发）", async () => {
+    const fileTreeStore = useFileTreeStore();
+    const toggleSpy = vi.spyOn(fileTreeStore, "toggleSidebar");
     const { unmount } = renderShell();
     unmount();
-    // 卸载后容器已移除；监听若未清理，此派发将触达已失效的 store 引用（无异常即通过）
-    await expect(fireComboKey("l")).resolves.toBeUndefined();
+    // 卸载后派发 Ctrl+Shift+L：监听若未清理会仍调用 store 动作——
+    // 以 spy 断言真实不触发（而非仅「派发不抛错」的弱断言）
+    await fireComboKey("l");
+    expect(toggleSpy).not.toHaveBeenCalled();
     expect(document.querySelector("[data-testid=sidebar-container]")).toBeNull();
   });
 });
