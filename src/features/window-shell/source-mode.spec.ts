@@ -47,7 +47,6 @@ function makeDeps(): SourceModeDeps {
     pmPosToLineCol: vi.fn(() => ({ line: 0, col: 0 })),
     lineColToPmPos: vi.fn(() => 6),
     revealRange: vi.fn(),
-    focusEditor: vi.fn(),
   };
 }
 
@@ -73,7 +72,7 @@ afterEach(() => {
 });
 
 describe("切入源码模式（WYSIWYG → source）", () => {
-  it("装载当前全文并把 PM 光标映射为源码行列后移交焦点（AC-M-6）", () => {
+  it("装载当前全文并把 PM 光标映射为源码行列（AC-M-6）", () => {
     const deps = makeDeps();
     const host = makeHost();
     const machine = createSourceMode(deps, host);
@@ -82,7 +81,6 @@ describe("切入源码模式（WYSIWYG → source）", () => {
     expect(machine.getState()).toBe("source");
     expect(host.load).toHaveBeenCalledOnce();
     expect(host.load).toHaveBeenCalledWith("# 标题\n\n正文", { line: 0, col: 0 });
-    expect(host.focus).toHaveBeenCalledOnce();
   });
 
   it("含 Front Matter 文档：源码光标行按 FM 行数下移（定界两行 + 内文行数）", () => {
@@ -127,6 +125,56 @@ describe("切入源码模式（WYSIWYG → source）", () => {
   });
 });
 
+describe("异常收窄（M1：adopt 早于 create 的竞态窗口内映射/回写可能抛错）", () => {
+  it("切入映射抛错：降级不切入 + 中文告警，状态不变", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const deps = makeDeps();
+    deps.pmPosToLineCol = vi.fn(() => {
+      throw new Error("editor not ready");
+    });
+    const host = makeHost();
+    const machine = createSourceMode(deps, host);
+    expect(machine.enter()).toBe(false);
+    expect(machine.getState()).toBe("wysiwyg");
+    expect(host.load).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("源码模式切入失败"),
+      expect.anything(),
+    );
+  });
+
+  it("切出回写抛错：保持源码态可重试（防内容丢失）+ 中文告警", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const deps = makeDeps();
+    const host = makeHost();
+    const machine = createSourceMode(deps, host);
+    machine.enter();
+    host.load("# 已编辑", { line: 0, col: 0 });
+    deps.setContent = vi.fn(() => {
+      throw new Error("dispatch failed");
+    });
+    expect(machine.exit()).toBe(false);
+    expect(machine.getState()).toBe("source");
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("回写失败"), expect.anything());
+  });
+
+  it("切出光标恢复抛错：不阻断切出（内容已回写）+ 中文告警", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const deps = makeDeps();
+    const host = makeHost();
+    const machine = createSourceMode(deps, host);
+    machine.enter();
+    deps.lineColToPmPos = vi.fn(() => {
+      throw new Error("mapping failed");
+    });
+    expect(machine.exit()).toBe(true);
+    expect(machine.getState()).toBe("wysiwyg");
+    // 内容回写判定先于光标恢复：文本未变不回写，光标恢复降级仅告警
+    expect(deps.setContent).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("光标恢复失败"), expect.anything());
+  });
+});
+
 describe("切出源码模式（source → WYSIWYG）", () => {
   it("内容有变更时经 setContent 回写（AC-M-8）", () => {
     const deps = makeDeps();
@@ -149,7 +197,7 @@ describe("切出源码模式（source → WYSIWYG）", () => {
     expect(deps.setContent).not.toHaveBeenCalled();
   });
 
-  it("光标按行列逆映射后经 revealRange(pos,pos,1) 恢复并归还焦点（AC-M-7）", () => {
+  it("光标按行列逆映射后经 revealRange(pos,pos,1) 恢复（AC-M-7）", () => {
     const deps = makeDeps();
     const host = makeHost();
     const machine = createSourceMode(deps, host);
@@ -161,7 +209,6 @@ describe("切出源码模式（source → WYSIWYG）", () => {
     expect(deps.lineColToPmPos).toHaveBeenCalledWith(expect.anything(), { line: 2, col: 5 });
     expect(deps.revealRange).toHaveBeenCalledOnce();
     expect(deps.revealRange).toHaveBeenCalledWith(expect.anything(), 9, 9, 1);
-    expect(deps.focusEditor).toHaveBeenCalledOnce();
   });
 
   it("切出光标折算含 Front Matter 行偏移（源码行 − 偏移 = 正文行）", () => {
@@ -306,13 +353,82 @@ describe("useSourceMode 单例装配（真实依赖接线）", () => {
     sm.setHost(undefined);
   });
 
-  it("setHost 上缴宿主后命令经转发宿主触达（挂载时序解耦）", () => {
+  it("setHost 上缴宿主后命令经转发宿主触达（挂载时序解耦）", async () => {
     const sm = useSourceMode();
     const host = makeHost();
     sm.setHost(host);
     expect(sm.enter()).toBe(true);
     expect(host.load).toHaveBeenCalledWith("# 单例文档", { line: 0, col: 0 });
+    // 焦点移交在 nextTick 渲染冲刷后（I1 时序契约）
+    await nextTick();
     expect(host.focus).toHaveBeenCalledOnce();
+    sm.setHost(undefined);
+  });
+
+  it("焦点时序（I1）：同步窗口内不聚焦，nextTick 后才移交（v-show 翻转渲染先行）", async () => {
+    const sm = useSourceMode();
+    const host = makeHost();
+    const order: string[] = [];
+    host.focus = vi.fn(() => order.push("host.focus"));
+    sm.setHost(host);
+    // active 镜像翻转（v-show 数据侧先行），焦点未动
+    expect(sm.enter()).toBe(true);
+    expect(sm.active.value).toBe(true);
+    expect(order).toEqual([]);
+    await nextTick();
+    expect(order).toEqual(["host.focus"]);
+    sm.setHost(undefined);
+  });
+
+  it("切出焦点归还时序（I1）：nextTick 后交还编辑器视图（exit 侧同型）", async () => {
+    const sm = useSourceMode();
+    const host = makeHost();
+    sm.setHost(host);
+    sm.enter();
+    await nextTick();
+    const viewFocus = vi.fn();
+    vi.mocked(editorManager.getView).mockReturnValue({
+      state: { selection: { head: 1 } },
+      focus: viewFocus,
+    } as never);
+    expect(sm.exit()).toBe(true);
+    expect(sm.active.value).toBe(false);
+    expect(viewFocus).not.toHaveBeenCalled(); // 同步窗口内未归还
+    await nextTick();
+    expect(viewFocus).toHaveBeenCalledOnce();
+    sm.setHost(undefined);
+  });
+
+  it("丢弃未回写编辑时置用户可见提示并自动消隐（I3）", () => {
+    vi.useFakeTimers();
+    try {
+      const sm = useSourceMode();
+      const host = makeHost();
+      sm.setHost(host);
+      sm.enter();
+      // 模拟源码层有编辑后切换标签
+      host.load("# 已编辑", { line: 0, col: 0 });
+      sm.syncToActiveTab();
+      expect(sm.discardNotice.value).toContain("未回写编辑");
+      // 重入：提示存活期内再次丢弃 → 重置消隐计时（提示不被误清）
+      host.getText = vi.fn(() => "# 再次被编辑");
+      sm.syncToActiveTab();
+      expect(sm.discardNotice.value).not.toBe("");
+      vi.advanceTimersByTime(4000);
+      expect(sm.discardNotice.value).toBe("");
+      sm.setHost(undefined);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("无未回写编辑时切换标签不产生丢弃提示（I3 反向路径）", () => {
+    const sm = useSourceMode();
+    const host = makeHost();
+    sm.setHost(host);
+    sm.enter();
+    sm.syncToActiveTab();
+    expect(sm.discardNotice.value).toBe("");
     sm.setHost(undefined);
   });
 
@@ -324,9 +440,9 @@ describe("useSourceMode 单例装配（真实依赖接线）", () => {
   });
 
   it("切出接线：文本变更回写 + 光标经 revealRange 恢复 + active 复位（AC-M-7/8）", () => {
-    // 视图光标桩：getPmCursor 读 selection.from；focusEditor 调 view.focus()
+    // 视图光标桩：getPmCursor 读 selection.head（M4 光标点口径）；focusEditor 调 view.focus()
     vi.mocked(editorManager.getView).mockReturnValue({
-      state: { selection: { from: 6 } },
+      state: { selection: { head: 6 } },
       focus: vi.fn(),
     } as never);
     const sm = useSourceMode();

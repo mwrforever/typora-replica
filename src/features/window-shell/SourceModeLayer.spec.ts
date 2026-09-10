@@ -4,7 +4,7 @@
 // 可见行为：CM 内容区渲染源码全文、高亮 token（CM 生成高亮类，e6-code-fence
 // 同款判定）、越界行列收敛、暗色重配不崩溃。
 import { nextTick } from "vue";
-import { render } from "@testing-library/vue";
+import { fireEvent, render } from "@testing-library/vue";
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -31,6 +31,7 @@ import { resetSourceModeForTest, useSourceMode } from "./source-mode";
 import { resetViewModesForTest, useViewModes } from "./view-modes";
 import { useThemeStore } from "../theme/theme-store";
 import { pmPosToLineCol } from "../editor/source-pos";
+import { editorManager } from "../editor/editor-manager";
 
 beforeEach(() => {
   setActivePinia(createPinia());
@@ -102,6 +103,49 @@ describe("SourceModeLayer（AC-M-6 源码模式视图层）", () => {
     theme.systemDark = true;
     await nextTick();
     expect(document.querySelector(".cm-editor")).toBeTruthy();
+  });
+
+  it("CM 聚焦下派发真实 Ctrl+/ 键：键位接管双向往返且文档不被注释污染（C1 回归）", async () => {
+    render(SourceModeLayer);
+    const sm = useSourceMode();
+    expect(sm.enter()).toBe(true);
+    // 焦点落 CM 内容区（真实键盘路径），对 contentDOM 派发 Ctrl+/ keydown
+    const cmContent = document.querySelector<HTMLElement>(".cm-content")!;
+    cmContent.focus();
+    fireEvent.keyDown(cmContent, { key: "/", ctrlKey: true, cancelable: true, bubbles: true });
+    // 前置接管键位生效：切回 WYSIWYG（未被 toggleComment preventDefault 劫持）
+    expect(sm.getState()).toBe("wysiwyg");
+    // 文档内容不变：当前行未被包成 HTML 注释（C1 缺陷回归断言）
+    const contentAfterExit = () =>
+      [...document.querySelectorAll(".cm-line")].map((el) => el.textContent).join("\n");
+    expect(contentAfterExit()).not.toContain("<!--");
+    expect(contentAfterExit()).toBe("# 单例文档\n\n正文");
+    // 双向往返：再次 Ctrl+/ 重新切入，内容仍不变
+    fireEvent.keyDown(cmContent, { key: "/", ctrlKey: true, cancelable: true, bubbles: true });
+    expect(sm.getState()).toBe("source");
+    expect(contentAfterExit()).toBe("# 单例文档\n\n正文");
+    // 回写判定：内容未变更，editorManager.setContent 不被调用（无污染同步）
+    expect(vi.mocked(editorManager.setContent)).not.toHaveBeenCalled();
+  });
+
+  it("丢弃未回写编辑时层内浮层提示（I3 用户可见信号）", async () => {
+    render(SourceModeLayer);
+    const sm = useSourceMode();
+    expect(sm.enter()).toBe(true);
+    // 模拟源码层编辑后切换标签（直接驱动同步路径）
+    const host = {
+      isReady: () => true,
+      load: () => undefined,
+      getText: () => "# 被编辑的内容",
+      getCursor: () => ({ line: 0, col: 0 }),
+      focus: () => undefined,
+    };
+    sm.setHost(host);
+    sm.syncToActiveTab();
+    await vi.waitFor(() => {
+      expect(document.querySelector(".source-mode__notice")?.textContent).toContain("未回写编辑");
+    });
+    sm.setHost(undefined);
   });
 });
 

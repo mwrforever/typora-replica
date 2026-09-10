@@ -75,11 +75,30 @@ function themeExtensions() {
     : [lightTheme, syntaxHighlighting(defaultHighlightStyle)];
 }
 
+/** Ctrl+/ 前置接管键位（C1 审查修复）：defaultKeymap 自带 Mod-/ → toggleComment
+ *  （@codemirror/commands 6.10.4 bundle 实证；lang-markdown 已注册 commentTokens
+ *  使注释可达）——焦点在源码层按 Ctrl+/ 会把当前行包进 HTML 注释且 preventDefault
+ *  劫持窗口快捷键（AC-M-7 主键盘路径失败 + 污染经回写同步 WYSIWYG 与落盘）。
+ *  处置取「前置接管」而非「过滤 defaultKeymap」：CM keymap 先注册者优先，绑定
+ *  恒定胜出且不依赖「CM 未消费 → 冒泡到 window」的传播链；语义与 WYSIWYG 侧
+ *  Ctrl+/ 对称（源码态切回）；返回 true 后 CM preventDefault，window 层
+ *  defaultPrevented 守卫同步跳过，无双触发 */
+const takeoverKeymap = keymap.of([
+  {
+    key: "Mod-/",
+    run: () => {
+      sourceMode.toggle();
+      return true;
+    },
+  },
+]);
+
 /** 组装扩展：markdown 语法高亮 + 历史/默认键位 + 自动换行 + 明暗主题 compartment + Focus 行装饰 */
 function buildExtensions() {
   return [
     EditorView.lineWrapping,
     history(),
+    takeoverKeymap, // 必须位于 defaultKeymap 之前（CM keymap 先注册者优先，C1）
     keymap.of([...defaultKeymap, ...historyKeymap]),
     markdown(),
     chromeTheme,
@@ -159,15 +178,36 @@ watch(
     data-testid="source-mode-layer"
   >
     <div ref="container" class="source-mode__editor"></div>
+    <!-- 丢弃未回写编辑的用户可见提示（I3）：数据有损操作不静默；数秒自动消隐 -->
+    <div v-if="sourceMode.discardNotice.value" class="source-mode__notice" role="status">
+      {{ sourceMode.discardNotice.value }}
+    </div>
   </div>
 </template>
 
 <style scoped>
 /* 源码层占满中央区（与 TabHost 同层互斥显隐，由父层 v-show 控制） */
 .source-mode {
+  position: relative; /* 丢弃提示浮层的定位基准 */
   height: 100%;
   min-height: 0;
   overflow: hidden;
+}
+
+/* 丢弃提示浮层（I3）：层内底部居中轻条，error 色醒目但不遮挡编辑区；
+   --crepe-color-error 作用域在 .milkdown 内，本层回落同值设计令牌 */
+.source-mode__notice {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: var(--crepe-color-error, #dc2626);
+  color: #ffffff;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .source-mode__editor {
