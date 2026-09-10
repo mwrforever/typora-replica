@@ -1,7 +1,16 @@
 // keymap 注册表：注册/查询行为 + 内置键位清单（100% 覆盖核心语法转换）
 import { describe, expect, it } from "vitest";
+import type { Ctx } from "@milkdown/kit/ctx";
 import { makeTestEditor } from "../../test/editor-test-utils";
-import { addEditorKeymap, bindMenuShortcut, hasEditorKeymap, listEditorKeymaps } from "./keymaps";
+import {
+  addEditorKeymap,
+  bindMenuShortcut,
+  hasEditorKeymap,
+  listBindableEditorCommands,
+  listEditorKeymaps,
+  makeScrollJumpCommand,
+  runEditorMenuCommand,
+} from "./keymaps";
 
 describe("keymap 注册表", () => {
   it("addEditorKeymap 后可在注册表中查询到该键位", () => {
@@ -146,5 +155,163 @@ describe("keyBinding 注入键位真实生效（AC-C1-2 端到端：注册表 �
     te.press("F8", { ctrl: true });
     // 围栏块序列化以换行收尾（e6 同款形态：内容行后闭合围栏 + 尾随换行）
     expect(te.getMarkdown()).toBe("```\n正文文字\n```\n");
+  });
+});
+
+describe("菜单命令目录（缺口 G 形态 b：10 keyBinding 注入与 12 menuRouter 同源）", () => {
+  it("目录覆盖原有 keyBinding 十一命令与 Edit/Paragraph/Format 域扩展命令", () => {
+    const catalog = listBindableEditorCommands();
+    // 原有目录（AC-C1-2 十命令 + Italic）
+    for (const commandId of [
+      "Heading 1",
+      "Heading 2",
+      "Heading 3",
+      "Heading 4",
+      "Heading 5",
+      "Heading 6",
+      "Paragraph",
+      "Code Fences",
+      "Inline Code",
+      "Bold",
+      "Italic",
+    ]) {
+      expect(catalog).toContain(commandId);
+    }
+    // 12 Edit/Paragraph/Format 菜单可执行扩展
+    for (const commandId of [
+      "New Paragraph",
+      "New Line",
+      "Select All",
+      "Jump to Top",
+      "Jump to Bottom",
+      "Jump to Selection",
+      "Increase Heading Level",
+      "Decrease Heading Level",
+      "Table",
+      "Quote",
+      "Ordered List",
+      "Unordered List",
+      "Indent",
+      "Outdent",
+      "Strike",
+    ]) {
+      expect(catalog).toContain(commandId);
+    }
+  });
+
+  it("runEditorMenuCommand 目录外命令返回 false（调用方告警忽略）", () => {
+    expect(runEditorMenuCommand("Not A Command", () => undefined)).toBe(false);
+  });
+
+  it("runEditorMenuCommand 无编辑器实例返回 false（未创建/已销毁窗口期）", () => {
+    expect(runEditorMenuCommand("Bold", () => undefined)).toBe(false);
+  });
+
+  it("runEditorMenuCommand 执行 Bold 与按键路径同一命令函数（AC-M-3 同源断言）", async () => {
+    const te = await makeTestEditor("选中文字");
+    te.setSelection(1, 5);
+    // 菜单 action 路径：runEditorMenuCommand 经目录工厂执行 toggleStrong
+    expect(runEditorMenuCommand("Bold", () => te.editor)).toBe(true);
+    expect(te.getMarkdown()).toBe("**选中文字**");
+  });
+
+  it("runEditorMenuCommand 执行 Quote/Unordered List/Ordered List 块级包裹", async () => {
+    // 引用块：段落上下文包裹（列表内引用无合法包裹路径，命令返回 false 不消费）
+    const te = await makeTestEditor("引用文字");
+    te.setSelection(1, 1);
+    expect(runEditorMenuCommand("Quote", () => te.editor)).toBe(true);
+    expect(te.getMarkdown()).toContain("> 引用文字");
+    expect(runEditorMenuCommand("Quote", () => te.editor)).toBe(true);
+    expect(te.getMarkdown()).toContain("> > 引用文字");
+    // 无序列表：段落转列表（列表序列化以换行收尾）
+    const te2 = await makeTestEditor("列表文字");
+    te2.setSelection(1, 1);
+    expect(runEditorMenuCommand("Unordered List", () => te2.editor)).toBe(true);
+    expect(te2.getMarkdown()).toContain("- 列表文字");
+    // 有序列表
+    const te3 = await makeTestEditor("列表文字");
+    te3.setSelection(1, 1);
+    expect(runEditorMenuCommand("Ordered List", () => te3.editor)).toBe(true);
+    expect(te3.getMarkdown()).toContain("1. 列表文字");
+  });
+
+  it("runEditorMenuCommand 执行 Strike 行内删除线", async () => {
+    const te = await makeTestEditor("删除文字");
+    te.setSelection(1, 5);
+    expect(runEditorMenuCommand("Strike", () => te.editor)).toBe(true);
+    expect(te.getMarkdown()).toBe("~~删除文字~~");
+  });
+
+  it("runEditorMenuCommand 执行 Table 插入 3×3 表格", async () => {
+    const te = await makeTestEditor("");
+    expect(runEditorMenuCommand("Table", () => te.editor)).toBe(true);
+    // 空表格序列化为管道分隔行（3 列头 + 分隔 + 2 数据行）
+    const markdown = te.getMarkdown();
+    expect(markdown).toContain("|");
+    expect(markdown.match(/\|/g)?.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("runEditorMenuCommand 执行标题级别增减（钳制 1-6，非标题上下文不消费）", async () => {
+    const te = await makeTestEditor("## 标题文字");
+    te.setSelection(1, 1);
+    // H2 升级 → H1；H1 再升级钳制保持 H1
+    expect(runEditorMenuCommand("Increase Heading Level", () => te.editor)).toBe(true);
+    expect(te.getMarkdown()).toBe("# 标题文字");
+    expect(runEditorMenuCommand("Increase Heading Level", () => te.editor)).toBe(true);
+    expect(te.getMarkdown()).toBe("# 标题文字");
+    // 降级两级 → H3
+    expect(runEditorMenuCommand("Decrease Heading Level", () => te.editor)).toBe(true);
+    expect(runEditorMenuCommand("Decrease Heading Level", () => te.editor)).toBe(true);
+    expect(te.getMarkdown()).toBe("### 标题文字");
+    // 非标题上下文（段落）：命令返回 false 不消费
+    const te2 = await makeTestEditor("正文段落");
+    te2.setSelection(1, 1);
+    expect(runEditorMenuCommand("Decrease Heading Level", () => te2.editor)).toBe(false);
+  });
+
+  it("runEditorMenuCommand 执行 New Paragraph/New Line/Select All 与光标跳转", async () => {
+    // 新段落：光标处拆段（PM splitBlock，回车主路径；markdown 段间以空行分隔）
+    const te = await makeTestEditor("首行文字");
+    te.setSelection(3, 3);
+    expect(runEditorMenuCommand("New Paragraph", () => te.editor)).toBe(true);
+    expect(te.getMarkdown()).toBe("首行\n\n文字");
+    // 新行：软换行（Shift+Enter 主路径，序列化为硬换行标记）
+    const te2 = await makeTestEditor("首行文字");
+    te2.setSelection(3, 3);
+    expect(runEditorMenuCommand("New Line", () => te2.editor)).toBe(true);
+    expect(te2.getMarkdown()).toBe("首行\\\n文字");
+    // 全选（selectAll 与 baseKeymap Mod-a 同语义）+ 光标跳转（选区归位断言）
+    expect(runEditorMenuCommand("Select All", () => te2.editor)).toBe(true);
+    expect(runEditorMenuCommand("Jump to Bottom", () => te2.editor)).toBe(true);
+    expect(te2.view.state.selection.from).toBeGreaterThan(1);
+    expect(runEditorMenuCommand("Jump to Top", () => te2.editor)).toBe(true);
+    expect(te2.view.state.selection.from).toBe(1);
+    expect(runEditorMenuCommand("Jump to Selection", () => te2.editor)).toBe(true);
+  });
+
+  it("runEditorMenuCommand 执行 Indent/Outdent（与 Ctrl+[/] 同一 sink/lift 路径）", async () => {
+    // 缩进需要前一列表项作为下沉宿主（sinkListItem 语义）：单项列表返回 false 不消费
+    const single = await makeTestEditor("- 列表项");
+    single.setSelection(3, 3);
+    expect(runEditorMenuCommand("Indent", () => single.editor)).toBe(false);
+    const te = await makeTestEditor("- 甲\n- 乙");
+    te.setSelection(6, 6);
+    expect(runEditorMenuCommand("Indent", () => te.editor)).toBe(true);
+    expect(te.getMarkdown()).toContain("  - 乙");
+    expect(runEditorMenuCommand("Outdent", () => te.editor)).toBe(true);
+    expect(te.getMarkdown()).toContain("- 乙");
+  });
+});
+
+describe("makeScrollJumpCommand（光标跳转工厂：dry-run 直调覆盖）", () => {
+  it("dispatch 缺省（dry-run）仅判定命中不改文档", async () => {
+    const te = await makeTestEditor("跳转文字");
+    for (const mode of ["top", "bottom", "selection"] as const) {
+      // 工厂不消费 ctx（跳转命令直接基于 state 构建），桩传入即可
+      const command = makeScrollJumpCommand(mode)(null as unknown as Ctx);
+      expect(command(te.view.state, undefined, te.view)).toBe(true);
+      // dry-run 不改选区（未派发事务）
+      expect(te.view.state.selection.from).toBe(1);
+    }
   });
 });
