@@ -43,4 +43,18 @@ describe("Shift+F12 DevTools 快捷键（AC-T7-1 前端段）", () => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "F12", shiftKey: true }));
     expect(mocks.toggle).not.toHaveBeenCalled();
   });
+
+  it("编辑器已消费的按键不重复触发（defaultPrevented 守卫，TASK 10#3 清单外同型缺口）", () => {
+    // prosemirror-view 命中键位仅 preventDefault 不阻断传播，事件仍冒泡到 window
+    const cleanup = registerDevtoolsShortcut();
+    const event = new KeyboardEvent("keydown", {
+      key: "F12",
+      shiftKey: true,
+      cancelable: true,
+    });
+    event.preventDefault();
+    window.dispatchEvent(event);
+    expect(mocks.toggle).not.toHaveBeenCalled();
+    cleanup();
+  });
 });

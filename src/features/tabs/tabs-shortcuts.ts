@@ -13,6 +13,11 @@ export function registerTabsShortcuts(handlers: {
   onReopenClosed: () => void;
 }): () => void {
   const onKeydown = (event: KeyboardEvent) => {
+    // 编辑器 keymap 已消费的按键不得重复触发标签动作：prosemirror-view 命中键位仅
+    // preventDefault 不阻断传播，事件仍冒泡到 window——keyBinding 把编辑器命令绑到
+    // Ctrl+N/W/Tab/Shift+T 时，编辑器动作已执行，标签操作不得二次执行
+    // （TASK 10#3 收口，settings-shortcuts.ts 同款先例）
+    if (event.defaultPrevented) return;
     // 非纯 Ctrl 组合（缺 Ctrl / 带 Alt / 带 Meta）一律忽略
     if (!event.ctrlKey || event.altKey || event.metaKey) return;
     const key = event.key.toLowerCase();

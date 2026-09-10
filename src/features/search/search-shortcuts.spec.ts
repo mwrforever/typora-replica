@@ -67,4 +67,28 @@ describe("registerSearchShortcuts", () => {
     press({ key: "f", ctrlKey: true });
     expect(handlers.onToggleFind).not.toHaveBeenCalled();
   });
+
+  it("编辑器已消费的按键不重复触发搜索面板（defaultPrevented 守卫，TASK 10#3）", () => {
+    // prosemirror-view 命中键位仅 preventDefault 不阻断传播，事件仍冒泡到 window；
+    // keyBinding 把编辑器命令绑到 Ctrl+F/H 时面板动作不得二次执行
+    cleanup = registerSearchShortcuts(handlers);
+    const findEvent = new KeyboardEvent("keydown", {
+      key: "f",
+      ctrlKey: true,
+      cancelable: true,
+      bubbles: true,
+    });
+    findEvent.preventDefault();
+    window.dispatchEvent(findEvent);
+    const replaceEvent = new KeyboardEvent("keydown", {
+      key: "h",
+      ctrlKey: true,
+      cancelable: true,
+      bubbles: true,
+    });
+    replaceEvent.preventDefault();
+    window.dispatchEvent(replaceEvent);
+    expect(handlers.onToggleFind).not.toHaveBeenCalled();
+    expect(handlers.onToggleReplace).not.toHaveBeenCalled();
+  });
 });

@@ -44,4 +44,21 @@ describe("窗口级快捷键（02 注册，12 可接管）", () => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true }));
     expect(onSave).not.toHaveBeenCalled();
   });
+
+  it("编辑器已消费的按键不重复触发保存/快速打开（defaultPrevented 守卫，TASK 10#3）", () => {
+    // prosemirror-view 命中键位仅 preventDefault 不阻断传播，事件仍冒泡到 window；
+    // keyBinding 把编辑器命令绑到 Ctrl+S/P 时窗口动作不得二次执行
+    const onSave = vi.fn();
+    const onQuickOpen = vi.fn();
+    const cleanup = registerAppShortcuts({ onSave, onQuickOpen });
+    const saveEvent = new KeyboardEvent("keydown", { key: "s", ctrlKey: true, cancelable: true });
+    saveEvent.preventDefault();
+    window.dispatchEvent(saveEvent);
+    const quickEvent = new KeyboardEvent("keydown", { key: "p", ctrlKey: true, cancelable: true });
+    quickEvent.preventDefault();
+    window.dispatchEvent(quickEvent);
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onQuickOpen).not.toHaveBeenCalled();
+    cleanup();
+  });
 });

@@ -8,6 +8,9 @@ export function registerFileTreeShortcuts(handlers: {
   showSearch: () => void;
 }): () => void {
   const onKeydown = (event: KeyboardEvent) => {
+    // 编辑器 keymap 已消费的按键不得重复触发侧栏动作（TASK 10#3 收口，
+    // settings-shortcuts.ts 同款先例：prosemirror-view 命中仅 preventDefault 不阻断传播）
+    if (event.defaultPrevented) return;
     if (!event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) return;
     const key = event.key.toLowerCase();
     if (key === "l") {

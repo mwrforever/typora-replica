@@ -47,4 +47,28 @@ describe("file-tree-shortcuts", () => {
     expect(calls).toEqual([]);
     cleanup();
   });
+
+  it("编辑器已消费的按键不重复触发侧栏动作（defaultPrevented 守卫，TASK 10#3）", () => {
+    // prosemirror-view 命中键位仅 preventDefault 不阻断传播，事件仍冒泡到 window；
+    // keyBinding 把编辑器命令绑到 Ctrl+Shift+组合时侧栏动作不得二次执行
+    const calls: string[] = [];
+    const cleanup = registerFileTreeShortcuts({
+      toggleSidebar: () => calls.push("toggle"),
+      switchPanel: () => calls.push("panel"),
+      showSearch: () => calls.push("search"),
+    });
+    for (const key of ["l", "1", "2", "3", "f"]) {
+      const event = new KeyboardEvent("keydown", {
+        key,
+        ctrlKey: true,
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      event.preventDefault();
+      window.dispatchEvent(event);
+    }
+    expect(calls).toEqual([]);
+    cleanup();
+  });
 });

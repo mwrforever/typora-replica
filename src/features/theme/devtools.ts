@@ -9,6 +9,9 @@ import { toggleDevtools } from "../../services/theme-io";
  */
 export function registerDevtoolsShortcut(): () => void {
   const onKeydown = (event: KeyboardEvent): void => {
+    // 编辑器 keymap 已消费的按键不得重复触发（TASK 10#3 清单外同型缺口收口，
+    // settings-shortcuts.ts 同款先例：prosemirror-view 命中仅 preventDefault 不阻断传播）
+    if (event.defaultPrevented) return;
     // 仅 Shift+F12 命中；无 Shift 的 F12 留给浏览器默认行为
     if (!(event.shiftKey && event.key === "F12")) return;
     event.preventDefault();
