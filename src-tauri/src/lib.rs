@@ -15,6 +15,7 @@ pub struct AppState {
 
 pub mod devtools;
 pub mod io;
+pub mod window_menu;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -83,7 +84,9 @@ pub fn run() {
             io::advanced_settings::open_advanced_settings,
             // 08 T7 DevTools 开关（devtools.rs）：debug 构建可用，release 须 devtools
             // feature（未启用时命令无操作返回 false）
-            devtools::toggle_devtools
+            devtools::toggle_devtools,
+            // 12 W2 原生菜单栏显隐（window_menu.rs）：autoHideMenuBar Alt 切换链路
+            window_menu::set_native_menu_visible
         ])
         .run(tauri::generate_context!())
     {

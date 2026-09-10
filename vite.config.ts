@@ -264,6 +264,14 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 12 W2 菜单 IPC 契约封装 100%（MenuNode 值对象 → Tauri Menu 转换与挂载、
+        // autoHideMenuBar 显隐命令桥；AC-M-1~5 的 IPC 面，宪法 A.6.2 核心域同步阈值）
+        "src/services/menu-io.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },

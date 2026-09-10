@@ -37,6 +37,7 @@
     "allow-write-advanced-settings",
     "allow-reset-advanced-settings",
     "allow-open-advanced-settings",
-    "allow-toggle-devtools"
+    "allow-toggle-devtools",
+    "allow-set-native-menu-visible"
   ]
 }

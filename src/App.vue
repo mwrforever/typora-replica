@@ -3,7 +3,9 @@
      03 装配：右键菜单/拖入联动/启动目录联动（侧栏及其快捷键已迁 12 外壳 AppShell）；
      04 装配：多标签控制器——启动/打开/文件夹/保存改接激活会话；
      12 装配：布局骨架归 components/layout/AppShell.vue（侧栏容器/中央区/状态栏容器），
-     本组件保留启动决策链与全局单例浮层（菜单/快速打开/查找替换/关闭确认/设置面板）） -->
+     本组件保留启动决策链与全局单例浮层（菜单/快速打开/查找替换/关闭确认/设置面板），
+     并装配 12 W2 原生菜单（menuRouter 命令依赖注入 + Themes/Open Recent 动态重建
+     + autoHideMenuBar Alt 切换）——菜单项与窗口快捷键统一经 deps 命令函数单一执行） -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -17,8 +19,11 @@ import { buildQuickItems } from "./features/open-quickly/open-quickly";
 import type { QuickItem } from "./features/open-quickly/fuzzy";
 import { DraftRecovery } from "./features/document/draft-recovery";
 import { editorManager } from "./features/editor/editor-manager";
+import { runEditorMenuCommand } from "./features/editor/keymaps";
 import { registerImageFeature } from "./features/image/register";
 import { registerThemeFeature } from "./features/theme/register";
+import { useThemeStore } from "./features/theme/theme-store";
+import { toggleDevtools, openThemeFolder } from "./services/theme-io";
 import ConfirmCloseDialog from "./features/tabs/ConfirmCloseDialog.vue";
 import { registerTabsShortcuts } from "./features/tabs/tabs-shortcuts";
 import { useTabsController } from "./features/tabs/tabs-controller";
@@ -30,9 +35,18 @@ import SettingsPanel from "./features/settings/SettingsPanel.vue";
 import { registerSettingsShortcuts } from "./features/settings/settings-shortcuts";
 import { useSettingsStore } from "./features/settings/settings-store";
 import { applyKeyBindings } from "./features/settings/shortcut-binding";
+import { useNativeMenu } from "./features/window-shell/use-native-menu";
+import { useAutoHideMenu } from "./features/window-shell/use-auto-hide-menu";
+import { registerWindowShellShortcuts } from "./features/window-shell/window-shortcuts";
+import type { MenuRouterDeps } from "./features/window-shell/menu-router";
+import { setNativeMenuVisible } from "./services/menu-io";
 import { getCliArgs, probePathExists } from "./services/file-io";
 import { resolveLaunch } from "./services/launch-behavior";
-import { openFolderDialog, saveAsDialog } from "./services/open-commands";
+import {
+  openFileDialog as openFileDialogCommand,
+  openFolderDialog,
+  saveAsDialog,
+} from "./services/open-commands";
 import { DEFAULT_SETTINGS } from "./services/settings";
 import { registerAppShortcuts } from "./services/app-shortcuts";
 import { RecentFiles } from "./services/recent-files";
@@ -79,47 +93,14 @@ const fileTree = useFileTreeStore();
 /** 右键菜单状态（fixed 定位坐标与目标路径；FileTreeMenu 浮层消费） */
 const menu = ref({ visible: false, x: 0, y: 0, targetPath: "" });
 
-/**
- * 标签快捷键（04：Ctrl+N 新建 / Ctrl+W 关闭 / Ctrl+Tab 轮换 / Ctrl+Shift+T 重开；
- * 12 窗口外壳可整体接管）。Ctrl+W 关闭激活标签（脏标签经 C2 三按钮确认，
- * 干净标签直关）。
- */
-const cleanupTabsShortcuts = registerTabsShortcuts({
-  onNewTab: () => tabs.createUntitled(),
-  onCloseTab: () => {
-    const active = tabs.store.activeTab;
-    if (active) tabs.closeTab(active.id);
-  },
-  onCycle: (dir) => tabs.cycle(dir),
-  onReopenClosed: () => tabs.reopenClosed(),
-});
-
-/** 搜索面板状态与快捷键（06：Ctrl+F/H 开关、F3/Shift+F3 导航、ESC 关闭回焦） */
+/** 搜索面板状态（06：Ctrl+F/H 开关、F3/Shift+F3 导航、ESC 关闭回焦） */
 const searchStore = useSearchStore();
-const cleanupSearchShortcuts = registerSearchShortcuts({
-  onToggleFind: () => {
-    // 面板可见时 Ctrl+F 归面板内搜索（SettingsPanel 接管聚焦其搜索框）
-    if (settingsStore.visible) return;
-    searchStore.toggleFind();
-  },
-  onToggleReplace: () => searchStore.toggleReplace(),
-  onNext: () => navigateNext(),
-  onPrev: () => navigatePrev(),
-  // 可见性守卫在本处：不可见时 ESC 不抢焦点（latex 公式浮层的 ESC 归其自身处理）
-  onClose: () => {
-    if (!searchStore.visible) return;
-    searchStore.close();
-    editorManager.getView()?.focus();
-  },
-});
 
-/** 偏好设置面板状态（10：Ctrl+, 开合；12 菜单接入后触发入口归 12） */
+/** 偏好设置面板状态（10：Ctrl+, 开合；触发入口统一走 menuDeps.preference） */
 const settingsStore = useSettingsStore();
 
-/** 面板开合快捷键（Ctrl+,；注销随组件卸载） */
-const cleanupSettingsShortcuts = registerSettingsShortcuts({
-  onTogglePanel: () => settingsStore.togglePanel(),
-});
+/** 主题状态（08：Themes 菜单主题列表/切换命令依赖） */
+const themeStore = useThemeStore();
 
 /**
  * 打开文件夹（AC-F9-1）：空串走系统对话框选目录；随后激活标签会话 openFolder
@@ -143,12 +124,14 @@ async function handleOpenFolder(path: string): Promise<void> {
  * 打开文件（F1-2 父目录加载）：controller.openFile 走多标签链路——同路径
  * 去重激活既有标签（created=false 不联动）；新标签内容就绪后以文件父目录
  * 为基准同步侧栏数据源（打开时一次性联动，切标签不重载侧栏）。
+ * 打开成功刷新 File → Open Recent 子菜单（最近文件列表变化 → 重建）。
  */
 async function handleOpenFile(path: string): Promise<void> {
   const created = await tabs.openFile(path, basenameOf(path));
   if (created) {
     const dir = dirnameOf(path);
     if (dir) await fileTree.loadDir(dir);
+    await menuHandle?.refreshRecent();
   }
 }
 
@@ -172,18 +155,23 @@ function handleMenuOpen(path: string): void {
 /** 08 主题装配注销句柄（onMounted 赋值；undefined=尚未装配，宪法 A.1.2.3 用 undefined） */
 let cleanupThemeFeature: (() => void) | undefined;
 
-/** 窗口级快捷键（12 窗口外壳可接管）：Ctrl+S 保存/另存、Ctrl+P 快速打开 */
-const cleanupShortcuts = registerAppShortcuts({
-  onSave: () => {
-    const session = tabs.activeSession();
-    if (session?.currentPath) void session.save();
-    else
-      void (async () => {
-        const target = await saveAsDialog();
-        if (target) void tabs.activeSession()?.saveAs(target);
-      })();
+/**
+ * 菜单命令路由依赖（12 menuRouter 单一命令函数来源；窗口快捷键回调与菜单 action
+ * 共用同一批函数引用——AC-M-3 单一执行路径）。
+ * 命令覆盖：文件域（新建/打开/保存）、编辑域（剪贴板/查找）、视图域（侧栏/搜索/
+ * DevTools）、主题域（切换/打开目录）；编辑器域命令统一经 runEditorMenuCommand
+ * 走 01 命令目录（与 keyBinding 注入同源）。
+ */
+const menuDeps: MenuRouterDeps = {
+  runEditorCommand: (commandId) => runEditorMenuCommand(commandId, () => editorManager.getEditor()),
+  newTab: () => tabs.createUntitled(),
+  openFile: (path) => void handleOpenFile(path),
+  openFileDialog: () => {
+    void openFileDialogCommand().then((picked) => {
+      if (picked) void handleOpenFile(picked);
+    });
   },
-  onQuickOpen: () => {
+  quickOpen: () => {
     // 构建候选：激活标签当前目录 .md ∪ 最近文件（固定项保留）
     void (async () => {
       const recent = await new RecentFiles().list().catch(() => []);
@@ -191,7 +179,124 @@ const cleanupShortcuts = registerAppShortcuts({
       quickOpenVisible.value = true;
     })();
   },
+  clearRecent: () => {
+    void new RecentFiles()
+      .clear()
+      .then(() => menuHandle?.refreshRecent())
+      .catch((e: unknown) => console.error("[MarkWell] 清除最近文件列表失败", e));
+  },
+  reopenClosed: () => tabs.reopenClosed(),
+  save: () => {
+    // 有路径直存；未命名标签转另存为对话框（既有 Ctrl+S 语义，菜单 Save 同路径）
+    const session = tabs.activeSession();
+    if (session?.currentPath) void session.save();
+    else menuDeps.saveAs();
+  },
+  saveAs: () => {
+    void saveAsDialog().then((target) => {
+      if (target) void tabs.activeSession()?.saveAs(target);
+    });
+  },
+  preference: () => settingsStore.togglePanel(),
+  closeTab: () => {
+    const active = tabs.store.activeTab;
+    if (active) tabs.closeTab(active.id);
+  },
+  copyAsMarkdown: () => {
+    void navigator.clipboard
+      .writeText(editorManager.getMarkdown())
+      .catch((e: unknown) => console.error("[MarkWell] 复制为 Markdown 失败", e));
+  },
+  pasteAsPlainText: () => {
+    void navigator.clipboard
+      .readText()
+      .then((text) => {
+        if (text !== "") editorManager.insertMarkdown(text);
+      })
+      .catch((e: unknown) => console.error("[MarkWell] 粘贴为纯文本失败（剪贴板不可读）", e));
+  },
+  toggleFind: () => {
+    // 面板可见时 Ctrl+F 归面板内搜索（SettingsPanel 接管聚焦其搜索框）
+    if (settingsStore.visible) return;
+    searchStore.toggleFind();
+  },
+  toggleReplace: () => searchStore.toggleReplace(),
+  findNext: () => navigateNext(),
+  findPrev: () => navigatePrev(),
+  toggleSidebar: () => fileTree.toggleSidebar(),
+  switchPanel: (key) => fileTree.switchPanel(key),
+  globalSearch: () => fileTree.showSearch(),
+  switchDocNext: () => tabs.cycle(1),
+  toggleDevtools: () => {
+    // 开合结果无需消费；失败（构建不支持/IPC 异常）仅记录不打断交互
+    void toggleDevtools().catch((e: unknown) => {
+      console.error("[MarkWell] DevTools 切换失败", e);
+    });
+  },
+  selectTheme: (mode, name) => void themeStore.selectTheme(mode, name),
+  openThemeFolder: () => {
+    void openThemeFolder().catch((e: unknown) => {
+      console.error("[MarkWell] 打开主题文件夹失败", e);
+    });
+  },
+  notifyError: (message) => {
+    // 会话通知优先（既有通知通道）；无激活会话回落控制台留痕
+    const session = tabs.activeSession();
+    if (session) session.notify({ level: "error", message });
+    else console.error(`[MarkWell] ${message}`);
+  },
+};
+
+/**
+ * 标签快捷键（04：Ctrl+N 新建 / Ctrl+W 关闭 / Ctrl+Tab 轮换 / Ctrl+Shift+T 重开）。
+ * 回调与菜单 action 共用 menuDeps 命令函数（Ctrl+Tab 双向轮换无菜单对偶，保留直呼）。
+ */
+const cleanupTabsShortcuts = registerTabsShortcuts({
+  onNewTab: menuDeps.newTab,
+  onCloseTab: menuDeps.closeTab,
+  onCycle: (dir) => tabs.cycle(dir),
+  onReopenClosed: menuDeps.reopenClosed,
 });
+
+/** 搜索快捷键（06）：回调与菜单共用 menuDeps（ESC 关闭无菜单对偶，保留守卫直呼） */
+const cleanupSearchShortcuts = registerSearchShortcuts({
+  onToggleFind: menuDeps.toggleFind,
+  onToggleReplace: menuDeps.toggleReplace,
+  onNext: menuDeps.findNext,
+  onPrev: menuDeps.findPrev,
+  // 可见性守卫在本处：不可见时 ESC 不抢焦点（latex 公式浮层的 ESC 归其自身处理）
+  onClose: () => {
+    if (!searchStore.visible) return;
+    searchStore.close();
+    editorManager.getView()?.focus();
+  },
+});
+
+/** 面板开合快捷键（Ctrl+,；与菜单「偏好设置」同一命令函数） */
+const cleanupSettingsShortcuts = registerSettingsShortcuts({
+  onTogglePanel: menuDeps.preference,
+});
+
+/** 窗口级快捷键：Ctrl+S 保存、Ctrl+P 快速打开（与菜单项同一命令函数） */
+const cleanupShortcuts = registerAppShortcuts({
+  onSave: menuDeps.save,
+  onQuickOpen: menuDeps.quickOpen,
+});
+
+/** 窗口外壳快捷键（12 W2）：Ctrl+O 打开文件 / Ctrl+Shift+S 另存为（菜单对偶注册） */
+const cleanupWindowShellShortcuts = registerWindowShellShortcuts({
+  onOpenFile: menuDeps.openFileDialog,
+  onSaveAs: menuDeps.saveAs,
+});
+
+/**
+ * 原生菜单装配句柄（onMounted 赋值；undefined=尚未装配，optional chain 防御——
+ * handleOpenFile 在装配前打开文件（启动链路）时刷新为空操作）
+ */
+let menuHandle: ReturnType<typeof useNativeMenu> | undefined;
+
+/** Alt 切换状态机注销句柄（onMounted 赋值；undefined=尚未装配） */
+let cleanupAutoHideMenu: (() => void) | undefined;
 
 onMounted(async () => {
   // 07 图片功能装配（幂等，仅启动调一次）：onUpload 真实实现注入 01 注册表 +
@@ -205,6 +310,15 @@ onMounted(async () => {
   await settingsStore.load();
   // keyBinding 注入（AC-C1-2 重启生效 / AC-C1-3 自定义优先 / AC-C1-4 非法告警忽略）
   applyKeyBindings(settingsStore.advanced?.keyBinding ?? {});
+  // 12 W2 原生菜单装配（须在设置装载后：菜单 label 依赖 keyBinding 合并结果）；
+  // 装配失败已在 composable 内告警降级，不阻断启动链路
+  menuHandle = useNativeMenu({ deps: menuDeps });
+  // autoHideMenuBar（AC-M-5）：消费既有设置键门控 Alt 单按切换（false 不响应）
+  const autoHide = useAutoHideMenu({
+    isEnabled: () => settingsStore.advanced?.autoHideMenuBar === true,
+    setMenuVisible: setNativeMenuVisible,
+  });
+  cleanupAutoHideMenu = autoHide.cleanup;
   // 启动链路：cli 参数 + 偏好 → 决策 → 多标签装配（失败回退新建，提示不崩溃）。
   // 偏好复用 settingsStore 已装载的 GUI 快照（避免二次读盘；undefined 防御回落默认）
   const cli = await getCliArgs();
@@ -252,7 +366,11 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   // 08 主题装配注销（含系统色系退订与防抖定时器清理；未装配时 optional chain 落空）
   cleanupThemeFeature?.();
+  // 12 W2 菜单订阅退订 + Alt 切换监听移除（detached 订阅自持取消，B.2.4）
+  menuHandle?.cleanup();
+  cleanupAutoHideMenu?.();
   cleanupShortcuts();
+  cleanupWindowShellShortcuts();
   cleanupTabsShortcuts();
   cleanupSearchShortcuts();
   cleanupSettingsShortcuts();

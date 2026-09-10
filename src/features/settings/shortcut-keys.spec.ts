@@ -84,6 +84,8 @@ describe("parseShortcutCombo 窗口保留组合拒绝（code-review M-1②）", 
     expect(parseShortcutCombo("Ctrl+Shift+F")).toBeUndefined(); // 03 全局搜索
     expect(parseShortcutCombo("Ctrl+Shift+1")).toBeUndefined(); // 03 面板切换
     expect(parseShortcutCombo("Ctrl+,")).toBeUndefined(); // 10 面板开合
+    expect(parseShortcutCombo("Ctrl+O")).toBeUndefined(); // 12 打开文件（W2 菜单装配）
+    expect(parseShortcutCombo("Ctrl+Shift+S")).toBeUndefined(); // 12 另存为（W2 菜单装配）
   });
 
   it("大小写与修饰键别名归一后同样命中拒绝（canonical 化比对防绕过）", () => {
@@ -102,6 +104,9 @@ describe("isWindowReservedCombo 冲突判定（调用方区分告警文案）", 
     expect(isWindowReservedCombo("Ctrl+S")).toBe(true);
     expect(isWindowReservedCombo("Ctrl+Shift+L")).toBe(true);
     expect(isWindowReservedCombo("ctrl+n")).toBe(true);
+    // 12 W2 菜单装配引入的键盘通路（Ctrl+O 打开 / Ctrl+Shift+S 另存为）
+    expect(isWindowReservedCombo("Ctrl+O")).toBe(true);
+    expect(isWindowReservedCombo("Ctrl+Shift+S")).toBe(true);
   });
 
   it("非保留组合与非法组合返回 false", () => {

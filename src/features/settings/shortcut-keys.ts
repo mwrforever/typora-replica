@@ -63,12 +63,15 @@ const SYMBOL_KEYS = new Set(["`", "-", "=", "[", "]", ";", "'", ",", ".", "/", "
  * 02 Ctrl+S 保存 / Ctrl+P 快速打开；03 Ctrl+Shift+L 侧栏 / Ctrl+Shift+F 全局搜索 /
  * Ctrl+Shift+1/2/3 面板切换；04 Ctrl+N 新建标签 / Ctrl+W 关闭标签 / Ctrl+Tab 轮换
  * （tab 分支按 Shift 双向轮换，Ctrl+Shift+Tab 反向轮换同属窗口消费面）/ Ctrl+Shift+T
- * 重开关闭标签；06 Ctrl+F 搜索 / Ctrl+H 替换；10 Ctrl+, 面板开合。
+ * 重开关闭标签；06 Ctrl+F 搜索 / Ctrl+H 替换；10 Ctrl+, 面板开合；
+ * 12 W2 Ctrl+O 打开文件 / Ctrl+Shift+S 另存为（菜单装配引入的键盘通路）。
  * （F3/Shift+F3/Escape 无 Ctrl 修饰，parseShortcutCombo 本就拒绝，不入集。）
  */
 const WINDOW_RESERVED_PM_KEYS: ReadonlySet<string> = new Set([
   "Mod-s",
   "Mod-p",
+  "Mod-o",
+  "Mod-Shift-s",
   "Mod-Shift-l",
   "Mod-Shift-f",
   "Mod-Shift-1",
