@@ -1,5 +1,6 @@
 // 窗口外壳快捷键测试（12 W2：Ctrl+O 打开 / Ctrl+Shift+S 另存为；
-// 12 W3：F11 全屏 / Ctrl+Shift+0/=/- 缩放三键 / Ctrl+Shift+N 新建窗口）
+// 12 W3：F11 全屏 / Ctrl+Shift+0/=/- 缩放三键 / Ctrl+Shift+N 新建窗口；
+// 12 W4：Ctrl+/ 源码模式）
 //
 // 合成 KeyboardEvent 直发 window（与 app-shortcuts.spec 同口径）。
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -15,6 +16,7 @@ function makeHandlers() {
     onZoomIn: vi.fn(),
     onZoomOut: vi.fn(),
     onNewWindow: vi.fn(),
+    onToggleSourceMode: vi.fn(),
   };
 }
 
@@ -263,5 +265,47 @@ describe("registerWindowShellShortcuts（W3：Ctrl+Shift+N 新建窗口，AC-M-1
     event.preventDefault();
     window.dispatchEvent(event);
     expect(handlers.onNewWindow).not.toHaveBeenCalled();
+  });
+});
+
+describe("registerWindowShellShortcuts（W4：Ctrl+/ 源码模式，AC-M-6~8）", () => {
+  let cleanup: (() => void) | undefined;
+  afterEach(() => {
+    cleanup?.();
+    cleanup = undefined;
+  });
+
+  it("Ctrl+/ 触发源码模式切换并拦截默认行为", () => {
+    const handlers = makeHandlers();
+    cleanup = registerWindowShellShortcuts(handlers);
+    const event = new KeyboardEvent("keydown", { key: "/", ctrlKey: true, cancelable: true });
+    const prevented = !window.dispatchEvent(event);
+    expect(handlers.onToggleSourceMode).toHaveBeenCalledOnce();
+    expect(prevented).toBe(true);
+  });
+
+  it("Ctrl+Shift+/（Shift+Slash 产生 ?）不触发源码模式切换", () => {
+    const handlers = makeHandlers();
+    cleanup = registerWindowShellShortcuts(handlers);
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "?", ctrlKey: true, shiftKey: true, cancelable: true }),
+    );
+    expect(handlers.onToggleSourceMode).not.toHaveBeenCalled();
+  });
+
+  it("无 Ctrl 修饰的斜杠输入不触发（编辑器行内斜杠输入不受影响）", () => {
+    const handlers = makeHandlers();
+    cleanup = registerWindowShellShortcuts(handlers);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "/", cancelable: true }));
+    expect(handlers.onToggleSourceMode).not.toHaveBeenCalled();
+  });
+
+  it("Ctrl+/ 已被消费时不重复触发（defaultPrevented 守卫）", () => {
+    const handlers = makeHandlers();
+    cleanup = registerWindowShellShortcuts(handlers);
+    const event = new KeyboardEvent("keydown", { key: "/", ctrlKey: true, cancelable: true });
+    event.preventDefault();
+    window.dispatchEvent(event);
+    expect(handlers.onToggleSourceMode).not.toHaveBeenCalled();
   });
 });

@@ -34,6 +34,7 @@ function makeDeps(): MenuRouterDeps {
     switchPanel: vi.fn(),
     globalSearch: vi.fn(),
     switchDocNext: vi.fn(),
+    toggleSourceMode: vi.fn(),
     toggleDevtools: vi.fn(),
     toggleFullscreen: vi.fn(),
     zoomIn: vi.fn(),
@@ -121,6 +122,9 @@ describe("createMenuRouter 精确表域", () => {
     expect(deps.globalSearch).toHaveBeenCalledOnce();
     router.run("view.switch-doc");
     expect(deps.switchDocNext).toHaveBeenCalledOnce();
+    // 源码模式（12 W4）：菜单 action 与 Ctrl+/ 快捷键共用同一 toggle 命令
+    router.run("view.source-mode");
+    expect(deps.toggleSourceMode).toHaveBeenCalledOnce();
     router.run("view.toggle-devtools");
     expect(deps.toggleDevtools).toHaveBeenCalledOnce();
     router.run("themes.open-folder");
@@ -188,8 +192,9 @@ describe("createMenuRouter 前缀域", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const deps = makeDeps();
     const router = createMenuRouter(deps, baseInput);
-    router.run("view.source-mode");
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("view.source-mode"));
+    // 禁用占位项（W5 专注模式）误触走未知 id 告警路径
+    router.run("view.focus-mode");
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("view.focus-mode"));
     expect(deps.notifyError).not.toHaveBeenCalled();
   });
 });

@@ -40,6 +40,7 @@ import { useNativeMenu } from "./features/window-shell/use-native-menu";
 import { useAutoHideMenu } from "./features/window-shell/use-auto-hide-menu";
 import { createWindowControls } from "./features/window-shell/use-window-controls";
 import { registerWindowShellShortcuts } from "./features/window-shell/window-shortcuts";
+import { useSourceMode } from "./features/window-shell/source-mode";
 import type { MenuRouterDeps } from "./features/window-shell/menu-router";
 import { setNativeMenuVisible } from "./services/menu-io";
 import {
@@ -111,6 +112,12 @@ const settingsStore = useSettingsStore();
 
 /** 主题状态（08：Themes 菜单主题列表/切换命令依赖） */
 const themeStore = useThemeStore();
+
+/**
+ * 源码模式单例（12 W4：AC-M-6~8 双向切换；AppShell 显隐与本层命令装配共用
+ * 同一实例——菜单 action 与 Ctrl+/ 快捷键单一执行路径）
+ */
+const sourceMode = useSourceMode();
 
 /**
  * 打开文件夹（AC-F9-1）：空串走系统对话框选目录；随后激活标签会话 openFolder
@@ -252,6 +259,8 @@ const menuDeps: MenuRouterDeps = {
   switchPanel: (key) => fileTree.switchPanel(key),
   globalSearch: () => fileTree.showSearch(),
   switchDocNext: () => tabs.cycle(1),
+  // 源码模式（12 W4）：与 Ctrl+/ 快捷键共用同一 toggle（AC-M-3 单一执行路径）
+  toggleSourceMode: () => sourceMode.toggle(),
   toggleDevtools: () => {
     // 开合结果无需消费；失败（构建不支持/IPC 异常）仅记录不打断交互
     void toggleDevtools().catch((e: unknown) => {
@@ -316,7 +325,8 @@ const cleanupShortcuts = registerAppShortcuts({
 });
 
 /** 窗口外壳快捷键（12 W2）：Ctrl+O 打开 / Ctrl+Shift+S 另存为；
- * 12 W3：F11 全屏 / Ctrl+Shift+0/=/- 缩放三键 / Ctrl+Shift+N 新建窗口（菜单对偶注册） */
+ * 12 W3：F11 全屏 / Ctrl+Shift+0/=- 缩放三键 / Ctrl+Shift+N 新建窗口（菜单对偶注册）；
+ * 12 W4：Ctrl+/ 源码模式双向切换（与菜单「源码模式」同一命令函数） */
 const cleanupWindowShellShortcuts = registerWindowShellShortcuts({
   onOpenFile: menuDeps.openFileDialog,
   onSaveAs: menuDeps.saveAs,
@@ -325,6 +335,7 @@ const cleanupWindowShellShortcuts = registerWindowShellShortcuts({
   onZoomOut: menuDeps.zoomOut,
   onZoomReset: menuDeps.zoomReset,
   onNewWindow: menuDeps.newWindow,
+  onToggleSourceMode: () => sourceMode.toggle(),
 });
 
 /** Alt 切换状态机句柄（onMounted 赋值；undefined=尚未装配——全屏联动经 optional chain 防御） */

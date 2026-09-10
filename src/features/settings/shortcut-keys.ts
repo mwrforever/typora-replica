@@ -65,7 +65,7 @@ const SYMBOL_KEYS = new Set(["`", "-", "=", "[", "]", ";", "'", ",", ".", "/", "
  * （tab 分支按 Shift 双向轮换，Ctrl+Shift+Tab 反向轮换同属窗口消费面）/ Ctrl+Shift+T
  * 重开关闭标签；06 Ctrl+F 搜索 / Ctrl+H 替换；10 Ctrl+, 面板开合；
  * 12 W2 Ctrl+O 打开文件 / Ctrl+Shift+S 另存为；12 W3 Ctrl+Shift+N 新建窗口 /
- * Ctrl+Shift+0/=/- 缩放三键（AC-M-14/16）。
+ * Ctrl+Shift+0/=- 缩放三键（AC-M-14/16）；12 W4 Ctrl+/ 源码模式（AC-M-6~8）。
  * （F3/Shift+F3/Escape/F11 无 Ctrl 修饰，parseShortcutCombo 本就拒绝，不入集。）
  */
 const WINDOW_RESERVED_PM_KEYS: ReadonlySet<string> = new Set([
@@ -91,6 +91,8 @@ const WINDOW_RESERVED_PM_KEYS: ReadonlySet<string> = new Set([
   "Mod-Shift-0",
   "Mod-Shift-=",
   "Mod-Shift--",
+  // 12 W4：源码模式双向切换（窗口级 keydown 注册，防 keyBinding 双重执行）
+  "Mod-/",
 ]);
 
 /**

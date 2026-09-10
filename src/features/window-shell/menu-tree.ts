@@ -266,7 +266,7 @@ function buildFormatMenu(input: MenuTreeInput): MenuNode {
 
 /**
  * 构建 View 菜单子树（00 spec §11.5；侧栏/面板/搜索/切换文档/DevTools/全屏/缩放/
- * 置顶可执行，源码模式/专注/打字机属 W4~W5 工作包，先以禁用态占位）
+ * 置顶/源码模式可执行，专注/打字机属 W5 工作包，先以禁用态占位）
  */
 function buildViewMenu(): MenuNode {
   return {
@@ -279,8 +279,8 @@ function buildViewMenu(): MenuNode {
       { kind: "item", id: "view.panel-list", label: "文章列表\tCtrl+Shift+2", enabled: true },
       { kind: "item", id: "view.panel-tree", label: "文件树\tCtrl+Shift+3", enabled: true },
       { kind: "separator" },
-      // 源码模式：W4 接入（Ctrl+/）
-      disabled("view.source-mode", "源码模式\tCtrl+/"),
+      // 源码模式：12 W4 已接入（Ctrl+/ 随 W4 注册，AC-M-6~8）
+      { kind: "item", id: "view.source-mode", label: "源码模式\tCtrl+/", enabled: true },
       // 专注模式：W5 接入（F8）
       disabled("view.focus-mode", "专注模式\tF8"),
       // 打字机模式：W5 接入（F9）

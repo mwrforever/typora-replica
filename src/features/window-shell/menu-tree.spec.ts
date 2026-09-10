@@ -280,7 +280,7 @@ describe("Edit/Paragraph/Format 菜单（00 spec §11.2-11.4）", () => {
     );
   });
 
-  it("无实现面项为明确禁用态（下划线/超链接/图片/清除格式/数学块/拼写检查/源码/专注/打字机）", () => {
+  it("无实现面项为明确禁用态（下划线/超链接/图片/清除格式/数学块/拼写检查/专注/打字机）", () => {
     const tree = buildMenuTree(baseInput);
     for (const id of [
       "editor.Underline",
@@ -290,14 +290,20 @@ describe("Edit/Paragraph/Format 菜单（00 spec §11.2-11.4）", () => {
       "editor.Math Block",
       "edit.spell-check",
       "edit.select-line",
-      // 源码/专注/打字机属 W4~W5 工作包，先以禁用态占位
-      "view.source-mode",
+      // 专注/打字机属 W5 工作包，先以禁用态占位
       "view.focus-mode",
       "view.typewriter-mode",
     ]) {
       const node = findById(tree, id);
       expect(node && node.kind === "item" ? node.enabled : undefined).toBe(false);
     }
+  });
+
+  it("12 W4 源码模式项为可执行态且携真实注册组合（Ctrl+/ 随 W4 注册）", () => {
+    const tree = buildMenuTree(baseInput);
+    const node = findById(tree, "view.source-mode");
+    expect(node && node.kind === "item" ? node.enabled : undefined).toBe(true);
+    expect(node && node.kind === "item" ? node.label : undefined).toBe("源码模式	Ctrl+/");
   });
 
   it("12 W3 窗口控制项为可执行态且携真实注册组合（全屏/缩放三键/置顶）", () => {

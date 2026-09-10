@@ -58,6 +58,7 @@ function makeDeps(): MenuRouterDeps {
     switchPanel: vi.fn(),
     globalSearch: vi.fn(),
     switchDocNext: vi.fn(),
+    toggleSourceMode: vi.fn(),
     toggleDevtools: vi.fn(),
     toggleFullscreen: vi.fn(),
     zoomIn: vi.fn(),

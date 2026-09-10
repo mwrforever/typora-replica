@@ -60,6 +60,8 @@ export interface MenuRouterDeps {
   globalSearch: () => void;
   /** 切换到下一个打开的文档（04 cycle） */
   switchDocNext: () => void;
+  /** 源码模式双向切换（12 W4 source-mode 单例；AC-M-6~8） */
+  toggleSourceMode: () => void;
   /** 切换 DevTools（08 toggleDevtools） */
   toggleDevtools: () => void;
   /** 切换全屏并联动菜单栏显隐（12 W3 window-controls，AC-M-13） */
@@ -153,6 +155,8 @@ export function createMenuRouter(deps: MenuRouterDeps, input: MenuRouterInput): 
       "view.panel-tree": () => deps.switchPanel("tree"),
       "view.global-search": () => deps.globalSearch(),
       "view.switch-doc": () => deps.switchDocNext(),
+      // 源码模式（12 W4）：菜单 action 与 Ctrl+/ 快捷键共用同一 toggle 命令
+      "view.source-mode": () => deps.toggleSourceMode(),
       "view.toggle-devtools": () => deps.toggleDevtools(),
       "view.fullscreen": () => deps.toggleFullscreen(),
       "view.zoom-in": () => deps.zoomIn(),
