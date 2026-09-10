@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { resolveLaunch } from "./launch-behavior";
 import type { AppSettings } from "./settings";
 
-/** 构造测试设置（默认 restore-folder；outline/image/theme/export/appearance/editor/markdown 为 05/07/08/09/10 新增必选键，补基准值） */
+/** 构造测试设置（默认 restore-folder；outline/image/theme/export/appearance/editor/markdown/layout 为 05/07/08/09/10/12 新增必选键，补基准值） */
 function makeSettings(over: Partial<AppSettings> = {}): AppSettings {
   return {
     autoSave: { enabled: true, timerMinutes: 5 },
@@ -50,6 +50,7 @@ function makeSettings(over: Partial<AppSettings> = {}): AppSettings {
         useLastUsedLanguage: true,
       },
     },
+    layout: { sidebarWidth: 260 },
     ...over,
   };
 }

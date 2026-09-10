@@ -245,4 +245,26 @@ describe("偏好设置（store 持久化）", () => {
     expect(s.markdown.inlineMath).toBe(false);
     expect(s.export.includeOutline).toBe(false); // 其他组不受影响
   });
+
+  it("layout 组默认侧栏宽度 260（与 03 阶段固定宽度一致，12 外壳升级无感）", async () => {
+    const s = await loadSettings();
+    expect(s.layout.sidebarWidth).toBe(260);
+  });
+
+  it("layout.sidebarWidth 存量读取与增量写回（AC-M-23 持久化通道）", async () => {
+    // 存量整组写入 → 逐字段读取（重启恢复路径）
+    memory.set("layout", { sidebarWidth: 360 });
+    expect((await loadSettings()).layout.sidebarWidth).toBe(360);
+    // 拖拽结束增量写回（12 外壳 onPersist 消费口）→ 独立键落盘
+    await updateSettings({ layout: { sidebarWidth: 420 } });
+    expect(memory.get("layout")).toEqual({ sidebarWidth: 420 });
+    expect((await loadSettings()).layout.sidebarWidth).toBe(420);
+  });
+
+  it("updateSettings 增量合并 layout 单字段且不影响其他组", async () => {
+    await updateSettings({ appearance: { readingSpeed: 260 } });
+    const s = await updateSettings({ layout: { sidebarWidth: 200 } });
+    expect(s.layout.sidebarWidth).toBe(200);
+    expect(s.appearance.readingSpeed).toBe(260); // 其他组不受影响
+  });
 });
