@@ -41,6 +41,7 @@ import { useAutoHideMenu } from "./features/window-shell/use-auto-hide-menu";
 import { createWindowControls } from "./features/window-shell/use-window-controls";
 import { registerWindowShellShortcuts } from "./features/window-shell/window-shortcuts";
 import { useSourceMode } from "./features/window-shell/source-mode";
+import { useViewModes } from "./features/window-shell/view-modes";
 import type { MenuRouterDeps } from "./features/window-shell/menu-router";
 import { setNativeMenuVisible } from "./services/menu-io";
 import {
@@ -118,6 +119,13 @@ const themeStore = useThemeStore();
  * 同一实例——菜单 action 与 Ctrl+/ 快捷键单一执行路径）
  */
 const sourceMode = useSourceMode();
+
+/**
+ * 视图模式单例（12 W5：Focus/Typewriter 双向切换，AC-M-10~12；菜单 action 与
+ * F8/F9 快捷键共用同一 toggle 命令——单一执行路径；点击居中偏好在单例内经
+ * 10 设置 store watch 即时生效）
+ */
+const viewModes = useViewModes();
 
 /**
  * 打开文件夹（AC-F9-1）：空串走系统对话框选目录；随后激活标签会话 openFolder
@@ -261,6 +269,9 @@ const menuDeps: MenuRouterDeps = {
   switchDocNext: () => tabs.cycle(1),
   // 源码模式（12 W4）：与 Ctrl+/ 快捷键共用同一 toggle（AC-M-3 单一执行路径）
   toggleSourceMode: () => sourceMode.toggle(),
+  // 专注/打字机模式（12 W5）：与 F8/F9 快捷键共用同一 toggle（AC-M-10~12 单一路径）
+  toggleFocusMode: () => viewModes.toggleFocus(),
+  toggleTypewriterMode: () => viewModes.toggleTypewriter(),
   toggleDevtools: () => {
     // 开合结果无需消费；失败（构建不支持/IPC 异常）仅记录不打断交互
     void toggleDevtools().catch((e: unknown) => {
@@ -326,7 +337,8 @@ const cleanupShortcuts = registerAppShortcuts({
 
 /** 窗口外壳快捷键（12 W2）：Ctrl+O 打开 / Ctrl+Shift+S 另存为；
  * 12 W3：F11 全屏 / Ctrl+Shift+0/=- 缩放三键 / Ctrl+Shift+N 新建窗口（菜单对偶注册）；
- * 12 W4：Ctrl+/ 源码模式双向切换（与菜单「源码模式」同一命令函数） */
+ * 12 W4：Ctrl+/ 源码模式双向切换（与菜单「源码模式」同一命令函数）；
+ * 12 W5：F8 专注 / F9 打字机双向切换（与菜单勾选项同一命令函数，AC-M-10~12） */
 const cleanupWindowShellShortcuts = registerWindowShellShortcuts({
   onOpenFile: menuDeps.openFileDialog,
   onSaveAs: menuDeps.saveAs,
@@ -336,6 +348,8 @@ const cleanupWindowShellShortcuts = registerWindowShellShortcuts({
   onZoomReset: menuDeps.zoomReset,
   onNewWindow: menuDeps.newWindow,
   onToggleSourceMode: () => sourceMode.toggle(),
+  onToggleFocusMode: () => viewModes.toggleFocus(),
+  onToggleTypewriterMode: () => viewModes.toggleTypewriter(),
 });
 
 /** Alt 切换状态机句柄（onMounted 赋值；undefined=尚未装配——全屏联动经 optional chain 防御） */

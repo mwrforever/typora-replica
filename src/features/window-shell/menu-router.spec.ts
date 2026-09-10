@@ -35,6 +35,8 @@ function makeDeps(): MenuRouterDeps {
     globalSearch: vi.fn(),
     switchDocNext: vi.fn(),
     toggleSourceMode: vi.fn(),
+    toggleFocusMode: vi.fn(),
+    toggleTypewriterMode: vi.fn(),
     toggleDevtools: vi.fn(),
     toggleFullscreen: vi.fn(),
     zoomIn: vi.fn(),
@@ -125,6 +127,11 @@ describe("createMenuRouter 精确表域", () => {
     // 源码模式（12 W4）：菜单 action 与 Ctrl+/ 快捷键共用同一 toggle 命令
     router.run("view.source-mode");
     expect(deps.toggleSourceMode).toHaveBeenCalledOnce();
+    // 专注/打字机（12 W5）：菜单 action 与 F8/F9 快捷键共用同一 toggle 命令
+    router.run("view.focus-mode");
+    expect(deps.toggleFocusMode).toHaveBeenCalledOnce();
+    router.run("view.typewriter-mode");
+    expect(deps.toggleTypewriterMode).toHaveBeenCalledOnce();
     router.run("view.toggle-devtools");
     expect(deps.toggleDevtools).toHaveBeenCalledOnce();
     router.run("themes.open-folder");
@@ -192,9 +199,9 @@ describe("createMenuRouter 前缀域", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const deps = makeDeps();
     const router = createMenuRouter(deps, baseInput);
-    // 禁用占位项（W5 专注模式）误触走未知 id 告警路径
-    router.run("view.focus-mode");
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("view.focus-mode"));
+    // 禁用占位项（Print，无打印实现面）误触走未知 id 告警路径
+    router.run("file.print");
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("file.print"));
     expect(deps.notifyError).not.toHaveBeenCalled();
   });
 });
@@ -254,6 +261,8 @@ describe("id 覆盖全表无孤儿（AC-M-3 配套：真实菜单树 × 路由�
       themes,
       recentPaths,
       shortcutEntries: [],
+      focusEnabled: false,
+      typewriterEnabled: false,
     });
     const ids = collectEnabledIds(tree);
     expect(ids.length).toBeGreaterThan(0);

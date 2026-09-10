@@ -96,6 +96,8 @@ const baseInput = {
   activeThemeName: "github-dark",
   activeMode: "dark" as const,
   recentPaths: ["D:\\docs\\a.md", "D:\\docs\\b.md"],
+  focusEnabled: false,
+  typewriterEnabled: false,
 };
 
 /** 展平菜单树（保留层级路径；核对 id/禁用态用） */
@@ -280,7 +282,7 @@ describe("Edit/Paragraph/Format 菜单（00 spec §11.2-11.4）", () => {
     );
   });
 
-  it("无实现面项为明确禁用态（下划线/超链接/图片/清除格式/数学块/拼写检查/专注/打字机）", () => {
+  it("无实现面项为明确禁用态（下划线/超链接/图片/清除格式/数学块/拼写检查）", () => {
     const tree = buildMenuTree(baseInput);
     for (const id of [
       "editor.Underline",
@@ -290,13 +292,36 @@ describe("Edit/Paragraph/Format 菜单（00 spec §11.2-11.4）", () => {
       "editor.Math Block",
       "edit.spell-check",
       "edit.select-line",
-      // 专注/打字机属 W5 工作包，先以禁用态占位
-      "view.focus-mode",
-      "view.typewriter-mode",
     ]) {
       const node = findById(tree, id);
       expect(node && node.kind === "item" ? node.enabled : undefined).toBe(false);
     }
+  });
+
+  it("12 W5 专注/打字机为勾选项且勾选态跟随开关输入（AC-M-10/11 菜单对偶）", () => {
+    const offTree = buildMenuTree(baseInput);
+    const offFocus = findById(offTree, "view.focus-mode");
+    const offTypewriter = findById(offTree, "view.typewriter-mode");
+    // 勾选项形态：可执行 + 携 W5 注册组合串 + 开关关闭态未勾选
+    expect(offFocus && offFocus.kind === "check-item" ? offFocus.checked : undefined).toBe(false);
+    expect(offFocus && offFocus.kind === "check-item" ? offFocus.enabled : undefined).toBe(true);
+    expect(offFocus && offFocus.kind === "check-item" ? offFocus.label : undefined).toBe(
+      "专注模式\tF8",
+    );
+    expect(
+      offTypewriter && offTypewriter.kind === "check-item" ? offTypewriter.checked : undefined,
+    ).toBe(false);
+    expect(
+      offTypewriter && offTypewriter.kind === "check-item" ? offTypewriter.label : undefined,
+    ).toBe("打字机模式\tF9");
+    // 开关开启 → 勾选态同步（use-native-menu watch 重建链路的数据源）
+    const onTree = buildMenuTree({ ...baseInput, focusEnabled: true, typewriterEnabled: true });
+    const onFocus = findById(onTree, "view.focus-mode");
+    const onTypewriter = findById(onTree, "view.typewriter-mode");
+    expect(onFocus && onFocus.kind === "check-item" ? onFocus.checked : undefined).toBe(true);
+    expect(
+      onTypewriter && onTypewriter.kind === "check-item" ? onTypewriter.checked : undefined,
+    ).toBe(true);
   });
 
   it("12 W4 源码模式项为可执行态且携真实注册组合（Ctrl+/ 随 W4 注册）", () => {

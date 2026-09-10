@@ -31,6 +31,7 @@ import { useExportStore } from "../export/export-store";
 import { useSettingsStore } from "../settings/settings-store";
 import { useThemeStore } from "../theme/theme-store";
 import { useNativeMenu } from "./use-native-menu";
+import { resetViewModesForTest, useViewModes } from "./view-modes";
 import type { MenuRouterDeps } from "./menu-router";
 import type { MenuNode } from "../../services/menu-io";
 
@@ -59,6 +60,8 @@ function makeDeps(): MenuRouterDeps {
     globalSearch: vi.fn(),
     switchDocNext: vi.fn(),
     toggleSourceMode: vi.fn(),
+    toggleFocusMode: vi.fn(),
+    toggleTypewriterMode: vi.fn(),
     toggleDevtools: vi.fn(),
     toggleFullscreen: vi.fn(),
     zoomIn: vi.fn(),
@@ -135,10 +138,12 @@ describe("useNativeMenu（原生菜单装配运行时链路）", () => {
     mocks.setWindowMenu.mockImplementation(() => Promise.resolve());
     mocks.recentLists = [[{ path: "D:\\a.md", pinned: false, openedAt: 1 }]];
     mocks.recentFails = false;
+    resetViewModesForTest();
   });
 
   afterEach(() => {
     for (const cleanup of cleanups.splice(0)) cleanup();
+    resetViewModesForTest();
   });
 
   it("装配后挂载七菜单（AC-M-1）且菜单点击经路由派发到依赖回调（AC-M-3）", async () => {
@@ -220,6 +225,23 @@ describe("useNativeMenu（原生菜单装配运行时链路）", () => {
     exportStore.addItem("自定义命令");
     await waitForMountCount(2);
     expect(JSON.stringify(mountCall(1).nodes)).toContain("自定义命令");
+  });
+
+  it("F8/F9 开关变化触发重建且 View 菜单勾选态跟随（12 W5，AC-M-10/11）", async () => {
+    cleanups.push(useNativeMenu({ deps }).cleanup);
+    await waitForMountCount(1);
+    // 初始全关：勾选项未选中
+    expect(findCheckItem(mountCall(0).nodes, "view.focus-mode")?.checked).toBe(false);
+    expect(findCheckItem(mountCall(0).nodes, "view.typewriter-mode")?.checked).toBe(false);
+    // F8/F9 toggle（view-modes 单例同一命令——菜单 action 与快捷键共路径）
+    useViewModes().toggleFocus();
+    await waitForMountCount(2);
+    expect(findCheckItem(mountCall(1).nodes, "view.focus-mode")?.checked).toBe(true);
+    expect(findCheckItem(mountCall(1).nodes, "view.typewriter-mode")?.checked).toBe(false);
+    useViewModes().toggleTypewriter();
+    await waitForMountCount(3);
+    expect(findCheckItem(mountCall(2).nodes, "view.focus-mode")?.checked).toBe(true);
+    expect(findCheckItem(mountCall(2).nodes, "view.typewriter-mode")?.checked).toBe(true);
   });
 
   it("refreshRecent 重拉最近文件并重建（打开文件后调用）", async () => {

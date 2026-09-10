@@ -239,6 +239,13 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
     effect: "restart",
   },
   {
+    id: "appearance.typewriter-click-center",
+    section: "appearance",
+    label: "打字机模式点击滚动居中",
+    keywords: "typewriter click center 打字机 点击 居中 滚动 F9",
+    effect: "instant",
+  },
+  {
     id: "appearance.advanced-default-font-family",
     section: "appearance",
     label: "defaultFontFamily（默认字体族）",

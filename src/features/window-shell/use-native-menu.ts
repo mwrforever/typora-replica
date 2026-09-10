@@ -18,6 +18,7 @@ import type { ThemeMode } from "../theme/theme-store";
 import { RecentFiles } from "../../services/recent-files";
 import { buildMenuTree } from "./menu-tree";
 import { createMenuRouter } from "./menu-router";
+import { useViewModes } from "./view-modes";
 import type { MenuRouterDeps } from "./menu-router";
 
 /** 原生菜单装配选项（路由依赖注入；数据源 store 由本 composable 自取——模块单例） */
@@ -47,6 +48,8 @@ export function useNativeMenu(options: UseNativeMenuOptions): NativeMenuHandle {
   const settings = useSettingsStore();
   const theme = useThemeStore();
   const exportStore = useExportStore();
+  /** 视图模式单例（12 W5：专注/打字机勾选态数据源，toggle 经路由依赖注入） */
+  const viewModes = useViewModes();
   /** 最近文件路径缓存（非响应式服务；refreshRecent 刷新后重建） */
   let recentPaths: string[] = [];
 
@@ -61,6 +64,8 @@ export function useNativeMenu(options: UseNativeMenuOptions): NativeMenuHandle {
       activeThemeName: theme.resolveActiveTheme(mode)?.name,
       activeMode: mode,
       recentPaths,
+      focusEnabled: viewModes.focusEnabled.value,
+      typewriterEnabled: viewModes.typewriterEnabled.value,
     };
     const router = createMenuRouter(options.deps, {
       exportEntries: input.exportEntries,
@@ -103,6 +108,8 @@ export function useNativeMenu(options: UseNativeMenuOptions): NativeMenuHandle {
       () => JSON.stringify(exportStore.items),
       () => void rebuildGuarded(),
     ),
+    // 专注/打字机开关变化（12 W5 F8/F9 toggle）→ View 菜单勾选态重建（AC-M-10~12）
+    watch([viewModes.focusEnabled, viewModes.typewriterEnabled], () => void rebuildGuarded()),
   ];
 
   return {

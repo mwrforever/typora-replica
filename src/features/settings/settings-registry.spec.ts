@@ -46,6 +46,13 @@ describe("SETTINGS_ITEMS 全集注册表", () => {
       "instant",
     );
   });
+
+  it("打字机点击居中为 Appearance 分区即时生效项（12 W5，AC-M-12 面板落位）", () => {
+    const item = SETTINGS_ITEMS.find((i) => i.id === "appearance.typewriter-click-center");
+    expect(item?.section).toBe("appearance");
+    expect(item?.effect).toBe("instant");
+    expect(item?.label).toContain("打字机");
+  });
 });
 
 describe("filterSettingsItems 面板内搜索过滤（AC-S1-2）", () => {

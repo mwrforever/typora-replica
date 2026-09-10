@@ -21,6 +21,7 @@ import { applyEditorKeymaps } from "../features/editor/keymaps";
 import { latexEscapePlugin } from "../features/editor/latex-escape";
 import { openLinkPlugin } from "../features/editor/link/open-link";
 import { markwellSearchPlugin } from "../features/editor/search-plugin";
+import { focusTypewriterPlugin } from "../features/editor/focus-typewriter-plugin";
 import {
   configureToc,
   createTocViewRegistry,
@@ -121,6 +122,8 @@ export async function makeTestEditor(
   crepe.editor.use(typoraHeadingIdPlugin);
   // 官方查找高亮插件（06 搜索替换 P1），与产品工厂同源
   crepe.editor.use(markwellSearchPlugin);
+  // Focus/Typewriter 双视图模式插件（12 W5），与产品工厂同源
+  crepe.editor.use(focusTypewriterPlugin);
   crepe.editor.config((ctx) => {
     registerEditorInputRules(ctx);
     applyEditorKeymaps(ctx);

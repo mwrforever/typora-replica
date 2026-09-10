@@ -33,6 +33,10 @@ export interface MenuTreeInput {
   activeMode: ThemeMode;
   /** 最近文件路径列表（RecentFiles.list；Open Recent 动态子菜单数据源） */
   recentPaths: readonly string[];
+  /** Focus 模式开关态（12 W5 view-modes；专注模式菜单勾选态，AC-M-10） */
+  focusEnabled: boolean;
+  /** Typewriter 模式开关态（12 W5 view-modes；打字机模式菜单勾选态，AC-M-11） */
+  typewriterEnabled: boolean;
 }
 
 /**
@@ -266,9 +270,10 @@ function buildFormatMenu(input: MenuTreeInput): MenuNode {
 
 /**
  * 构建 View 菜单子树（00 spec §11.5；侧栏/面板/搜索/切换文档/DevTools/全屏/缩放/
- * 置顶/源码模式可执行，专注/打字机属 W5 工作包，先以禁用态占位）
+ * 置顶/源码模式/专注/打字机全部可执行——专注/打字机为 12 W5 启用的勾选项，
+ * AC-M-10~12）
  */
-function buildViewMenu(): MenuNode {
+function buildViewMenu(input: MenuTreeInput): MenuNode {
   return {
     kind: "submenu",
     id: "menu.view",
@@ -281,10 +286,22 @@ function buildViewMenu(): MenuNode {
       { kind: "separator" },
       // 源码模式：12 W4 已接入（Ctrl+/ 随 W4 注册，AC-M-6~8）
       { kind: "item", id: "view.source-mode", label: "源码模式\tCtrl+/", enabled: true },
-      // 专注模式：W5 接入（F8）
-      disabled("view.focus-mode", "专注模式\tF8"),
-      // 打字机模式：W5 接入（F9）
-      disabled("view.typewriter-mode", "打字机模式\tF9"),
+      // 专注模式：12 W5 已接入（F8 随 W5 注册，AC-M-10）；勾选态跟随开关
+      {
+        kind: "check-item",
+        id: "view.focus-mode",
+        label: "专注模式\tF8",
+        enabled: true,
+        checked: input.focusEnabled,
+      },
+      // 打字机模式：12 W5 已接入（F9 随 W5 注册，AC-M-11/12）；勾选态跟随开关
+      {
+        kind: "check-item",
+        id: "view.typewriter-mode",
+        label: "打字机模式\tF9",
+        enabled: true,
+        checked: input.typewriterEnabled,
+      },
       { kind: "separator" },
       // 全屏/缩放三键：12 W3 已接入（F11 / Ctrl+Shift+0/=/-，AC-M-13/14）
       { kind: "item", id: "view.fullscreen", label: "切换全屏\tF11", enabled: true },
@@ -353,7 +370,7 @@ export function buildMenuTree(input: MenuTreeInput): MenuNode[] {
     buildEditMenu(),
     buildParagraphMenu(input),
     buildFormatMenu(input),
-    buildViewMenu(),
+    buildViewMenu(input),
     buildThemesMenu(input),
     buildHelpMenu(),
   ];

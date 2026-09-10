@@ -1,6 +1,7 @@
 <!-- AppearanceSection.vue
      Appearance 分区（12.1）：明暗主题双选（08 即时生效）、状态栏/字号/阅读速度（消费方 11/12，
-     重启生效标注）、高级键说明（defaultFontFamily/autoHideMenuBar/monocolorEmoji）。 -->
+     重启生效标注）、打字机点击居中（12 W5 即时生效）、高级键说明（defaultFontFamily/
+     autoHideMenuBar/monocolorEmoji）。 -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import type { WritableComputedRef } from "vue";
@@ -71,6 +72,14 @@ const readingSpeed = computed<number>({
     });
   },
 });
+
+/** 打字机模式点击滚动居中（12 W5 视图模式即时消费，AC-M-12 偏好开关） */
+const typewriterClickCenter = computed<boolean>({
+  get: () => store.gui?.appearance.typewriterClickCenter ?? true,
+  set: (value: boolean) => {
+    void store.updateGui({ appearance: { typewriterClickCenter: value } });
+  },
+});
 </script>
 
 <template>
@@ -107,6 +116,9 @@ const readingSpeed = computed<number>({
         aria-label="阅读速度"
         class="setting-control setting-control--number"
       />
+    </SettingRow>
+    <SettingRow item-id="appearance.typewriter-click-center">
+      <input v-model="typewriterClickCenter" type="checkbox" aria-label="打字机模式点击滚动居中" />
     </SettingRow>
     <!-- 高级键说明（只读文档性文本；值经 conf.user.json 手编，重启生效） -->
     <p class="settings-section__hint">

@@ -176,13 +176,14 @@ describe("偏好设置（store 持久化）", () => {
 
   // ── 10 设置面板新键组（12.1-12.5 全集存储面）──
 
-  it("appearance 组缺失键逐层回落默认（状态栏开/字号跟随主题/阅读速度 200）", async () => {
+  it("appearance 组缺失键逐层回落默认（状态栏开/字号跟随主题/阅读速度 200/打字机点击居中开）", async () => {
     // 无存储键（beforeEach 已清空）→ appearance 组逐字段回落默认值
     const s = await loadSettings();
     // 逐字段钉死默认（toEqual 对 undefined 宽容，防静默漏字段）
     expect(s.appearance.showStatusBar).toBe(true);
     expect(s.appearance.fontSize).toBeUndefined(); // 跟随主题
     expect(s.appearance.readingSpeed).toBe(200);
+    expect(s.appearance.typewriterClickCenter).toBe(true); // 官方默认（12 W5 AC-M-12）
   });
 
   it("appearance 字号设置后持久化保留（undefined 与数值双形态往返）", async () => {
@@ -192,6 +193,12 @@ describe("偏好设置（store 持久化）", () => {
     expect(reloaded.appearance.fontSize).toBe(18);
     expect(reloaded.appearance.readingSpeed).toBe(250);
     expect(reloaded.appearance.showStatusBar).toBe(true); // 未触及键保持
+  });
+
+  it("打字机点击居中偏好关闭态持久化往返（12 W5 偏好存储面，AC-M-12）", async () => {
+    await updateSettings({ appearance: { typewriterClickCenter: false } });
+    const reloaded = await loadSettings();
+    expect(reloaded.appearance.typewriterClickCenter).toBe(false);
   });
 
   it("editor 组默认全开（auto pair 括号与 Markdown 语法，01 实测口径）", async () => {

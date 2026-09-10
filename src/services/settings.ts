@@ -105,6 +105,8 @@ export interface AppearanceSettings {
   fontSize?: number;
   /** 阅读速度 words/min（阅读时间统计口径，默认 200 自定；消费方 11） */
   readingSpeed: number;
+  /** 打字机模式点击滚动居中（官方默认开；undefined = 默认开；消费方 12 视图模式控制器，F9 偏好项） */
+  typewriterClickCenter?: boolean;
 }
 
 /** 编辑器行为设置（12.2；auto pair 输入规则随编辑器 create 注入，重启生效） */
@@ -211,8 +213,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     htmlThemeOverride: "",
     pdfMarginIn: 0.4,
   },
-  // 外观默认：状态栏开、字号跟随主题（fontSize 缺省 = undefined）、阅读速度 200 词/分（调研自定）
-  appearance: { showStatusBar: true, readingSpeed: 200 },
+  // 外观默认：状态栏开、字号跟随主题（fontSize 缺省 = undefined）、阅读速度 200 词/分（调研自定）、
+  // 打字机点击居中开（官方默认行为，AC-M-12）
+  appearance: { showStatusBar: true, readingSpeed: 200, typewriterClickCenter: true },
   // 编辑器行为默认：auto pair 全开（01 实测口径，不改变既有输入体验）
   editor: { autoPairBrackets: true, autoPairMarkdown: true },
   // Markdown 语法默认全关（01 实测行内数学关 + 其余自定，保持既有渲染行为零变化）；
@@ -311,6 +314,9 @@ export async function loadSettings(): Promise<AppSettings> {
       // 字号无回落键：undefined 直通 = 跟随主题（显式"未设置"语义，不落默认数值）
       fontSize: stored.appearance.fontSize,
       readingSpeed: stored.appearance.readingSpeed ?? DEFAULT_SETTINGS.appearance.readingSpeed,
+      typewriterClickCenter:
+        stored.appearance.typewriterClickCenter ??
+        DEFAULT_SETTINGS.appearance.typewriterClickCenter,
     },
     editor: {
       autoPairBrackets: stored.editor.autoPairBrackets ?? DEFAULT_SETTINGS.editor.autoPairBrackets,

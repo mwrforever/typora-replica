@@ -1,6 +1,6 @@
 // 窗口外壳快捷键测试（12 W2：Ctrl+O 打开 / Ctrl+Shift+S 另存为；
 // 12 W3：F11 全屏 / Ctrl+Shift+0/=/- 缩放三键 / Ctrl+Shift+N 新建窗口；
-// 12 W4：Ctrl+/ 源码模式）
+// 12 W4：Ctrl+/ 源码模式；12 W5：F8 专注 / F9 打字机）
 //
 // 合成 KeyboardEvent 直发 window（与 app-shortcuts.spec 同口径）。
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -17,6 +17,8 @@ function makeHandlers() {
     onZoomOut: vi.fn(),
     onNewWindow: vi.fn(),
     onToggleSourceMode: vi.fn(),
+    onToggleFocusMode: vi.fn(),
+    onToggleTypewriterMode: vi.fn(),
   };
 }
 
@@ -307,5 +309,57 @@ describe("registerWindowShellShortcuts（W4：Ctrl+/ 源码模式，AC-M-6~8）"
     event.preventDefault();
     window.dispatchEvent(event);
     expect(handlers.onToggleSourceMode).not.toHaveBeenCalled();
+  });
+});
+
+describe("registerWindowShellShortcuts（W5：F8 专注 / F9 打字机，AC-M-10~12）", () => {
+  let cleanup: (() => void) | undefined;
+  afterEach(() => {
+    cleanup?.();
+    cleanup = undefined;
+  });
+
+  it("F8 单键触发专注模式切换并拦截默认行为（AC-M-10 入口）", () => {
+    const handlers = makeHandlers();
+    cleanup = registerWindowShellShortcuts(handlers);
+    const event = new KeyboardEvent("keydown", { key: "F8", cancelable: true });
+    const prevented = !window.dispatchEvent(event);
+    expect(handlers.onToggleFocusMode).toHaveBeenCalledOnce();
+    expect(handlers.onToggleTypewriterMode).not.toHaveBeenCalled();
+    expect(prevented).toBe(true);
+  });
+
+  it("F9 单键触发打字机模式切换并拦截默认行为（AC-M-11 入口）", () => {
+    const handlers = makeHandlers();
+    cleanup = registerWindowShellShortcuts(handlers);
+    const event = new KeyboardEvent("keydown", { key: "F9", cancelable: true });
+    const prevented = !window.dispatchEvent(event);
+    expect(handlers.onToggleTypewriterMode).toHaveBeenCalledOnce();
+    expect(handlers.onToggleFocusMode).not.toHaveBeenCalled();
+    expect(prevented).toBe(true);
+  });
+
+  it("带修饰键的 F8/F9 不触发（保留系统/编辑器组合语义）", () => {
+    const handlers = makeHandlers();
+    cleanup = registerWindowShellShortcuts(handlers);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "F8", ctrlKey: true }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "F8", shiftKey: true }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "F9", altKey: true }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "F9", metaKey: true }));
+    expect(handlers.onToggleFocusMode).not.toHaveBeenCalled();
+    expect(handlers.onToggleTypewriterMode).not.toHaveBeenCalled();
+  });
+
+  it("F8/F9 已被消费时不重复触发（defaultPrevented 守卫）", () => {
+    const handlers = makeHandlers();
+    cleanup = registerWindowShellShortcuts(handlers);
+    const f8 = new KeyboardEvent("keydown", { key: "F8", cancelable: true });
+    f8.preventDefault();
+    window.dispatchEvent(f8);
+    const f9 = new KeyboardEvent("keydown", { key: "F9", cancelable: true });
+    f9.preventDefault();
+    window.dispatchEvent(f9);
+    expect(handlers.onToggleFocusMode).not.toHaveBeenCalled();
+    expect(handlers.onToggleTypewriterMode).not.toHaveBeenCalled();
   });
 });

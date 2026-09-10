@@ -62,6 +62,10 @@ export interface MenuRouterDeps {
   switchDocNext: () => void;
   /** 源码模式双向切换（12 W4 source-mode 单例；AC-M-6~8） */
   toggleSourceMode: () => void;
+  /** 专注模式双向切换（12 W5 view-modes 单例；AC-M-10，F8 共用同一命令） */
+  toggleFocusMode: () => void;
+  /** 打字机模式双向切换（12 W5 view-modes 单例；AC-M-11/12，F9 共用同一命令） */
+  toggleTypewriterMode: () => void;
   /** 切换 DevTools（08 toggleDevtools） */
   toggleDevtools: () => void;
   /** 切换全屏并联动菜单栏显隐（12 W3 window-controls，AC-M-13） */
@@ -157,6 +161,9 @@ export function createMenuRouter(deps: MenuRouterDeps, input: MenuRouterInput): 
       "view.switch-doc": () => deps.switchDocNext(),
       // 源码模式（12 W4）：菜单 action 与 Ctrl+/ 快捷键共用同一 toggle 命令
       "view.source-mode": () => deps.toggleSourceMode(),
+      // 专注/打字机模式（12 W5）：菜单 action 与 F8/F9 快捷键共用同一 toggle 命令
+      "view.focus-mode": () => deps.toggleFocusMode(),
+      "view.typewriter-mode": () => deps.toggleTypewriterMode(),
       "view.toggle-devtools": () => deps.toggleDevtools(),
       "view.fullscreen": () => deps.toggleFullscreen(),
       "view.zoom-in": () => deps.zoomIn(),

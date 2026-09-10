@@ -2,8 +2,10 @@
      CodeMirror 6 编辑器实例：挂载创建、随应用保活——双实例保活的源码侧
      （Crepe 实例由 04 TabHost 各标签持有，本层与 TabHost 以 v-show 互斥显隐，
      两侧实例均不销毁，保 undo 与光标）。
-     W5 预留（AC-M-9）：本层为 TabHost 的兄弟节点，不触碰 Crepe root DOM——
-     专注模式类名仍以 Crepe root 为挂载点，源码模式下可叠加、互不妨碍。
+     W5（AC-M-9）：源码模式 Focus 叠加——F8 开启时以 source-focus 扩展给当前
+     光标行挂 Typora 契约类名 md-focus、根容器挂 on-focus-mode，非当前行经
+     scoped CSS 以 --blur-text-color 淡化（与 WYSIWYG 侧插件语义同源）；
+     本层为 TabHost 的兄弟节点，不触碰 Crepe root DOM。
      暗色适配：08 主题 systemDark 驱动 Compartment 重配（oneDark 高亮 +
      与 crepe-overrides 暗色令牌同值的底色），不引入全局 CSS。 -->
 <script setup lang="ts">
@@ -15,6 +17,8 @@ import { markdown } from "@codemirror/lang-markdown";
 import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
 import { useThemeStore } from "../theme/theme-store";
+import { useViewModes } from "./view-modes";
+import { setSourceFocusEffect, sourceFocusField } from "./source-focus";
 import { useSourceMode } from "./source-mode";
 import type { SourceModeHost } from "./source-mode";
 
@@ -26,6 +30,9 @@ const theme = useThemeStore();
 
 /** 源码模式单例（宿主上缴 + active 显隐由父层绑定） */
 const sourceMode = useSourceMode();
+
+/** 视图模式单例（12 W5：Focus 开关驱动源码层叠加，F8 状态单一事实源） */
+const viewModes = useViewModes();
 
 /** CodeMirror 视图句柄（挂载创建、卸载销毁；undefined = 未就绪） */
 let view: EditorView | undefined;
@@ -68,7 +75,7 @@ function themeExtensions() {
     : [lightTheme, syntaxHighlighting(defaultHighlightStyle)];
 }
 
-/** 组装扩展：markdown 语法高亮 + 历史/默认键位 + 自动换行 + 明暗主题 compartment */
+/** 组装扩展：markdown 语法高亮 + 历史/默认键位 + 自动换行 + 明暗主题 compartment + Focus 行装饰 */
 function buildExtensions() {
   return [
     EditorView.lineWrapping,
@@ -77,6 +84,7 @@ function buildExtensions() {
     markdown(),
     chromeTheme,
     themeCompartment.of(themeExtensions()),
+    sourceFocusField,
   ];
 }
 
@@ -116,7 +124,17 @@ onMounted(() => {
     parent,
   });
   sourceMode.setHost(createHost());
+  // 挂载即对齐 Focus 开关（先开 Focus 后进源码模式的首帧生效）
+  view.dispatch({ effects: setSourceFocusEffect.of(viewModes.focusEnabled.value) });
 });
+
+// F8 开关注入 CM 状态机（focusEnabled 为 view-modes 单例响应式状态）
+watch(
+  () => viewModes.focusEnabled.value,
+  (on) => {
+    view?.dispatch({ effects: setSourceFocusEffect.of(on) });
+  },
+);
 
 onBeforeUnmount(() => {
   // 先注销宿主再销毁视图：防止销毁期间状态机触达半死实例
@@ -135,7 +153,11 @@ watch(
 </script>
 
 <template>
-  <div class="source-mode" data-testid="source-mode-layer">
+  <div
+    class="source-mode"
+    :class="{ 'on-focus-mode': viewModes.focusEnabled.value }"
+    data-testid="source-mode-layer"
+  >
     <div ref="container" class="source-mode__editor"></div>
   </div>
 </template>
@@ -150,5 +172,12 @@ watch(
 
 .source-mode__editor {
   height: 100%;
+}
+
+/* Focus 叠加（AC-M-9）：当前行豁免（md-focus 由 source-focus 扩展注入），
+   非当前行以主题淡化变量降色（变量缺省回落与 crepe-overrides 亮色段同值）。
+   cm-line 为 CM 生成 DOM，无 scoped 标记，经 :deep 命中 */
+.on-focus-mode :deep(.cm-line:not(.md-focus)) {
+  color: var(--blur-text-color, #b8b8b8);
 }
 </style>
