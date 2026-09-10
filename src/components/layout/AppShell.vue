@@ -15,6 +15,8 @@ import { relativeLinkPath } from "../../features/file-tree/tree-utils";
 import TabBar from "../../features/tabs/TabBar.vue";
 import TabHost from "../../features/tabs/TabHost.vue";
 import { useTabsController } from "../../features/tabs/tabs-controller";
+import SourceModeLayer from "../../features/window-shell/SourceModeLayer.vue";
+import { useSourceMode } from "../../features/window-shell/source-mode";
 import StatusBar from "../../features/status-bar/StatusBar.vue";
 import { editorManager } from "../../features/editor/editor-manager";
 import { useSettingsStore } from "../../features/settings/settings-store";
@@ -37,6 +39,11 @@ const fileTree = useFileTreeStore();
 const settings = useSettingsStore();
 /** 多标签控制器（04 模块级单例，与 App.vue/TabHost 同实例） */
 const tabs = useTabsController();
+
+// 源码模式（12 W4）：active 驱动中央区 v-show 互斥显隐——Crepe（TabHost 内各标签
+// 实例）与 CodeMirror（SourceModeLayer 内单活跃标签实例）双实例保活，切换零销毁；
+// 切换命令经单例 toggle（App.vue 菜单/Ctrl+/ 与本层同源）。Top 注释见 SourceModeLayer。
+const { active: sourceModeActive } = useSourceMode();
 
 // 侧栏快捷键（AC-M-22）：Ctrl+Shift+L 开合、Ctrl+Shift+1/2/3 面板切换、Ctrl+Shift+F 搜索。
 // 注册器为 03 既有服务（组合键与 catalog「Toggle Sidebar = Ctrl+Shift+L」一致，单一事实源）；
@@ -111,9 +118,14 @@ function onEditorDrop(event: DragEvent): void {
           @activate="tabs.activate"
           @close="(id) => tabs.closeTab(id)"
         />
-        <!-- 宿主主体：flex:1 占满剩余高度（TabBar 高度固定在上方） -->
-        <div class="app-shell__center-body">
+        <!-- 宿主主体：flex:1 占满剩余高度（TabBar 高度固定在上方）。
+             源码模式互斥显隐：WYSIWYG 态显示 TabHost，源码态显示 CodeMirror 层
+             （v-show 保活两侧实例——保留 undo 与光标，AC-M-6/7/8） -->
+        <div v-show="!sourceModeActive" class="app-shell__center-body">
           <TabHost />
+        </div>
+        <div v-show="sourceModeActive" class="app-shell__center-body">
+          <SourceModeLayer />
         </div>
       </div>
     </div>
