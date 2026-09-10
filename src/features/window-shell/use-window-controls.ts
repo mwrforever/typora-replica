@@ -67,13 +67,16 @@ export function createWindowControls(options: WindowControlsOptions): WindowCont
 
   /**
    * 缩放档应用共步：先落档位再发 IPC（快速连按按最终态收敛）；
-   * IPC 失败回滚档位，保证下一次缩放仍按真实档位推进
+   * IPC 失败回滚档位，保证下一次缩放仍按真实档位推进。
+   * 并发守卫：仅当当前镜像仍指向本次尝试的目标档（期间无更新档位落盘）才回滚
+   *——连按下旧尝试的失败晚于新尝试成功返回时，回滚会以陈旧 prev 覆盖新档位
+   *（镜像与 WebView 实际缩放失步，后续推进按错位基准计算），此时忽略陈旧失败
    */
   const applyZoom = (nextPercent: number): void => {
     const prev = zoomPercent.value;
     zoomPercent.value = nextPercent;
     options.setZoomIpc(zoomToScale(nextPercent)).catch((e: unknown) => {
-      zoomPercent.value = prev;
+      if (zoomPercent.value === nextPercent) zoomPercent.value = prev;
       console.error(`[MarkWell] 缩放设置失败（${prev}% → ${nextPercent}%）`, e);
     });
   };

@@ -103,12 +103,19 @@ fn clamp_zoom_scale(scale: f64) -> f64 {
 ///
 /// `scale` 为缩放系数（1.0 = 100%；前端越界取值在此钳制到 0.5~2.0）。
 /// `window` 为目标窗口（发起 invoke 的窗口，由 Tauri 注入）。
-/// 返回 Ok 表示设置完成；Err 表示平台调用失败。
+/// 返回 Ok 表示设置完成；Err 表示参数非法（非有限数）或平台调用失败。
 #[tauri::command]
 pub fn set_webview_zoom<R: tauri::Runtime>(
     scale: f64,
     window: tauri::WebviewWindow<R>,
 ) -> Result<(), WindowControlError> {
+    // 非有限数（NaN/±Inf）属调用方契约违反而非可钳制取值：f64::clamp 对 NaN
+    // 原样返回 NaN，静默下发会让 WebView 缩放进入未定义态——按 A.3.3 错误契约
+    // 显式 reject，前端记录告警并回滚档位（收敛 1.0 反而掩盖调用方缺陷）
+    if !scale.is_finite() {
+        eprintln!("[MarkWell] 缩放设置失败（scale={scale}）: 缩放系数须为有限数");
+        return Err(WindowControlError::Zoom("缩放系数须为有限数".to_string()));
+    }
     // 双端钳制：前端档位状态机已限定 50%-200%，此处对 IPC 层越界值再收敛一次
     window.set_zoom(clamp_zoom_scale(scale)).map_err(|e| {
         eprintln!("[MarkWell] 缩放设置失败（scale={scale}）: {e}");
@@ -206,6 +213,21 @@ mod tests {
         assert_eq!(set_webview_zoom(1.25, window.clone()), Ok(()));
         assert_eq!(set_webview_zoom(9.9, window.clone()), Ok(()));
         assert_eq!(set_webview_zoom(0.01, window), Ok(()));
+    }
+
+    #[test]
+    fn set_webview_zoom_rejects_non_finite_scale_with_zoom_error() {
+        // NaN 契约：f64::clamp 对 NaN 原样放行，命令层显式拒绝（前端告警回滚路径）；
+        // 错误消息携带可判读的中文语义（Zoom 变体前缀 + 原因）
+        let app = mock_app();
+        let window = tauri::WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::default())
+            .build()
+            .expect("mock 运行时创建测试窗口失败");
+        let result = set_webview_zoom(f64::NAN, window);
+        assert_eq!(
+            result,
+            Err(WindowControlError::Zoom("缩放系数须为有限数".to_string()))
+        );
     }
 
     #[test]

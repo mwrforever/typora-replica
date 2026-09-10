@@ -64,7 +64,7 @@
 ## 08 主题模块移交项（2026-09-06 终验；同日用户裁决四项已执行闭环，剩余 2 条保留）
 
 > 已闭环（2026-09-06 用户裁决执行，分支 chore/repo-docs-policy）：①文档入库白名单（宪法体系文件 AGENTS/CLAUDE/CHANGELOG/TASK + README + 代码可入库、docs/ 禁止；CHANGELOG/TASK 经用户第二次确认纳入并入库）——gitignore 修正+宪法/README 入库+PR #13 三产物移出；②typora-var-bridge.css 并入 crepe-overrides.css（D-9(b)）；③spec 勘误两项（16 条 AC / 23 个变量）。另：用户澄清「订阅」为事件监听术语（非付费），生命周期项保留为 12 模块前置。
-> 已闭环（2026-09-10 12 W3 交付）：原 #1「dispose 不退订 watchThemes + 重复 init 覆盖色系订阅」——终验时 unwatch 通道与重装配幂等已实装（theme-store init 先清后订 / dispose 按 themeWatchActive 退订）；多窗口前置裁决（D1）随 12 W3 落地：register.ts 按 window label 传 `init({ watchFs })`，次窗口跳过 watch_themes 订阅（进程级单槽防顶掉/防误清），theme-store.spec 三用例钉住。
+> 已闭环（2026-09-10 12 W3 交付）：原 #1「dispose 不退订 watchThemes + 重复 init 覆盖色系订阅」——终验时 unwatch 通道与重装配幂等已实装（theme-store init 先清后订 / dispose 按 themeWatchActive 退订）；多窗口前置裁决（D1）随 12 W3 落地：register.ts 按 window label 传 `init({ watchFs })`，次窗口跳过 watch_themes 订阅（进程级单槽防顶掉/防误清），theme-store.spec 新增两例（watchFs=false 跳过订阅 / 次窗 dispose 不退订共享槽位）+ 既有 dispose 门用例钉住。
 > 新增登记：07 SDD 工作区残留（`.superpowers/sdd/2026-08-25-07-image-paste/`，gitignored scratch 含台账）——SDD 规则本应终审后删除，eslint ignores 已显式排除不阻塞门禁；是否物理删除待用户定（删除不可逆，故不擅动）。
 
 | #   | 事项                         | 一句话说明                                                                                                  | 触发条件 / 建议归属                           |

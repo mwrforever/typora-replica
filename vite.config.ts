@@ -264,6 +264,20 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 12 W3 缩放档位/窗口控制状态机显式键（A.6.2：声称核心域的新增文件逐一点名，
+        // 域 glob 误删时两文件仍受 100% 门禁保护）
+        "src/features/window-shell/zoom-levels.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
+        "src/features/window-shell/use-window-controls.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
         // 12 W2 菜单 IPC 契约封装 100%（MenuNode 值对象 → Tauri Menu 转换与挂载、
         // autoHideMenuBar 显隐命令桥；AC-M-1~5 的 IPC 面，宪法 A.6.2 核心域同步阈值）
         "src/services/menu-io.ts": {

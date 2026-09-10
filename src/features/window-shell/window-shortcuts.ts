@@ -7,6 +7,8 @@
 // parseShortcutCombo 拒绝，无需入集）。与 02 registerAppShortcuts（纯 Ctrl）同型
 // 分层：编辑器内快捷键归 01 keymap 注册表，本层只处理窗口级组合；
 // defaultPrevented 守卫随 10#3 收口先行。
+// 键位口径：菜单标注组合串为美式键位约定（与 00 spec §11 表一致）；本层按
+// event.code 物理键位判定，非美式布局键帽文案不同但物理位置等价触发。
 
 /** 窗口外壳快捷键回调集（装配层转 menuRouter / window-controls 同一命令函数） */
 export interface WindowShellShortcutHandlers {
@@ -60,9 +62,11 @@ export function registerWindowShellShortcuts(handlers: WindowShellShortcutHandle
       handlers.onSaveAs();
     } else if (event.shiftKey) {
       // Ctrl+Shift 组合族按物理键位判定（event.code）：Shift 参与时 event.key 随
-      // 布局漂移（Shift+= → "+"、Shift+- → "_"），物理键位恒定对齐菜单标注组合
+      // 布局漂移（Shift+= → "+"、Shift+- → "_"），物理键位恒定对齐菜单标注组合；
+      // Digit0 与 Numpad0 同归 Actual Size（主键盘与小键盘 0 键等价）
       switch (event.code) {
         case "Digit0":
+        case "Numpad0":
           event.preventDefault();
           handlers.onZoomReset();
           break;

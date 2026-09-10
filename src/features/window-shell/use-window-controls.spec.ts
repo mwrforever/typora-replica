@@ -90,6 +90,27 @@ describe("缩放档位状态机（AC-M-14）", () => {
     expect(controls.zoomPercent()).toBe(90);
     errorSpy.mockRestore();
   });
+
+  it("连按且旧尝试失败晚于新尝试成功：镜像保持新档位不回滚（并发守卫）", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const options = makeOptions();
+    // 手工控时：第一次缩放（A：100→110）的 IPC 拒绝晚于第二次（B：110→125）成功返回
+    let rejectA!: (reason?: unknown) => void;
+    let resolveB!: (value: PromiseLike<undefined> | undefined) => void;
+    options.setZoomIpc
+      .mockImplementationOnce(() => new Promise((_res, rej) => (rejectA = rej)))
+      .mockImplementationOnce(() => new Promise((res) => (resolveB = res)));
+    const controls = createWindowControls(options);
+    controls.zoomIn(); // A：镜像 110，IPC 在途
+    controls.zoomIn(); // B：镜像 125（prev=110），IPC 在途
+    resolveB(undefined); // B 成功先返回（实际缩放收敛 125）
+    await vi.waitFor(() => expect(controls.zoomPercent()).toBe(125));
+    rejectA(new Error("A 晚到失败")); // A 的失败晚到：prev=110 若无条件回滚将覆盖 125
+    await vi.waitFor(() => expect(errorSpy).toHaveBeenCalled());
+    // 镜像仍指向 B 的目标档（125 ≠ A 的 110）→ 陈旧失败被忽略，镜像/实际不失步
+    expect(controls.zoomPercent()).toBe(125);
+    errorSpy.mockRestore();
+  });
 });
 
 describe("全屏切换与菜单栏显隐联动（AC-M-13）", () => {

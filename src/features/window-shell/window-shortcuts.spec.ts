@@ -140,6 +140,23 @@ describe("registerWindowShellShortcuts（W3：缩放三键，AC-M-14）", () => 
     expect(handlers.onZoomIn).not.toHaveBeenCalled();
   });
 
+  it("Ctrl+Shift+小键盘 0（物理键位 Numpad0）同样触发恢复原始尺寸", () => {
+    const handlers = makeHandlers();
+    cleanup = registerWindowShellShortcuts(handlers);
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "0",
+        code: "Numpad0",
+        ctrlKey: true,
+        shiftKey: true,
+        cancelable: true,
+      }),
+    );
+    expect(handlers.onZoomReset).toHaveBeenCalledOnce();
+    expect(handlers.onZoomIn).not.toHaveBeenCalled();
+    expect(handlers.onZoomOut).not.toHaveBeenCalled();
+  });
+
   it("Ctrl+Shift+=（Shift 漂移 key=+，物理键位 Equal）触发放大一档", () => {
     const handlers = makeHandlers();
     cleanup = registerWindowShellShortcuts(handlers);
