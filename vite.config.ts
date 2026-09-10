@@ -256,6 +256,14 @@ export default defineConfig(async () => ({
           functions: 100,
           branches: 100,
         },
+        // 12 窗口外壳核心 100%：侧栏布局状态机（宽度区间收敛 + 拖拽会话/持久化判定，
+        // AC-M-23 的边界契约；宪法 A.6.2 核心域同步阈值。装配组件 AppShell.vue 走全局 ≥80%）
+        "src/features/window-shell/**/*.ts": {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 100,
+        },
       },
     },
   },
