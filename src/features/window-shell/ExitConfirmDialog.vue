@@ -1,7 +1,8 @@
 <!-- 退出聚合确认弹窗（12 窗口外壳 W6，AC-M-18：列表式一次性确认）。
      列出全部脏标签文件名，三按钮「全部保存/全部不保存/取消」（Esc=取消语义）；
      挂起态由 12 exit-confirm 状态机驱动（v-if 装配于 App.vue，confirming+saving
-     期间展示），三按钮分别 emit saveAll/discardAll/cancel 由状态机分支执行。
+     期间展示），三按钮分别 emit saveAll/discardAll/cancel 由状态机分支执行；
+     failMessage 非空 = 写盘失败复显态（错误区展示失败原因，用户可改选或重试）。
      样式基调沿 04 ConfirmCloseDialog（fixed 遮罩 + 居中面板 + 右对齐按钮行）。 -->
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from "vue";
@@ -12,6 +13,8 @@ const props = defineProps<{
   items: DirtyTabEntry[];
   /** 逐标签写盘进行中（saving 阶段禁用全部按钮，防重复触发保证写盘原子性） */
   saving: boolean;
+  /** 最近一次写盘失败的失败原因（非 undefined 时展示错误区；重试/新一轮时清除） */
+  failMessage?: string;
 }>();
 
 const emit = defineEmits<{
@@ -44,6 +47,8 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
       <ul class="exit-confirm__list">
         <li v-for="item in items" :key="item.id">{{ item.title }}</li>
       </ul>
+      <!-- 写盘失败错误区（12 W6 修复：失败路径用户可见反馈——弹窗复显 + 失败原因） -->
+      <p v-if="failMessage" class="exit-confirm__error" role="alert">{{ failMessage }}</p>
       <div class="exit-confirm__actions">
         <button type="button" :disabled="saving" @click="emit('saveAll')">全部保存</button>
         <button type="button" :disabled="saving" @click="emit('discardAll')">全部不保存</button>
@@ -74,6 +79,14 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
   overflow-y: auto;
   margin: 8px 0 0;
   padding-left: 20px;
+}
+.exit-confirm__error {
+  margin: 8px 0 0;
+  color: #c0392b;
+  font-size: 12px;
+}
+.markwell-dark .exit-confirm__error {
+  color: #e07060;
 }
 .exit-confirm__actions {
   display: flex;

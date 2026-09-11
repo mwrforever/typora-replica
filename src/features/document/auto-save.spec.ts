@@ -33,9 +33,9 @@ describe("自动保存（F30，双条件防抖+定时）", () => {
     vi.useRealTimers();
   });
 
-  /** 取 subscribeMarkdown 回调（最后一次注册的） */
+  /** 取 subscribeMarkdown 回调（最新注册的——stop 后 resume 重订时旧回调已退订） */
   function emitted() {
-    return mockSubscribe.mock.calls[0]?.[0] as ((md: string) => void) | undefined;
+    return mockSubscribe.mock.calls.at(-1)?.[0] as ((md: string) => void) | undefined;
   }
 
   it("markdownUpdated 到达标记脏 + 停笔 1s 后保存（AC-F30-1）", async () => {
@@ -241,6 +241,179 @@ describe("自动保存（F30，双条件防抖+定时）", () => {
     resolveSave({ saved: true, path: "C:/a.md" });
     await vi.advanceTimersByTimeAsync(10);
     expect(mockSave).toHaveBeenCalledTimes(2); // 总调用 = 首次 + 补跑一次
+    c.stop();
+  });
+
+  it("暂停通道（12 退出聚合）：suspend 后编辑仍标脏但停笔防抖不启动（不写盘）", async () => {
+    const c = new AutoSaveController({
+      session: makeSession(),
+      getSettings: mockGetSettings,
+      subscribeMarkdown: mockSubscribe,
+    });
+    c.start();
+    c.suspend();
+    emitted()?.("弹窗期编辑");
+    // 标脏订阅保持活跃：markDirty 照常触达（复核聚合的置脏来源）
+    expect(mockMarkDirty).toHaveBeenCalledTimes(1);
+    // 保存定时器挂起：停笔防抖不再启动，停笔再久也不写盘
+    await vi.advanceTimersByTimeAsync(IDLE_DEBOUNCE_MS);
+    expect(mockSave).not.toHaveBeenCalled();
+    c.stop();
+  });
+
+  it("暂停通道挂起 5 分钟兜底定时器：suspend 前已运转的兜底同样不落盘", async () => {
+    const c = new AutoSaveController({
+      session: makeSession(),
+      getSettings: mockGetSettings,
+      subscribeMarkdown: mockSubscribe,
+    });
+    c.start();
+    emitted()?.("编辑"); // 停笔防抖到期前挂起
+    c.suspend();
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    expect(mockSave).not.toHaveBeenCalled();
+    c.stop();
+  });
+
+  it("暂停后恢复：保存定时器重启而订阅不重订（subscribe 仅一次）", async () => {
+    const c = new AutoSaveController({
+      session: makeSession(),
+      getSettings: mockGetSettings,
+      subscribeMarkdown: mockSubscribe,
+    });
+    c.start();
+    c.suspend();
+    c.resume();
+    // 订阅未停不重订：防双订阅导致一次编辑触发两条防抖链
+    expect(mockSubscribe).toHaveBeenCalledTimes(1);
+    emitted()?.("恢复后编辑");
+    await vi.advanceTimersByTimeAsync(IDLE_DEBOUNCE_MS);
+    expect(mockSave).toHaveBeenCalledTimes(1);
+    c.stop();
+  });
+
+  it("运行中重复 resume：无副作用（不重订订阅、不重启定时器读取偏好）", async () => {
+    const c = new AutoSaveController({
+      session: makeSession(),
+      getSettings: mockGetSettings,
+      subscribeMarkdown: mockSubscribe,
+    });
+    c.start();
+    const readsAfterStart = mockGetSettings.mock.calls.length;
+    c.resume();
+    c.resume();
+    // 非暂停态 resume 为 no-op：不触发 refreshTimer 的偏好读取
+    expect(mockSubscribe).toHaveBeenCalledTimes(1);
+    expect(mockGetSettings.mock.calls.length).toBe(readsAfterStart);
+    c.stop();
+  });
+
+  it("暂停期以暂停态启动（startSuspended）：订阅活跃、双定时器均不运转", async () => {
+    const c = new AutoSaveController({
+      session: makeSession(),
+      getSettings: mockGetSettings,
+      subscribeMarkdown: mockSubscribe,
+    });
+    // 12 退出聚合暂停期的激活切换：控制器此前从未启动（后台标签完整停止态）
+    c.startSuspended();
+    expect(mockSubscribe).toHaveBeenCalledTimes(1);
+    emitted()?.("弹窗期编辑");
+    expect(mockMarkDirty).toHaveBeenCalledTimes(1);
+    // 停笔防抖与 5 分钟兜底都不得启动（refreshTimer 暂停守卫短路）
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    expect(mockSave).not.toHaveBeenCalled();
+    c.stop();
+  });
+
+  it("暂停期激活切换后恢复：resume 切回运行态，保存链路照常（AC 不变量回位）", async () => {
+    const c = new AutoSaveController({
+      session: makeSession(),
+      getSettings: mockGetSettings,
+      subscribeMarkdown: mockSubscribe,
+    });
+    c.startSuspended();
+    c.resume();
+    // 从暂停态恢复：只重启定时器，订阅不重订
+    expect(mockSubscribe).toHaveBeenCalledTimes(1);
+    emitted()?.("恢复后编辑");
+    await vi.advanceTimersByTimeAsync(IDLE_DEBOUNCE_MS);
+    expect(mockSave).toHaveBeenCalledTimes(1);
+    c.stop();
+  });
+
+  it("完全停止态 suspend 安全跳过；resume 完整启动（订阅+定时器）", async () => {
+    const c = new AutoSaveController({
+      session: makeSession(),
+      getSettings: mockGetSettings,
+      subscribeMarkdown: mockSubscribe,
+    });
+    // 从未启动：suspend 无可挂起资源（退订/清定时器均空操作），不得置暂停态
+    c.suspend();
+    c.resume();
+    // resume 走完整启动：重新订阅 + 定时兜底就绪，编辑后停笔即保存
+    expect(mockSubscribe).toHaveBeenCalledTimes(1);
+    emitted()?.("恢复后编辑");
+    await vi.advanceTimersByTimeAsync(IDLE_DEBOUNCE_MS);
+    expect(mockSave).toHaveBeenCalledTimes(1);
+    c.stop();
+  });
+
+  it("暂停期抑制 in-flight 保存的补跑：save 完成后的 savePending 不落盘", async () => {
+    let resolveSave!: (v: { saved: true; path: string }) => void;
+    mockSave.mockImplementation(
+      () =>
+        new Promise<{ saved: true; path: string }>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    const c = new AutoSaveController({
+      session: makeSession(),
+      getSettings: mockGetSettings,
+      subscribeMarkdown: mockSubscribe,
+    });
+    c.start();
+    emitted()?.("第一轮编辑");
+    await vi.advanceTimersByTimeAsync(IDLE_DEBOUNCE_MS); // 首次保存发起（挂起中）
+    emitted()?.("第二轮编辑"); // 保存期间的编辑请求
+    await vi.advanceTimersByTimeAsync(IDLE_DEBOUNCE_MS); // in-flight 让位 → savePending
+    c.suspend(); // 弹窗期开始（此刻首次保存仍在途）
+    resolveSave({ saved: true, path: "C:/a.md" });
+    await vi.advanceTimersByTimeAsync(IDLE_DEBOUNCE_MS);
+    // 补跑被暂停守卫拦截：弹窗期零写盘（残余触发由 next 编辑/兜底接管）
+    expect(mockSave).toHaveBeenCalledTimes(1);
+    c.stop();
+  });
+
+  it("运行中重复 start：订阅不重订（防双订阅双写盘）", async () => {
+    const c = new AutoSaveController({
+      session: makeSession(),
+      getSettings: mockGetSettings,
+      subscribeMarkdown: mockSubscribe,
+    });
+    c.start();
+    c.start();
+    expect(mockSubscribe).toHaveBeenCalledTimes(1);
+    emitted()?.("编辑");
+    await vi.advanceTimersByTimeAsync(IDLE_DEBOUNCE_MS);
+    // 双订阅缺陷回归钉：一次编辑只触发一次保存
+    expect(mockSave).toHaveBeenCalledTimes(1);
+    c.stop();
+  });
+
+  it("stop 复位暂停态：suspend 后 stop 再 resume 走完整启动而非残留挂起", async () => {
+    const c = new AutoSaveController({
+      session: makeSession(),
+      getSettings: mockGetSettings,
+      subscribeMarkdown: mockSubscribe,
+    });
+    c.start();
+    c.suspend();
+    c.stop();
+    c.resume();
+    expect(mockSubscribe).toHaveBeenCalledTimes(2); // 首次 + stop 后完整重启
+    emitted()?.("编辑");
+    await vi.advanceTimersByTimeAsync(IDLE_DEBOUNCE_MS);
+    expect(mockSave).toHaveBeenCalledTimes(1);
     c.stop();
   });
 });

@@ -21,8 +21,8 @@ import {
   getInstance,
   recycleLeastRecent,
   registerInstance,
-  startActiveAutoSave,
-  stopAllAutoSave,
+  resumeActiveAutoSave,
+  suspendAllAutoSave,
   unregisterInstance,
 } from "./editor-registry";
 import { MAX_TABS, useTabsStore } from "./tabs-store";
@@ -68,9 +68,11 @@ export interface TabsController {
    * @returns 保存产物（saved=true 已写盘并清脏；saved=false 附原因与提示）
    */
   saveTab(tabId: string): Promise<SaveOutcome>;
-  /** 12 退出聚合：弹窗/写盘期暂停全部标签自动保存（幂等；脏桥一并停，恢复后自愈） */
+  /** 12 退出聚合：暂停全部标签自动保存保存通道（透传注册表；幂等——标脏订阅
+   *  保持活跃，弹窗期编辑照常置脏供关窗前复核聚合） */
   pauseAutoSave(): void;
-  /** 12 退出聚合：恢复激活标签自动保存（取消/失败回退路径；非激活标签本就不运行） */
+  /** 12 退出聚合：恢复激活标签自动保存（取消/失败回退路径；仅重启保存定时器，
+   *  订阅未停不重订；非激活标签本就不运行） */
   resumeAutoSave(): void;
   reopenClosed(): void;
   cycle(dir: 1 | -1): void;
@@ -274,14 +276,14 @@ function createController(): TabsController {
     return ctx.session.save();
   }
 
-  /** 12 退出聚合：暂停全部标签自动保存（透传注册表；stop 幂等） */
+  /** 12 退出聚合：暂停全部标签自动保存保存通道（透传注册表；幂等） */
   function pauseAutoSave(): void {
-    stopAllAutoSave();
+    suspendAllAutoSave();
   }
 
   /** 12 退出聚合：恢复激活标签自动保存（透传注册表；仅激活标签运行） */
   function resumeAutoSave(): void {
-    startActiveAutoSave();
+    resumeActiveAutoSave();
   }
 
   /** LIFO 重开最近关闭：新 id + 恢复关闭前内容快照（脏标签重开仍脏） */

@@ -543,12 +543,12 @@ describe("tabsController 编排控制器", () => {
     expect(outcome).toMatchObject({ saved: false, reason: "no-path" });
   });
 
-  it("pauseAutoSave/resumeAutoSave（12 退出聚合）：透传注册表停全量/恢复激活", async () => {
-    const stopAllSpy = vi.spyOn(registry, "stopAllAutoSave");
-    const startActiveSpy = vi.spyOn(registry, "startActiveAutoSave");
+  it("pauseAutoSave/resumeAutoSave（12 退出聚合）：透传注册表挂起保存通道/恢复激活", async () => {
+    const suspendAllSpy = vi.spyOn(registry, "suspendAllAutoSave");
+    const resumeActiveSpy = vi.spyOn(registry, "resumeActiveAutoSave");
     controller.pauseAutoSave();
     controller.resumeAutoSave();
-    expect(stopAllSpy).toHaveBeenCalledTimes(1);
-    expect(startActiveSpy).toHaveBeenCalledTimes(1);
+    expect(suspendAllSpy).toHaveBeenCalledTimes(1);
+    expect(resumeActiveSpy).toHaveBeenCalledTimes(1);
   });
 });

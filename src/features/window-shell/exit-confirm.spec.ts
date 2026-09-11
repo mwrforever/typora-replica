@@ -2,10 +2,13 @@
 //
 // 第一段：依赖全部 vi.fn 注入（04 脏聚合/saveTab、02 自动保存暂停恢复、services
 // 关窗），直呼状态机方法断言阶段迁移与依赖派发——无脏直通/有脏进确认/取消静止态/
-// 全部保存顺序写盘/单标签失败不阻断/全部不保存/弹窗期与写盘期重入忽略/关窗前复核
-// 聚合（防弹窗期新变脏标签随关窗静默丢失）/关窗失败回退。
+// 全部保存顺序写盘/失败复显弹窗（错误区携带失败原因、自动保存保持暂停）/失败后
+// 改选与重试/弹窗期与写盘期重入忽略/关窗失败回退。「弹窗期新变脏」场景一律放
+// 第二段经真实 session/auto-save 链路驱动（生产脏标记唯一触发点 auto-save
+// markDirty——mock collect 返回差异集属固化不可达前提，已随双通道修复删除）。
 // 第二段：接 04 真实控制器的 AC 集成（mock 服务层，手法沿 tab-close-flow.spec.ts：
-// 单例动态 import + 逐项清理；DocumentSession/AutoSaveController 真实构造）。
+// 单例动态 import + 逐项清理；DocumentSession/AutoSaveController 真实构造）+
+// 弹窗期真实链路断言（crepe 事件注入 → editor-events 防抖 → 门面分发 → 标脏/写盘）。
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Crepe } from "@milkdown/crepe";
@@ -60,14 +63,20 @@ const saveFailed = (message = "磁盘写入失败"): SaveOutcome => ({
 
 /** 依赖夹具（全 vi.fn，成功态默认；单用例按需改写返回值）。
  * saveTab 默认实现登记已保存 id，collect 过滤之——建模真实不变量
- * （02 session.save 成功 → markSaved → store 清除脏标记），复核聚合据此为空。
+ * （02 session.save 成功 → markSaved → store 清除脏标记），复核聚合据此为空；
+ * failFirstFor 指定首写必败标签（建模 02 写盘失败，重试即成功——失败复显路径）。
  * 返回类型推断（不显式标注 ExitConfirmDeps——vi.fn 构造签名与方法交叉冲突，
  * 结构化兼容由 createExitConfirm(deps) 调用点校验） */
-function makeDeps(dirty: DirtyTabEntry[] = []) {
+function makeDeps(dirty: DirtyTabEntry[] = [], failFirstFor?: string) {
   const savedIds = new Set<string>();
+  const failedOnce = new Set<string>();
   return {
     collectDirtyTabs: vi.fn(() => dirty.filter((t) => !savedIds.has(t.id)).map((t) => ({ ...t }))),
     saveTab: vi.fn(async (tabId: string) => {
+      if (failFirstFor !== undefined && tabId === failFirstFor && !failedOnce.has(tabId)) {
+        failedOnce.add(tabId);
+        return saveFailed();
+      }
       savedIds.add(tabId);
       return saved();
     }),
@@ -167,24 +176,71 @@ describe("退出聚合状态机（AC-M-18~21）", () => {
     expect(machine.phase.value).toBe("closing");
   });
 
-  it("单标签写盘失败不阻断其余：全部尝试后窗口保持并恢复自动保存", async () => {
-    const deps = makeDeps([
-      { id: "tab-1", title: "b.md" },
-      { id: "tab-2", title: "c.md" },
-      { id: "tab-3", title: "d.md" },
-    ]);
-    deps.saveTab.mockImplementation(async (tabId: string) =>
-      tabId === "tab-2" ? saveFailed() : saved(),
+  it("单标签写盘失败不阻断其余：全部尝试后回确认态复显失败原因（自动保存保持暂停）", async () => {
+    const deps = makeDeps(
+      [
+        { id: "tab-1", title: "b.md" },
+        { id: "tab-2", title: "c.md" },
+        { id: "tab-3", title: "d.md" },
+      ],
+      "tab-2",
     );
     const machine = createExitConfirm(deps);
     await machine.handleCloseRequest();
     await machine.saveAll();
     // 失败标签不阻断：三个标签全部尝试；任一失败 → 不关窗（不部分关闭）、
-    // 恢复自动保存、回 cancelled 静止态（失败标签保持脏态留在窗口）
+    // 回 confirming 复显弹窗（错误区携带失败原因，用户可改选或重试）、
+    // 不恢复自动保存（confirming ⇒ 已暂停不变量未破，失败标签保持脏态留窗）
     expect(deps.saveTab).toHaveBeenCalledTimes(3);
     expect(deps.closeWindow).not.toHaveBeenCalled();
-    expect(deps.resumeAutoSave).toHaveBeenCalledTimes(1);
-    expect(machine.phase.value).toBe("cancelled");
+    expect(deps.resumeAutoSave).not.toHaveBeenCalled();
+    expect(deps.suspendAutoSave).toHaveBeenCalledTimes(1);
+    expect(machine.phase.value).toBe("confirming");
+    expect(machine.failMessage.value).toBe("磁盘写入失败");
+  });
+
+  it("失败复显后改选全部不保存：完成退出（已放弃标签复核不回弹）", async () => {
+    const deps = makeDeps(
+      [
+        { id: "tab-1", title: "b.md" },
+        { id: "tab-2", title: "c.md" },
+      ],
+      "tab-2",
+    );
+    const machine = createExitConfirm(deps);
+    await machine.handleCloseRequest();
+    await machine.saveAll(); // tab-2 失败 → 复显
+    expect(machine.phase.value).toBe("confirming");
+    await machine.discardAll();
+    // 改选放弃：本轮冻结列表（含失败标签）并入放弃集，复核排除后关窗
+    expect(deps.saveTab).toHaveBeenCalledTimes(2); // 失败轮不再补写
+    expect(deps.closeWindow).toHaveBeenCalledTimes(1);
+    expect(machine.phase.value).toBe("closing");
+  });
+
+  it("失败复显后重试全部保存：成功后失败消息清除并关窗", async () => {
+    const deps = makeDeps([{ id: "tab-1", title: "b.md" }], "tab-1");
+    const machine = createExitConfirm(deps);
+    await machine.handleCloseRequest();
+    await machine.saveAll();
+    expect(machine.failMessage.value).toBe("磁盘写入失败");
+    await machine.saveAll(); // 重试（夹具建模：第二次写盘成功）
+    expect(deps.saveTab).toHaveBeenCalledTimes(2);
+    expect(machine.failMessage.value).toBeUndefined();
+    expect(deps.closeWindow).toHaveBeenCalledTimes(1);
+    expect(machine.phase.value).toBe("closing");
+  });
+
+  it("新一轮确认清除上一轮失败消息（弹窗错误区不残留旧失败）", async () => {
+    const deps = makeDeps([{ id: "tab-1", title: "b.md" }], "tab-1");
+    const machine = createExitConfirm(deps);
+    await machine.handleCloseRequest();
+    await machine.saveAll();
+    expect(machine.failMessage.value).toBe("磁盘写入失败");
+    machine.cancel();
+    await machine.handleCloseRequest(); // 新决策点重新聚合
+    expect(machine.phase.value).toBe("confirming");
+    expect(machine.failMessage.value).toBeUndefined();
   });
 
   it("弹窗期再次关闭请求：安全忽略（不重复聚合、不重复暂停）", async () => {
@@ -235,40 +291,6 @@ describe("退出聚合状态机（AC-M-18~21）", () => {
     expect(deps.saveTab).not.toHaveBeenCalled();
     expect(deps.closeWindow).toHaveBeenCalledTimes(1);
     expect(machine.phase.value).toBe("closing");
-  });
-
-  it("全部保存成功后复核：弹窗期新变脏的标签开启新一轮确认（防随关窗静默丢失）", async () => {
-    const deps = makeDeps([{ id: "tab-1", title: "b.md" }]);
-    // 第一次聚合仅 b.md；b.md 保存成功后（脏标记已清除），复核时 c.md 已在
-    // 弹窗期被编辑变脏——mock 与真实不变量一致（已保存标签不再出现在脏集合）
-    deps.collectDirtyTabs
-      .mockImplementationOnce(() => [{ id: "tab-1", title: "b.md" }])
-      .mockImplementationOnce(() => [{ id: "tab-2", title: "c.md" }]);
-    const machine = createExitConfirm(deps);
-    await machine.handleCloseRequest();
-    await machine.saveAll(); // b.md 保存成功
-    // 复核发现 c.md 变脏：不关窗，开启新一轮确认（列表以最新脏集合重建）
-    expect(deps.closeWindow).not.toHaveBeenCalled();
-    expect(machine.phase.value).toBe("confirming");
-    expect(machine.dirtyTabs.value).toEqual([{ id: "tab-2", title: "c.md" }]);
-  });
-
-  it("全部不保存复核排除冻结列表：弹窗期新变脏的其他标签仍获确认", async () => {
-    const deps = makeDeps([{ id: "tab-1", title: "b.md" }]);
-    // 复核时 b.md 仍在脏集合（显式放弃，不重复弹窗）且 c.md 新变脏
-    deps.collectDirtyTabs
-      .mockImplementationOnce(() => [{ id: "tab-1", title: "b.md" }])
-      .mockImplementationOnce(() => [
-        { id: "tab-1", title: "b.md" },
-        { id: "tab-2", title: "c.md" },
-      ]);
-    const machine = createExitConfirm(deps);
-    await machine.handleCloseRequest();
-    await machine.discardAll();
-    // b.md 已显式放弃（排除）；c.md 未被本轮决定覆盖 → 新一轮确认
-    expect(machine.phase.value).toBe("confirming");
-    expect(machine.dirtyTabs.value).toEqual([{ id: "tab-2", title: "c.md" }]);
-    expect(deps.closeWindow).not.toHaveBeenCalled();
   });
 
   it("全部保存复核为空时正常关窗（复核为空 = 常规路径，行为与 AC 一致）", async () => {
@@ -327,20 +349,72 @@ describe("退出聚合确认 AC 集成（接 04 控制器真实链路）", () =>
   let machine: ExitConfirmController;
   let registry: typeof import("../tabs/editor-registry");
 
-  /** fake crepe（沿 tab-close-flow.spec.ts：adopt 经 setupEditorEvents 调 crepe.on） */
+  /** 本测试激活过 autoSave 的标签（afterEach 停订清理——门面订阅不随 destroy
+   *  清理，残留运行态控制器会在后续用例的编辑事件中照常落盘，污染写盘断言） */
+  const startedAutoSaveIds: string[] = [];
+
+  /** 注入 markdownUpdated 的 listener 桩切片（attachEditorEvents 消费面） */
+  interface ListenerRegistrar {
+    markdownUpdated(reg: (ctx: unknown, md: string) => void): void;
+    updated(reg: (ctx: unknown, doc: unknown) => void): void;
+    selectionUpdated(reg: (ctx: unknown, sel: unknown) => void): void;
+  }
+  /** 带事件注入的 fake crepe 形态（fireMarkdownUpdated 为测试专用注入口） */
+  type FireCrepe = Crepe & { fireMarkdownUpdated(md: string): void };
+
+  /**
+   * fake crepe（沿本文件惯例，on 桩升级为同步回放真实注册流程）：adopt 经
+   * setupEditorEvents 调 crepe.on 时同步递交 listener 桩收集 markdownUpdated
+   * 注册器；fireMarkdownUpdated 触发经真实 editor-events 300ms 防抖与门面分发
+   * 到达 autoSave 标脏订阅——弹窗期编辑事件的集成驱动入口。
+   * detachEditorEvents 的 cancel 语义真实生效：后台标签（门面已切走）的注册器
+   * 触发为 no-op，与「仅激活标签事件可达订阅方」的生产语义一致。
+   */
   function fakeCrepe(markdown = "正文"): Crepe {
-    return { on: vi.fn(), getMarkdown: () => markdown } as unknown as Crepe;
+    const regs: Array<(ctx: unknown, md: string) => void> = [];
+    const listener: ListenerRegistrar = {
+      markdownUpdated: (reg) => void regs.push(reg),
+      updated: () => undefined,
+      selectionUpdated: () => undefined,
+    };
+    const crepe = {
+      on: (cb: (l: ListenerRegistrar) => void) => cb(listener),
+      getMarkdown: () => markdown,
+    };
+    return Object.assign(crepe, {
+      fireMarkdownUpdated: (md: string) => {
+        for (const reg of regs) reg(undefined, md);
+      },
+    }) as unknown as Crepe;
+  }
+
+  /**
+   * 经真实事件链注入一次 markdownUpdated 编辑事件并等防抖送达订阅方
+   * （crepe listener → editor-events 300ms 防抖 → 门面分发 → autoSave 标脏）
+   */
+  async function fireEdit(id: string, md = "弹窗期编辑"): Promise<void> {
+    (registry.getInstance(id)!.crepe as FireCrepe).fireMarkdownUpdated(md);
+    await vi.advanceTimersByTimeAsync(300);
   }
 
   /**
    * 打开文件并挂载实例 + 经 02 会话置脏（真实单一事件源链路：
    * session.markDirty → onDirtyChange → store.markDirty——直改 store 会使
-   * 保存后的 markSaved 广播无法清脏，复核聚合会把假脏标签拉回新轮次）
+   * 保存后的 markSaved 广播无法清脏，复核聚合会把假脏标签拉回新轮次）。
+   * @param dirty 是否置脏（复核聚合用例需要「聚合时干净」的对照标签时传 false）
    */
-  async function openDirtyFile(path: string, title: string, id: string): Promise<void> {
+  async function openDirtyFile(
+    path: string,
+    title: string,
+    id: string,
+    dirty = true,
+  ): Promise<void> {
     await tabs.openFile(path, title);
     tabs.onInstanceReady(id, { crepe: fakeCrepe(`# ${title}`), frontMatter: null });
-    registry.getInstance(id)!.session.markDirty();
+    // 追踪激活过 autoSave 的标签：门面订阅不随 destroy 清理，残留运行态控制器
+    // 会在后续用例的编辑事件中照常写盘（afterEach 统一停订，防跨用例断言污染）
+    startedAutoSaveIds.push(id);
+    if (dirty) registry.getInstance(id)!.session.markDirty();
   }
 
   /** 按 App.vue 装配形态绑定状态机依赖（真实 04 controller + mock 关窗） */
@@ -388,6 +462,9 @@ describe("退出聚合确认 AC 集成（接 04 控制器真实链路）", () =>
   });
 
   afterEach(() => {
+    for (const id of startedAutoSaveIds) registry.getInstance(id)?.autoSave.stop();
+    startedAutoSaveIds.length = 0;
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -432,5 +509,85 @@ describe("退出聚合确认 AC 集成（接 04 控制器真实链路）", () =>
     expect(machine.phase.value).toBe("idle");
     expect(mockWriteFile).not.toHaveBeenCalled();
     expect(mockCloseWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("弹窗期 suspendAutoSave 生效：编辑事件经真实链路不写盘，取消恢复后同一链路照常落盘", async () => {
+    vi.useFakeTimers();
+    // 开自动保存：证明「不写盘」是暂停生效而非开关关闭（对照后半段恢复后落盘）
+    mockLoadSettings.mockResolvedValue({
+      autoSave: { enabled: true, timerMinutes: 5 },
+      defaultLineEnding: "lf",
+      launch: { mode: "new", customPath: "" },
+    });
+    await openDirtyFile("D:\\a\\b.md", "b.md", "tab-1");
+    await machine.handleCloseRequest();
+    expect(machine.phase.value).toBe("confirming");
+    // 弹窗期键盘编辑：crepe → editor-events 防抖 → 门面分发 → autoSave——
+    // 标脏订阅活跃（编辑不丢），但保存定时器挂起 → 停笔再久也零写盘
+    await fireEdit("tab-1", "弹窗期编辑");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mockWriteFile).not.toHaveBeenCalled();
+    // 取消：恢复自动保存；同一编辑链路立即恢复写盘能力（证明暂停是唯一阻断因素）
+    machine.cancel();
+    expect(machine.phase.value).toBe("cancelled");
+    await fireEdit("tab-1", "恢复后编辑");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mockWriteFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("全部保存成功后复核：弹窗期经 markdownUpdated 编辑变脏的标签开启新一轮确认", async () => {
+    vi.useFakeTimers();
+    await openDirtyFile("D:\\a\\b.md", "b.md", "tab-1"); // 冻结列表：仅 b.md
+    await openDirtyFile("D:\\a\\c.md", "c.md", "tab-2", false); // 聚合时干净（激活中）
+    await machine.handleCloseRequest();
+    expect(machine.dirtyTabs.value.map((t) => t.title)).toEqual(["b.md"]);
+    // 弹窗期对激活标签 c.md 键盘编辑——标脏订阅活跃（双通道修复后生产可达），
+    // 经真实防抖链路置脏；保存定时器挂起不写盘
+    await fireEdit("tab-2", "弹窗期新编辑");
+    expect(tabs.store.tabs.find((t) => t.id === "tab-2")!.dirty).toBe(true);
+    expect(mockWriteFile).not.toHaveBeenCalled();
+    await machine.saveAll(); // 仅写冻结列表 b.md
+    // b.md 保存成功（脏标记清除），复核发现弹窗期新变脏的 c.md → 新一轮确认，
+    // 不静默关窗（防 c.md 内容随 destroy 丢失）
+    expect(mockWriteFile).toHaveBeenCalledTimes(1);
+    expect(mockCloseWindow).not.toHaveBeenCalled();
+    expect(machine.phase.value).toBe("confirming");
+    expect(machine.dirtyTabs.value.map((t) => t.title)).toEqual(["c.md"]);
+  });
+
+  it("全部不保存复核排除累计放弃集：新变脏标签确认后放弃即关窗（防复核死循环）", async () => {
+    vi.useFakeTimers();
+    await openDirtyFile("D:\\a\\b.md", "b.md", "tab-1");
+    await openDirtyFile("D:\\a\\c.md", "c.md", "tab-2", false); // 聚合时干净
+    await machine.handleCloseRequest(); // 冻结 [b.md]
+    await fireEdit("tab-2"); // 弹窗期 c.md 变脏
+    await machine.discardAll(); // b.md 显式放弃 → 复核发现 c.md → 新一轮
+    expect(machine.phase.value).toBe("confirming");
+    expect(machine.dirtyTabs.value.map((t) => t.title)).toEqual(["c.md"]);
+    expect(mockCloseWindow).not.toHaveBeenCalled();
+    // 再次放弃 c.md：b.md 已在累计放弃集内不得回弹（否则两轮互相踢皮球永不退出）
+    await machine.discardAll();
+    expect(mockCloseWindow).toHaveBeenCalledTimes(1);
+    expect(machine.phase.value).toBe("closing");
+  });
+
+  it("真实链路写盘失败：窗口保持且弹窗复显失败原因，改选全部不保存完成退出", async () => {
+    // 02 会话错误经 onNotice 桥接 console（04 装配无用户可见通知）——静默之
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { FileIoError } = await import("../../services/file-io");
+    mockWriteFile.mockRejectedValue(new FileIoError("磁盘已满，写入失败"));
+    await openDirtyFile("D:\\a\\b.md", "b.md", "tab-1");
+    await machine.handleCloseRequest();
+    await machine.saveAll();
+    // 失败用户可见反馈：不关窗（窗口保持）、回确认态复显弹窗、错误区携带失败原因、
+    // 失败标签保持脏态留在窗口
+    expect(mockCloseWindow).not.toHaveBeenCalled();
+    expect(machine.phase.value).toBe("confirming");
+    expect(machine.failMessage.value).toContain("磁盘已满");
+    expect(tabs.store.tabs[0]!.dirty).toBe(true);
+    // 用户改选「全部不保存」：放弃失败标签完成退出（复核排除已放弃标签正常关窗）
+    await machine.discardAll();
+    expect(mockCloseWindow).toHaveBeenCalledTimes(1);
+    expect(machine.phase.value).toBe("closing");
   });
 });

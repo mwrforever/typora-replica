@@ -122,6 +122,8 @@ const exitDialogVisible = computed(
 const exitSaving = computed(() => exitConfirm.phase.value === "saving");
 /** 本轮冻结的脏标签列表（模板消费；顶层 computed 解包——controller 非响应式对象） */
 const exitDirtyTabs = computed(() => exitConfirm.dirtyTabs.value);
+/** 最近一次写盘失败的失败原因（弹窗错误区；顶层 computed 解包，undefined=无失败） */
+const exitFailMessage = computed(() => exitConfirm.failMessage.value);
 
 /** Ctrl+P 面板开关 */
 const quickOpenVisible = ref(false);
@@ -550,11 +552,13 @@ function basenameOf(path: string): string {
     @cancel="tabs.cancelClose"
   />
   <!-- 退出聚合确认（12 W6，AC-M-18~21）：多脏标签列表式一次性确认；
-       saving 阶段保持展示并禁用按钮（写盘原子性） -->
+       saving 阶段保持展示并禁用按钮（写盘原子性）；写盘失败复显弹窗并在
+       错误区展示失败原因（用户可改选「全部不保存」/「取消」或重试） -->
   <ExitConfirmDialog
     v-if="exitDialogVisible"
     :items="exitDirtyTabs"
     :saving="exitSaving"
+    :fail-message="exitFailMessage"
     @save-all="exitConfirm.saveAll"
     @discard-all="exitConfirm.discardAll"
     @cancel="exitConfirm.cancel"

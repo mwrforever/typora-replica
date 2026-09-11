@@ -1,7 +1,8 @@
 // 退出聚合确认弹窗组件测试（12 W6：列表式一次性确认，AC-M-18 展示面）
 //
 // 覆盖：脏文件列表渲染（列出全部脏标签）、三按钮（全部保存/全部不保存/取消）
-// 分别 emit、saving 期间按钮禁用（写盘原子性防重复触发）、Esc = 取消语义。
+// 分别 emit、saving 期间按钮禁用（写盘原子性防重复触发）、Esc = 取消语义、
+// 写盘失败复显态错误区（failMessage 用户可见反馈，12 修复轮增补）。
 // 交互用 fireEvent：仓库无 @testing-library/user-event 依赖（宪法禁止随意新增
 // 依赖），与同域 ConfirmCloseDialog.spec.ts 既有惯例一致。
 import { fireEvent, render, screen } from "@testing-library/vue";
@@ -49,5 +50,17 @@ describe("ExitConfirmDialog 退出聚合确认", () => {
     const saving = render(ExitConfirmDialog, { props: { items, saving: true } });
     await fireEvent.keyDown(document, { key: "Escape" });
     expect(saving.emitted().cancel).toBeUndefined();
+  });
+
+  it("写盘失败复显：错误区展示失败原因（失败路径用户可见反馈）", () => {
+    render(ExitConfirmDialog, {
+      props: { items, saving: false, failMessage: "磁盘已满，写入失败" },
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent("磁盘已满，写入失败");
+  });
+
+  it("无失败时错误区不渲染（role=alert 查询为空）", () => {
+    render(ExitConfirmDialog, { props: { items, saving: false } });
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
