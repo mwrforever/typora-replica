@@ -75,4 +75,30 @@ describe("tabs-shortcuts 标签快捷键", () => {
     fireEvent.keyDown(window, { key: "n", ctrlKey: true });
     expect(handlers.onNewTab).not.toHaveBeenCalled();
   });
+
+  it("编辑器已消费的按键不重复触发标签动作（defaultPrevented 守卫，TASK 10#3）", () => {
+    // prosemirror-view 命中键位仅 preventDefault 不阻断传播，事件仍冒泡到 window；
+    // keyBinding 把编辑器命令绑到 Ctrl+N/W/Tab/Shift+T 时标签操作不得二次执行
+    const handlers = {
+      onNewTab: vi.fn(),
+      onCloseTab: vi.fn(),
+      onCycle: vi.fn(),
+      onReopenClosed: vi.fn(),
+    };
+    cleanup = registerTabsShortcuts(handlers);
+    for (const key of ["n", "w", "Tab", "t"]) {
+      const event = new KeyboardEvent("keydown", {
+        key,
+        ctrlKey: true,
+        shiftKey: key === "t",
+        cancelable: true,
+      });
+      event.preventDefault();
+      window.dispatchEvent(event);
+    }
+    expect(handlers.onNewTab).not.toHaveBeenCalled();
+    expect(handlers.onCloseTab).not.toHaveBeenCalled();
+    expect(handlers.onCycle).not.toHaveBeenCalled();
+    expect(handlers.onReopenClosed).not.toHaveBeenCalled();
+  });
 });

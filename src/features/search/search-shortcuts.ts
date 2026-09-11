@@ -23,6 +23,9 @@ export interface SearchShortcutHandlers {
  */
 export function registerSearchShortcuts(handlers: SearchShortcutHandlers): () => void {
   const onKeydown = (event: KeyboardEvent): void => {
+    // 编辑器 keymap 已消费的按键不得重复触发搜索面板（TASK 10#3 收口，
+    // settings-shortcuts.ts 同款先例：prosemirror-view 命中仅 preventDefault 不阻断传播）
+    if (event.defaultPrevented) return;
     // IME 组合期一律放行（中文输入过程不触发任何搜索行为）
     if (event.isComposing) return;
     // Ctrl 单修饰组合（排除 Shift/Alt/Meta，避免与编辑器/其他模块冲突）

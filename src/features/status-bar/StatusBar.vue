@@ -2,7 +2,7 @@
      + 右区字数按钮与统计弹面板（行数/字数/字符数/估计阅读时间；点击单位条目切换默认
      计数单位；选中文字显示「选中 N / 总 N」）；显隐消费 appearance.showStatusBar（D1）。
      拼写检查图标占位按 D2 决策本次不渲染（调研 §2.2 裁决）。
-     临时装配点挂 App.vue .app-shell 尾部（fixed 底部浮层；12 窗口外壳迁移时随组件走） -->
+     装配点为 12 窗口外壳 AppShell 状态栏容器（文档流占位，原 fixed 浮层随迁移移除） -->
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from "vue";
 import { useFileTreeStore } from "../file-tree/file-tree-store";
@@ -166,17 +166,14 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* 状态栏容器：临时装配点为 fixed 底部浮层（D1；12 窗口外壳接管后由容器布局接管，
-   届时移除 fixed 改文档流占位，披露 6） */
+/* 状态栏容器：12 窗口外壳接管后改文档流占位（AppShell 纵向 flex 置底，披露 6 兑现）；
+   relative 供统计弹面板绝对定位锚定 */
 .status-bar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 500;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
   height: 28px;
   padding: 0 8px;
   font-size: 12px;

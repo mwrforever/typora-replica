@@ -8,7 +8,7 @@
 import type { Editor } from "@milkdown/kit/core";
 import type { Node as ProseMirrorNode } from "@milkdown/kit/prose/model";
 import type { Selection } from "@milkdown/kit/prose/state";
-import { editorViewCtx } from "@milkdown/kit/core";
+import { editorViewCtx, parserCtx } from "@milkdown/kit/core";
 import type { Crepe } from "@milkdown/crepe";
 import { createMarkwellEditor } from "./create-editor";
 import { closeImageMenu } from "../image/delete-image";
@@ -205,6 +205,30 @@ class EditorManager {
     if (!view) return;
     view.dispatch(view.state.tr.insertText(text));
     view.focus();
+  }
+
+  /**
+   * 全文替换当前文档内容（12 源码模式编辑回写消费；2026-09-10 增补接口，缺口 B）
+   *
+   * 与 getMarkdown 互逆的全文契约：入参为完整落盘形态（可含 Front Matter——
+   * 剥离后正文经解析进文档树、FM 更新内存暂存）。单事务 replaceWith 整文档范围
+   * 替换，保留 undo 栈（历史插件记录为单步撤销）与实例存活状态（不销毁重建，
+   * 满足源码模式双实例保活契约）。未创建实例时静默跳过（与 insertMarkdown 同口径）。
+   * @param markdown 完整 markdown 文档（含或不含 Front Matter）
+   */
+  setContent(markdown: string): void {
+    const editor = this.editor;
+    if (!editor) return;
+    // 与 create 同序：先剥 FM（不进文档树、更新暂存）再应用外部 parse 转换器（E11）
+    const { frontMatter, body } = parseFrontMatter(markdown);
+    const parsed = (this.transformers.parse ?? ((d: string) => d))(body);
+    this.currentFrontMatter = frontMatter;
+    editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      const newDoc = ctx.get(parserCtx)(parsed);
+      // 单事务整文档替换：以 Fragment 形态替换 doc 全部内容，undo 一步可回退
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, newDoc.content));
+    });
   }
 
   /** 切换编辑器只读状态 */

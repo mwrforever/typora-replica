@@ -171,6 +171,23 @@
   margin-inline: auto;
 }
 
+/* ===== 12 W5 Focus 模式：Typora 主题契约类名同名实现（AC-M-10，类名注入见
+   focus-typewriter-plugin；源码层叠加同契约见 SourceModeLayer scoped 段） ===== */
+/* 淡化强度走主题 CSS 变量 --blur-text-color（Typora 主题自带该变量即覆盖内置默认；
+   回退值即内置主题基线，亮/暗两段并存同 reveal-highlight 先例） */
+.milkdown {
+  --blur-text-color: #b8b8b8;
+}
+.markwell-dark .milkdown {
+  --blur-text-color: #5a5a5a;
+}
+/* 非当前叶子块（md-end-block）整体淡化；当前块（md-focus）与其容器链
+   （md-focus-container）经 :not() 豁免——与 Typora 官方主题 CSS 选择器同构 */
+.on-focus-mode .md-end-block:not(.md-focus):not(.md-focus-container),
+.on-focus-mode .md-end-block:not(.md-focus):not(.md-focus-container) * {
+  color: var(--blur-text-color) !important;
+}
+
 /* Typora 变量映射兜底层（spec §3 兼容策略，尽力而为；2026-09-06 用户裁决 D-9(b)
    由独立文件 typora-var-bridge.css 并入本文件尾部，恢复全局样式两文件白名单）。
    仅当用户 Typora 主题定义了对应变量时生效；回退值与本文件亮色段同值（两处取值

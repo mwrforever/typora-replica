@@ -266,6 +266,25 @@ describe("themeStore 热刷新（Task 10）", () => {
     expect(mocks.errorSpy).toHaveBeenCalled();
     expect(document.getElementById("markwell-theme-link")).not.toBeNull(); // 首次注入不受影响
   });
+
+  it("watchFs=false 跳过热刷新订阅（12 W3 次窗口守卫）且其余装配环节不受影响", async () => {
+    // New Window 次窗口（D1 裁决）：Rust 监视槽位进程级单槽，次窗口订阅会顶掉
+    // 主窗口句柄——跳过订阅后主题列表/注入/色系等装配照常
+    const store = useThemeStore();
+    await store.init({ watchFs: false });
+    expect(mocks.watchThemes).not.toHaveBeenCalled();
+    expect(store.themes).toHaveLength(3);
+    expect(document.getElementById("markwell-theme-link")).not.toBeNull();
+  });
+
+  it("watchFs=false 的次窗口 dispose 不退订共享监视槽位（防清掉主窗口的订阅）", async () => {
+    // dispose 以 themeWatchActive 为门：次窗口从未订阅（标记恒 false），
+    // 卸载时不得调用 unwatch_themes——否则进程级共享槽位被清，主窗口热刷新连带终止
+    const store = useThemeStore();
+    await store.init({ watchFs: false });
+    store.dispose();
+    expect(mocks.unwatchThemes).not.toHaveBeenCalled();
+  });
 });
 
 describe("themeStore 明暗联动（Task 13）", () => {

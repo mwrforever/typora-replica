@@ -78,8 +78,11 @@ export const useThemeStore = defineStore("theme", () => {
    * - 授权失败仅记录并继续注入（主题 CSS 将被 asset 协议拒绝，界面回落默认样式）；
    * - 设置读取/目录扫描失败（store 插件异常、主题目录创建失败等）无数据可注入，
    *   仅记录并整体降级（跳过注入），不中断编辑主链路。
+   * @param options 装配选项；watchFs = 是否订阅主题目录热刷新（默认 true）。
+   *                12 W3 多窗口守卫：次窗口传 false 跳过 watch_themes 订阅
+   *                （Rust 监视槽位进程级单槽，后订阅顶掉先订阅——D1 裁决）
    */
-  async function init(): Promise<void> {
+  async function init(options?: { watchFs?: boolean }): Promise<void> {
     // 重装配幂等（12 窗口外壳场景）：先清旧订阅再装配，防旧 watcher/色系句柄泄漏
     disposed = false;
     stopColorScheme?.();
@@ -109,12 +112,16 @@ export const useThemeStore = defineStore("theme", () => {
         console.error("[MarkWell] 主题目录 asset 授权失败（主题降级为默认样式）", e);
       }
       applyCurrent();
-      // 热刷新订阅（AC-T3-1/2）：失败仅记录——降级为重启可见（官方基线行为，D-5）
-      try {
-        await watchThemes(scheduleRefresh);
-        themeWatchActive = true;
-      } catch (e) {
-        console.error("[MarkWell] 主题热刷新订阅失败（降级为重启可见）", e);
+      // 热刷新订阅（AC-T3-1/2）：失败仅记录——降级为重启可见（官方基线行为，D-5）。
+      // 12 W3 守卫：watchFs=false（次窗口）整体跳过——订阅成功才置 themeWatchActive，
+      // dispose/重装配侧以该标记为门，次窗口不会误清进程级共享监视槽位
+      if (options?.watchFs !== false) {
+        try {
+          await watchThemes(scheduleRefresh);
+          themeWatchActive = true;
+        } catch (e) {
+          console.error("[MarkWell] 主题热刷新订阅失败（降级为重启可见）", e);
+        }
       }
     } catch (e) {
       console.error("[MarkWell] 主题初始化失败（设置读取/目录扫描，主题降级为默认样式）", e);

@@ -504,4 +504,51 @@ describe("tabsController 编排控制器", () => {
     expect(rebuildDoc).toBe("编辑后最新内容");
     expect(controller.initialDocs.get(id)).toBe("打开时旧内容"); // 旧值仍在但被 contentSnapshot 遮蔽
   });
+
+  it("saveTab（12 退出聚合）：有路径标签走 02 链路写盘成功返回路径", async () => {
+    mockReadFile.mockResolvedValueOnce({ content: "# B", encoding: "utf8", lineEnding: "lf" });
+    await controller.openFile("C:/docs/b.md", "b.md");
+    const id = controller.store.activeTabId!;
+    const outcome = await controller.saveTab(id);
+    // 复用 02 session.save：writeFile 落盘 + saved 产物携带路径
+    expect(outcome).toEqual({ saved: true, path: "C:/docs/b.md" });
+    expect(mockWriteFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("saveTab（12 退出聚合）：写盘失败返回 io-error，标签保持脏态不被关闭", async () => {
+    mockReadFile.mockResolvedValueOnce({ content: "# B", encoding: "utf8", lineEnding: "lf" });
+    await controller.openFile("C:/docs/b.md", "b.md");
+    const id = controller.store.activeTabId!;
+    mockWriteFile.mockRejectedValueOnce(
+      Object.assign(new Error("磁盘写入失败"), { name: "FileIoError" }),
+    );
+    const outcome = await controller.saveTab(id);
+    // 失败产物由上层状态机决策（失败标签留在窗口）；标签不被 saveTab 关闭
+    expect(outcome.saved).toBe(false);
+    expect(controller.store.tabs.some((t) => t.id === id)).toBe(true);
+  });
+
+  it("saveTab（12 退出聚合）：未命名标签返回 no-path 不写盘（处置归上层状态机）", async () => {
+    controller.createUntitled();
+    const id = controller.store.activeTabId!;
+    const outcome = await controller.saveTab(id);
+    // 未命名无路径：02 语义 no-path，不弹另存为对话框（与单标签 C2 保存分支的差异披露点）
+    expect(outcome).toMatchObject({ saved: false, reason: "no-path" });
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
+  it("saveTab（12 退出聚合）：未知 tabId 返回 no-path 防御产物不抛错", async () => {
+    // 弹窗期标签被关闭等竞态：防御性失败产物（状态机按失败标签处理，不中断其余）
+    const outcome = await controller.saveTab("tab-ghost");
+    expect(outcome).toMatchObject({ saved: false, reason: "no-path" });
+  });
+
+  it("pauseAutoSave/resumeAutoSave（12 退出聚合）：透传注册表挂起保存通道/恢复激活", async () => {
+    const suspendAllSpy = vi.spyOn(registry, "suspendAllAutoSave");
+    const resumeActiveSpy = vi.spyOn(registry, "resumeActiveAutoSave");
+    controller.pauseAutoSave();
+    controller.resumeAutoSave();
+    expect(suspendAllSpy).toHaveBeenCalledTimes(1);
+    expect(resumeActiveSpy).toHaveBeenCalledTimes(1);
+  });
 });

@@ -5,21 +5,30 @@
 // 注册机制：keymapCtx（KeymapManager），add 接受 { key, priority, onRun }；
 // onRun(ctx) 返回 ProseMirror Command，build 时按 priority 降序 chainCommands。
 import type { Ctx } from "@milkdown/kit/ctx";
-import { commandsCtx, keymapCtx } from "@milkdown/kit/core";
+import { commandsCtx, editorViewCtx, keymapCtx, type Editor } from "@milkdown/kit/core";
 import {
   codeBlockSchema,
   createCodeBlockCommand,
   headingSchema,
+  insertHardbreakCommand,
   listItemSchema,
   paragraphSchema,
   setBlockTypeCommand,
   toggleEmphasisCommand,
   toggleInlineCodeCommand,
   toggleStrongCommand,
+  wrapInBlockquoteCommand,
+  wrapInBulletListCommand,
   wrapInHeadingCommand,
+  wrapInOrderedListCommand,
 } from "@milkdown/kit/preset/commonmark";
-import { addRowWithAlignment } from "@milkdown/kit/preset/gfm";
+import {
+  addRowWithAlignment,
+  insertTableCommand,
+  toggleStrikethroughCommand,
+} from "@milkdown/kit/preset/gfm";
 import { findParentNode } from "@milkdown/kit/prose";
+import { selectAll, splitBlock } from "@milkdown/kit/prose/commands";
 import { liftListItem, sinkListItem } from "@milkdown/kit/prose/schema-list";
 import { TextSelection, type Command } from "@milkdown/kit/prose/state";
 import { TableMap, findTable, selectedRect } from "@milkdown/kit/prose/tables";
@@ -267,13 +276,42 @@ export function makeTableTabAddRowCommand() {
 // 单列表格回落内置下移（用户裁决：保导航），多列表格行末格加行
 addEditorKeymap({ key: "Tab", onRun: makeTableTabAddRowCommand() });
 
-// ── 10 设置快捷键：keyBinding 注入目录（AC-C1-2/3）──
+/**
+ * 光标跳转命令工厂（Edit 菜单「跳转到顶部/底部/选区」共用形态）
+ *
+ * top/bottom 以选区归位 + 滚动随行复刻 Ctrl+Home/End 原生行为；selection 仅滚动
+ * 令当前选区可见、不改选区。
+ * 导出供单测直调：dry-run（dispatch 缺省）路径在菜单执行链路不可达
+ * （runEditorMenuCommand 恒传 view.dispatch），需在单测中以 dispatch=undefined
+ * 显式触发覆盖（insertCodeFenceCommand 同款惯例）。
+ *
+ * @param mode 跳转模式：top = 文档起点；bottom = 文档终点；selection = 当前选区滚动
+ * @returns onRun 闭包（ctx 不参与，命令直接可用）
+ */
+export function makeScrollJumpCommand(mode: "top" | "bottom" | "selection"): (ctx: Ctx) => Command {
+  return () => (state, dispatch) => {
+    if (!dispatch) return true;
+    if (mode === "top") {
+      dispatch(state.tr.setSelection(TextSelection.atStart(state.doc)).scrollIntoView());
+    } else if (mode === "bottom") {
+      dispatch(state.tr.setSelection(TextSelection.atEnd(state.doc)).scrollIntoView());
+    } else {
+      dispatch(state.tr.scrollIntoView());
+    }
+    return true;
+  };
+}
+
+// ── 10/12 共用菜单命令目录（缺口 G 形态 b：单一事实源，2026-09-10 用户裁决批准）──
 //
 // 命令名 → onRun 工厂目录持有在 01 域内（A.7.4：Ctx/Command 编辑器域类型不离开本文件）；
-// 10 模块只传 JSON 值对象（命令名字符串 + 解析后的键名字符串）。
-// 复用本文件既有命令路径（commandsCtx 调用 / 既有工厂），不新增命令实现。
-// 目录范围 = 编辑器域十命令（披露 3）：Heading×6 / Paragraph / Code Fences / Inline Code /
-// Bold / Italic；窗口域命令（Always on Top 等）不在本目录——执行接线归 12 menuRouter。
+// 10 模块只传 JSON 值对象（命令名字符串 + 解析后的键名字符串）经 bindMenuShortcut 注入，
+// 12 menuRouter 经 runEditorMenuCommand 以同一目录执行菜单 action——同一命令函数单一执行路径。
+// 命令实现路径：commandsCtx 调用 / 预设命令 / 本文件工厂——其中光标跳转无既有
+// 命令可复用，由 makeScrollJumpCommand 工厂提供（Ctrl+Home/End 原生行为的 PM
+// 等价命令，与目录内其他工厂同形态持有）。
+// 目录范围：原 keyBinding 十命令 + Edit/Paragraph/Format 菜单可执行命令（引用块/列表/
+// 缩进出/级别增减/删除线/表格/换行/跳转等）；窗口域命令（Always on Top 等）不在本目录。
 
 /** 目录内命令的 onRun 工厂（ctx 在 KeymapManager.build 时解析——与内置注册同时序） */
 const BINDABLE_EDITOR_COMMANDS: Record<string, (ctx: Ctx) => Command> = {
@@ -300,7 +338,91 @@ const BINDABLE_EDITOR_COMMANDS: Record<string, (ctx: Ctx) => Command> = {
   "Heading 4": (ctx) => turnIntoHeadingCommand(ctx, 4),
   "Heading 5": (ctx) => turnIntoHeadingCommand(ctx, 5),
   "Heading 6": (ctx) => turnIntoHeadingCommand(ctx, 6),
+  // ── Edit 域扩展（12 Edit 菜单与 keyBinding 共用）──
+  // 新段落 = 回车主路径（PM 标准 splitBlock，与编辑器内 Enter 行为一致）
+  "New Paragraph": () => splitBlock,
+  // 新行 = Shift+Enter 软换行（预设 InsertHardbreak，与内置 hardbreakKeymap 同一命令）
+  "New Line": (ctx) => {
+    const commands = ctx.get(commandsCtx);
+    return () => commands.call(insertHardbreakCommand.key);
+  },
+  // 全选（PM 标准 selectAll，与 baseKeymap 的 Mod-a 语义一致）
+  "Select All": () => selectAll,
+  // 光标跳转（Ctrl+Home/End 原生行为的 PM 等价命令：选区归位 + 滚动随行）
+  "Jump to Top": makeScrollJumpCommand("top"),
+  "Jump to Bottom": makeScrollJumpCommand("bottom"),
+  // 跳转到选区（滚动令当前选区可见，不改选区）
+  "Jump to Selection": makeScrollJumpCommand("selection"),
+  // ── Paragraph 域扩展 ──
+  // 级别增减：复用既有 headingLevelCommand 工厂（钳制 1-6，非标题上下文不消费）
+  "Increase Heading Level": headingLevelCommand(1),
+  "Decrease Heading Level": headingLevelCommand(-1),
+  // 表格：插入 3×3 表格（Typora 菜单插入口径）
+  Table: (ctx) => {
+    const commands = ctx.get(commandsCtx);
+    return () => commands.call(insertTableCommand.key, { row: 3, col: 3 });
+  },
+  // 引用块：预设 WrapInBlockquote（与内置 blockquoteKeymap 同一命令）
+  Quote: (ctx) => {
+    const commands = ctx.get(commandsCtx);
+    return () => commands.call(wrapInBlockquoteCommand.key);
+  },
+  // 有序/无序列表：预设 WrapIn 命令（与内置 orderedListKeymap/bulletListKeymap 同一命令）
+  "Ordered List": (ctx) => {
+    const commands = ctx.get(commandsCtx);
+    return () => commands.call(wrapInOrderedListCommand.key);
+  },
+  "Unordered List": (ctx) => {
+    const commands = ctx.get(commandsCtx);
+    return () => commands.call(wrapInBulletListCommand.key);
+  },
+  // 缩进/取消缩进：与内置 Ctrl+[/Ctrl+] 键位同一 sink/lift 路径（Typora 反向配对）
+  Indent: (ctx) => sinkListItem(listItemSchema.type(ctx)),
+  Outdent: (ctx) => liftListItem(listItemSchema.type(ctx)),
+  // ── Format 域扩展 ──
+  // 删除线：预设 ToggleStrikeThrough（与内置 strikethroughKeymap 同一命令）
+  Strike: (ctx) => {
+    const commands = ctx.get(commandsCtx);
+    return () => commands.call(toggleStrikethroughCommand.key);
+  },
 };
+
+/**
+ * 查询菜单命令目录内全部命令名（12 menuRouter 建表核对消费；只出 JSON 字符串，A.7.4）
+ * @returns 目录键集合（目录声明序）
+ */
+export function listBindableEditorCommands(): readonly string[] {
+  return Object.keys(BINDABLE_EDITOR_COMMANDS);
+}
+
+/**
+ * 执行菜单命令目录内的编辑器命令（12 menuRouter 消费；与 bindMenuShortcut 同源目录）
+ *
+ * 在当前激活编辑器实例上以 editor.action 同步执行：目录工厂解析 Ctx 后产出
+ * ProseMirror Command，对当前 view 的 state/dispatch 即时生效（与按键触发同一
+ * 命令函数，AC-M-3 单一执行路径）。
+ *
+ * @param commandId 菜单命令名（目录键，如 "Bold"）
+ * @param getEditor 取当前编辑器实例的回调（12 侧传 editorManager.getEditor；
+ *                  经参数注入而非本文件直依 editor-manager，避免模块环）
+ * @returns true = 命令存在且被消费；false = 目录外命令 / 无编辑器实例 / 命令不适用当前上下文
+ */
+export function runEditorMenuCommand(
+  commandId: string,
+  getEditor: () => Editor | undefined,
+): boolean {
+  const factory = BINDABLE_EDITOR_COMMANDS[commandId];
+  if (factory === undefined) return false;
+  const editor = getEditor();
+  if (editor === undefined) return false;
+  let handled = false;
+  // action 回调同步执行：Ctx 内解析当前 PM view，命令对最新文档状态生效
+  editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx);
+    handled = factory(ctx)(view.state, view.dispatch, view);
+  });
+  return handled;
+}
 
 /**
  * 注册 keyBinding 自定义键位（10 模块启动注入；必须在编辑器 create() 前调用——

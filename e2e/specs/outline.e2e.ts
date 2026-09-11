@@ -14,6 +14,13 @@ import { $, $$, browser, expect } from "@wdio/globals";
  * 兜底（走同一条 window keydown 监听链路，见场景 1 注释）。
  */
 describe("05 大纲面板", () => {
+  before(async () => {
+    // 套件前置：等应用装配完成（状态栏挂出）再发首键盘——页面 load 后立即按键
+    // 会撞上窗口 OS 焦点就绪窗口期（实测偶发丢失首键，Ctrl+N 无响应连锁失败，
+    // 2026-09-12 存量伪红甄别记录见 docs/bugs）
+    await $("[data-status-bar]").waitForExist({ timeout: 15000 });
+  });
+
   /**
    * 取当前可见（激活）的编辑器宿主 pane。
    * TabHost 以 v-show 保活全部标签，隐藏 pane 仍在 DOM——必须按显示态定位，

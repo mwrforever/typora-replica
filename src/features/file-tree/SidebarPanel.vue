@@ -152,12 +152,13 @@ function onSort(by: "alpha" | "natural" | "mtime" | "ctime"): void {
 </template>
 
 <style scoped>
-/* 侧栏容器样式（03 阶段朴素定位；08 主题模块按设计令牌精修） */
+/* 侧栏容器样式（03 阶段朴素定位；08 主题模块按设计令牌精修）
+   宽度自 12 窗口外壳起由 AppShell 侧栏容器接管（拖拽 180~480px 收敛），
+   本组件填满容器不再自持固定宽（03 阶段固定 260px 移交外壳默认值） */
 .sidebar-panel {
   display: flex;
   flex-direction: column;
-  width: 260px;
-  min-width: 200px;
+  width: 100%;
   height: 100%;
   background: var(--markwell-surface, #fff);
   border-right: 1px solid var(--markwell-border, #ddd);

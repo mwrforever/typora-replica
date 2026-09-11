@@ -2,9 +2,10 @@
 //
 // 机制（已锁定）：① 心跳备份——订阅 markdownUpdated，编辑后 5s 写草稿，
 // 独立于自动保存开关（崩溃/异常退出可找回，与 Typora 后台草稿机制对齐）；
-// ② 退出备份——正常退出时若仍有未保存内容再补一次（用户实测：正常退出也
-// 留备份，AC-F31-4）；恢复入口为偏好面板按钮（10/12 装配 UI，本模块提供
-// listRecoverable/recover 命令层）；不自动弹恢复提示。
+// ② 退出备份——正常退出关闭入口（12 W6 退出聚合的 onCloseRequested 接线，
+// 确认流程第一步）直接调 backupIfNeeded，若仍有未保存内容再补一次（用户实测：
+// 正常退出也留备份，AC-F31-4）；恢复入口为偏好面板按钮（10/12 装配 UI，本模块
+// 提供 listRecoverable/recover 命令层）；不自动弹恢复提示。
 // 命名：有路径用文件名；未命名文档用首标题/首句（extractDraftName）。
 // 04 聚合（D1 裁决落地）：构造注入「脏标签快照提供器」而非单一会话——心跳/
 // 退出备份遍历全部脏标签逐个写草稿；脏过滤与 per-tab 序列化由装配方提供器
@@ -41,14 +42,12 @@ export function extractDraftName(md: string): string {
   return truncated;
 }
 
-/** 草稿恢复服务（App.vue 装配 start/setupExitBackup） */
+/** 草稿恢复服务（App.vue 装配 start；退出备份由 12 W6 关闭入口直调 backupIfNeeded） */
 export class DraftRecovery {
   /** 心跳防抖定时器 */
   private heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
   /** markdownUpdated 取消订阅 */
   private unsubscribe: (() => void) | undefined;
-  /** 退出备份已挂载标记（幂等） */
-  private exitBackupSetup = false;
 
   /**
    * 构造注入脏标签快照提供器（02 单文档：单元素；04 多标签：全部脏标签）。
@@ -77,16 +76,6 @@ export class DraftRecovery {
       clearTimeout(this.heartbeatTimer);
       this.heartbeatTimer = undefined;
     }
-  }
-
-  /**
-   * 挂载退出备份：正常退出时（含未命名文档）补写草稿
-   * @param onClose 关闭事件注册（Tauri onCloseRequested 注入；测试传假注册器）
-   */
-  setupExitBackup(onClose: (handler: () => Promise<void>) => void): void {
-    if (this.exitBackupSetup) return;
-    this.exitBackupSetup = true;
-    onClose(() => this.backupIfNeeded());
   }
 
   /**

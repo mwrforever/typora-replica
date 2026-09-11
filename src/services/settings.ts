@@ -9,7 +9,8 @@
 // +YAML 覆盖/HTML head-body/HTML 主题/PDF 边距四预留键——09 导出管线后续迭代消费）、
 // appearance（10 设置面板：状态栏+字号+阅读速度）、
 // editor（10 设置面板：auto pair 括号与 Markdown 语法开关）、
-// markdown（10 设置面板：语法开关组+代码围栏子组，随编辑器 create 注入、重启生效）。
+// markdown（10 设置面板：语法开关组+代码围栏子组，随编辑器 create 注入、重启生效）、
+// layout（12 窗口外壳：侧栏宽度拖拽持久化，重启恢复）。
 // 自动保存默认开（差异化于 Typora 默认关——spec 待把关项按调研建议裁决，数据安全优先）。
 import { load } from "@tauri-apps/plugin-store";
 import type { LineEnding } from "./file-io";
@@ -104,6 +105,8 @@ export interface AppearanceSettings {
   fontSize?: number;
   /** 阅读速度 words/min（阅读时间统计口径，默认 200 自定；消费方 11） */
   readingSpeed: number;
+  /** 打字机模式点击滚动居中（官方默认开；undefined = 默认开；消费方 12 视图模式控制器，F9 偏好项） */
+  typewriterClickCenter?: boolean;
 }
 
 /** 编辑器行为设置（12.2；auto pair 输入规则随编辑器 create 注入，重启生效） */
@@ -169,6 +172,14 @@ export interface AppSettings {
   editor: EditorSettings;
   /** Markdown 语法开关（10 模块消费） */
   markdown: MarkdownSettings;
+  /** 窗口布局（12 模块消费） */
+  layout: LayoutSettings;
+}
+
+/** 窗口布局偏好（12 窗口外壳；侧栏宽度拖拽持久化，重启恢复 AC-M-23） */
+export interface LayoutSettings {
+  /** 侧栏宽度 px（合法区间 180~480，越界由外壳收敛；默认 260 与 03 阶段固定宽度一致） */
+  sidebarWidth: number;
 }
 
 /** 默认偏好（缺失键回落基准） */
@@ -202,8 +213,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     htmlThemeOverride: "",
     pdfMarginIn: 0.4,
   },
-  // 外观默认：状态栏开、字号跟随主题（fontSize 缺省 = undefined）、阅读速度 200 词/分（调研自定）
-  appearance: { showStatusBar: true, readingSpeed: 200 },
+  // 外观默认：状态栏开、字号跟随主题（fontSize 缺省 = undefined）、阅读速度 200 词/分（调研自定）、
+  // 打字机点击居中开（官方默认行为，AC-M-12）
+  appearance: { showStatusBar: true, readingSpeed: 200, typewriterClickCenter: true },
   // 编辑器行为默认：auto pair 全开（01 实测口径，不改变既有输入体验）
   editor: { autoPairBrackets: true, autoPairMarkdown: true },
   // Markdown 语法默认全关（01 实测行内数学关 + 其余自定，保持既有渲染行为零变化）；
@@ -225,6 +237,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
       useLastUsedLanguage: true,
     },
   },
+  // 窗口布局默认：侧栏 260px（与 03 阶段 SidebarPanel 固定宽度一致，外壳升级无感）
+  layout: { sidebarWidth: 260 },
 };
 
 /** store 文件名（tauri-plugin-store 自动持久化到 app 数据目录） */
@@ -244,6 +258,7 @@ export async function loadSettings(): Promise<AppSettings> {
     appearance: ((await store.get("appearance")) ?? {}) as Partial<AppearanceSettings>,
     editor: ((await store.get("editor")) ?? {}) as Partial<EditorSettings>,
     markdown: ((await store.get("markdown")) ?? {}) as Partial<MarkdownSettings>,
+    layout: ((await store.get("layout")) ?? {}) as Partial<LayoutSettings>,
   };
   // codeFence 子组存量可能整体缺失（10 之前的存量数据无该键），先兜空对象再逐键回落
   const storedCodeFence = (stored.markdown.codeFence ?? {}) as Partial<CodeFenceSettings>;
@@ -299,6 +314,9 @@ export async function loadSettings(): Promise<AppSettings> {
       // 字号无回落键：undefined 直通 = 跟随主题（显式"未设置"语义，不落默认数值）
       fontSize: stored.appearance.fontSize,
       readingSpeed: stored.appearance.readingSpeed ?? DEFAULT_SETTINGS.appearance.readingSpeed,
+      typewriterClickCenter:
+        stored.appearance.typewriterClickCenter ??
+        DEFAULT_SETTINGS.appearance.typewriterClickCenter,
     },
     editor: {
       autoPairBrackets: stored.editor.autoPairBrackets ?? DEFAULT_SETTINGS.editor.autoPairBrackets,
@@ -326,6 +344,10 @@ export async function loadSettings(): Promise<AppSettings> {
           DEFAULT_SETTINGS.markdown.codeFence.useLastUsedLanguage,
       },
     },
+    // 侧栏宽度（12 外壳拖拽持久化）：缺失键回落默认值，越界存量由外壳消费侧收敛
+    layout: {
+      sidebarWidth: stored.layout.sidebarWidth ?? DEFAULT_SETTINGS.layout.sidebarWidth,
+    },
   };
 }
 
@@ -340,7 +362,15 @@ export async function updateSettings(
   patch: Partial<
     Omit<
       AppSettings,
-      "launch" | "outline" | "image" | "theme" | "export" | "appearance" | "editor" | "markdown"
+      | "launch"
+      | "outline"
+      | "image"
+      | "theme"
+      | "export"
+      | "appearance"
+      | "editor"
+      | "markdown"
+      | "layout"
     >
   > & {
     launch?: Partial<LaunchSettings>;
@@ -350,6 +380,7 @@ export async function updateSettings(
     export?: Partial<ExportSettings>;
     appearance?: Partial<AppearanceSettings>;
     editor?: Partial<EditorSettings>;
+    layout?: Partial<LayoutSettings>;
     markdown?: Partial<Omit<MarkdownSettings, "codeFence">> & {
       codeFence?: Partial<CodeFenceSettings>;
     };
@@ -372,6 +403,8 @@ export async function updateSettings(
       ...patch.markdown,
       codeFence: { ...current.markdown.codeFence, ...patch.markdown?.codeFence },
     },
+    // 布局增量合并：12 外壳只传 sidebarWidth 单字段，不丢组内未来扩展键
+    layout: { ...current.layout, ...patch.layout },
   };
   const store = await load(STORE_FILE, { autoSave: true });
   await store.set("autoSave", next.autoSave);
@@ -384,6 +417,7 @@ export async function updateSettings(
   await store.set("appearance", next.appearance);
   await store.set("editor", next.editor);
   await store.set("markdown", next.markdown);
+  await store.set("layout", next.layout);
   return next;
 }
 

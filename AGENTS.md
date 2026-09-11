@@ -222,7 +222,7 @@ App.vue → components → features → services ──invoke──▶ src-tauri
 | 桌面外壳          | Tauri（protocol-asset）+ @tauri-apps/api                                                                      | 2.x                                  |
 | Rust 关键依赖     | serde / serde_json、encoding_rs、ignore、regex、walkdir、notify、trash、pathdiff                              | 见 src-tauri/Cargo.toml              |
 | PDF 打印          | webview2-com（ICoreWebView2_16 PrintToPdfStream）+ windows/windows-core（COM/IStream）+ thiserror（错误枚举） | 0.38.2 / 0.61 / 0.61 / 2（实测证据） |
-| Tauri 插件        | dialog / store / opener                                                                                       | 2.x                                  |
+| Tauri 插件        | dialog / store / opener / window-state（12 W3 窗口状态重启恢复，StateFlags 含 FULLSCREEN）                    | 2.x（window-state 2.4.1，实测证据）  |
 | 单元测试          | Vitest + @vitest/coverage-v8 + jsdom                                                                          | ^4.1.10 / 30                         |
 | E2E               | WebdriverIO + edgedriver（本地）；smoke-ci.mjs 冒烟（CI）                                                     | ^9.30.1                              |
 | 静态检查 / 格式化 | ESLint（flat config）+ eslint-plugin-vue / Prettier                                                           | ^10.8.1 / ^3.9.6                     |

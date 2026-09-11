@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window（BUG-5 严格修复：自定义命令显式白名单——build.rs 声明 AppManifest.commands 后门禁生效，未引用命令被拒）",
-  "windows": ["main"],
+  "windows": ["main", "main-*"],
   "permissions": [
     "core:default",
     "opener:default",
@@ -37,6 +37,13 @@
     "allow-write-advanced-settings",
     "allow-reset-advanced-settings",
     "allow-open-advanced-settings",
-    "allow-toggle-devtools"
+    "allow-toggle-devtools",
+    "allow-set-native-menu-visible",
+    "allow-toggle-fullscreen",
+    "allow-is-window-fullscreen",
+    "allow-toggle-always-on-top",
+    "allow-set-webview-zoom",
+    "allow-create-main-window",
+    "core:window:allow-destroy"
   ]
 }

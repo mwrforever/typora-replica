@@ -176,13 +176,14 @@ describe("偏好设置（store 持久化）", () => {
 
   // ── 10 设置面板新键组（12.1-12.5 全集存储面）──
 
-  it("appearance 组缺失键逐层回落默认（状态栏开/字号跟随主题/阅读速度 200）", async () => {
+  it("appearance 组缺失键逐层回落默认（状态栏开/字号跟随主题/阅读速度 200/打字机点击居中开）", async () => {
     // 无存储键（beforeEach 已清空）→ appearance 组逐字段回落默认值
     const s = await loadSettings();
     // 逐字段钉死默认（toEqual 对 undefined 宽容，防静默漏字段）
     expect(s.appearance.showStatusBar).toBe(true);
     expect(s.appearance.fontSize).toBeUndefined(); // 跟随主题
     expect(s.appearance.readingSpeed).toBe(200);
+    expect(s.appearance.typewriterClickCenter).toBe(true); // 官方默认（12 W5 AC-M-12）
   });
 
   it("appearance 字号设置后持久化保留（undefined 与数值双形态往返）", async () => {
@@ -192,6 +193,12 @@ describe("偏好设置（store 持久化）", () => {
     expect(reloaded.appearance.fontSize).toBe(18);
     expect(reloaded.appearance.readingSpeed).toBe(250);
     expect(reloaded.appearance.showStatusBar).toBe(true); // 未触及键保持
+  });
+
+  it("打字机点击居中偏好关闭态持久化往返（12 W5 偏好存储面，AC-M-12）", async () => {
+    await updateSettings({ appearance: { typewriterClickCenter: false } });
+    const reloaded = await loadSettings();
+    expect(reloaded.appearance.typewriterClickCenter).toBe(false);
   });
 
   it("editor 组默认全开（auto pair 括号与 Markdown 语法，01 实测口径）", async () => {
@@ -244,5 +251,27 @@ describe("偏好设置（store 持久化）", () => {
     expect(s.markdown.codeFence.lineNumbers).toBe(false); // 组内未触及键保持
     expect(s.markdown.inlineMath).toBe(false);
     expect(s.export.includeOutline).toBe(false); // 其他组不受影响
+  });
+
+  it("layout 组默认侧栏宽度 260（与 03 阶段固定宽度一致，12 外壳升级无感）", async () => {
+    const s = await loadSettings();
+    expect(s.layout.sidebarWidth).toBe(260);
+  });
+
+  it("layout.sidebarWidth 存量读取与增量写回（AC-M-23 持久化通道）", async () => {
+    // 存量整组写入 → 逐字段读取（重启恢复路径）
+    memory.set("layout", { sidebarWidth: 360 });
+    expect((await loadSettings()).layout.sidebarWidth).toBe(360);
+    // 拖拽结束增量写回（12 外壳 onPersist 消费口）→ 独立键落盘
+    await updateSettings({ layout: { sidebarWidth: 420 } });
+    expect(memory.get("layout")).toEqual({ sidebarWidth: 420 });
+    expect((await loadSettings()).layout.sidebarWidth).toBe(420);
+  });
+
+  it("updateSettings 增量合并 layout 单字段且不影响其他组", async () => {
+    await updateSettings({ appearance: { readingSpeed: 260 } });
+    const s = await updateSettings({ layout: { sidebarWidth: 200 } });
+    expect(s.layout.sidebarWidth).toBe(200);
+    expect(s.appearance.readingSpeed).toBe(260); // 其他组不受影响
   });
 });

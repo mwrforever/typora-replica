@@ -25,6 +25,7 @@ import { openLinkPlugin } from "./link/open-link";
 import { handleMermaidContextMenu } from "./mermaid/mermaid-menu";
 import { createMermaidRenderPreview } from "./mermaid/mermaid-preview";
 import { markwellSearchPlugin } from "./search-plugin";
+import { focusTypewriterPlugin } from "./focus-typewriter-plugin";
 import {
   configureToc,
   createTocViewRegistry,
@@ -266,6 +267,9 @@ export function createMarkwellEditor(
   crepe.editor.use(typoraHeadingIdPlugin);
   // 官方查找高亮插件（06 搜索替换 P1），与产品行为同源
   crepe.editor.use(markwellSearchPlugin);
+  // Focus/Typewriter 双视图模式插件（12 窗口外壳 W5，AC-M-10~12）：默认全关零开销，
+  // F8/F9 经 12 域 view-modes 控制器派发配置 meta 驱动
+  crepe.editor.use(focusTypewriterPlugin);
   // E21 图表右键菜单 + 07 图片删除菜单：contextmenu 顺序短路分发（handleDOMEvents 由
   // ProseMirror 在编辑器 DOM 上统一监听，预览面板/图片均位于编辑器内容 DOM 内故可命中）
   //（非命中区域返回 false 放行浏览器默认菜单）

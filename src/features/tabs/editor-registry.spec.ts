@@ -1,7 +1,8 @@
 // 实例注册表（04：LRU 判定/adopt 门面切换/激活期 autoSave 订阅管理）
 //
 // 说明：fake crepe 带 on 桩（真实 editorManager.adopt 经 setupEditorEvents 调用
-// crepe.on 注册监听，纯 {} 会抛 TypeError）；autoSave 以 vi.fn 桩验证订阅启停编排。
+// crepe.on 注册监听，纯 {} 会抛 TypeError）；autoSave 以 vi.fn 桩验证订阅启停编排
+// （双通道：start/stop 完整起停，startSuspended/suspend/resume 12 退出聚合暂停通道）。
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   activateInstance,
@@ -11,6 +12,8 @@ import {
   getInstance,
   recycleLeastRecent,
   registerInstance,
+  resumeActiveAutoSave,
+  suspendAllAutoSave,
   unregisterInstance,
 } from "./editor-registry";
 import type { RegisteredInstance } from "./editor-registry";
@@ -20,7 +23,13 @@ function fakeInstance(id: number): RegisteredInstance {
     crepe: { on: vi.fn() } as never,
     frontMatter: null,
     session: {} as never,
-    autoSave: { start: vi.fn(), stop: vi.fn() } as never,
+    autoSave: {
+      start: vi.fn(),
+      stop: vi.fn(),
+      startSuspended: vi.fn(),
+      suspend: vi.fn(),
+      resume: vi.fn(),
+    } as never,
     lastActivatedAt: id,
   };
 }
@@ -131,5 +140,65 @@ describe("editorRegistry 实例注册表", () => {
     expect(getActiveFrontMatter()).toBe(fm);
     unregisterInstance("a");
     expect(getActiveFrontMatter()).toBeNull();
+  });
+
+  it("suspendAllAutoSave：全实例只挂起保存定时器（不完整停止，12 退出聚合暂停）", () => {
+    const a = fakeInstance(1);
+    const b = fakeInstance(2);
+    registerInstance("a", a);
+    registerInstance("b", b);
+    activateInstance("a");
+    suspendAllAutoSave();
+    // 双通道拆分钉：suspend 只停保存定时器，标脏订阅保持活跃（弹窗期编辑仍置脏）——
+    // 不得调用完整 stop（否则复核聚合失效，弹窗期编辑随 destroy 丢失）
+    expect(a.autoSave.suspend).toHaveBeenCalled();
+    expect(b.autoSave.suspend).toHaveBeenCalled();
+    expect(a.autoSave.stop).not.toHaveBeenCalled();
+    expect(b.autoSave.stop).not.toHaveBeenCalled();
+  });
+
+  it("resumeActiveAutoSave：仅恢复激活标签；无激活标签安全返回", () => {
+    const a = fakeInstance(1);
+    const b = fakeInstance(2);
+    registerInstance("a", a);
+    registerInstance("b", b);
+    resumeActiveAutoSave(); // 从未激活：adoptedTabId 为 undefined → no-op
+    expect(a.autoSave.resume).not.toHaveBeenCalled();
+    expect(b.autoSave.resume).not.toHaveBeenCalled();
+    activateInstance("a");
+    resumeActiveAutoSave();
+    expect(a.autoSave.resume).toHaveBeenCalledTimes(1); // 仅激活标签恢复
+    expect(b.autoSave.resume).not.toHaveBeenCalled(); // 非激活标签不重启
+  });
+
+  it("退出聚合暂停期激活新标签：以暂停态启动（不变量 confirming ⇒ 已暂停不被轮换打破）", () => {
+    const a = fakeInstance(1);
+    const b = fakeInstance(2);
+    registerInstance("a", a);
+    registerInstance("b", b);
+    activateInstance("a");
+    suspendAllAutoSave();
+    activateInstance("b");
+    // 暂停屏蔽位生效：弹窗期 Ctrl+Tab 轮换不得让新标签恢复保存定时器，
+    // 但须以暂停态建立标脏订阅（弹窗期对它的编辑仍要置脏供复核聚合）
+    expect(b.autoSave.start).not.toHaveBeenCalled();
+    expect(b.autoSave.startSuspended).toHaveBeenCalledTimes(1);
+  });
+
+  it("暂停期激活的新标签在恢复后切回运行态（resume 统一回位）", () => {
+    const a = fakeInstance(1);
+    const b = fakeInstance(2);
+    registerInstance("a", a);
+    registerInstance("b", b);
+    activateInstance("a");
+    suspendAllAutoSave();
+    activateInstance("b");
+    resumeActiveAutoSave();
+    // 恢复：解除屏蔽位并 resume 暂停期激活切换的标签（回运行态）
+    expect(b.autoSave.resume).toHaveBeenCalledTimes(1);
+    // 屏蔽位已解除：再次激活切换回归正常完整启动（首次激活 + 本次 = 2 次）
+    activateInstance("a");
+    expect(a.autoSave.start).toHaveBeenCalledTimes(2);
+    expect(a.autoSave.startSuspended).not.toHaveBeenCalled();
   });
 });
