@@ -5,7 +5,12 @@
 // 未知 id 告警不崩溃。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExportMenuEntry } from "../export/export-commands";
-import { createMenuRouter } from "./menu-router";
+import { SHORTCUT_COMMANDS } from "../settings/shortcut-catalog";
+import {
+  createMenuRouter,
+  runWindowKeybindingCommand,
+  WINDOW_KEYBINDING_COMMANDS,
+} from "./menu-router";
 import type { MenuRouterDeps } from "./menu-router";
 import { buildMenuTree } from "./menu-tree";
 import type { MenuNode } from "../../services/menu-io";
@@ -222,6 +227,33 @@ describe("createMenuRouter 窗口控制域（12 W3：AC-M-13~16 单一执行路�
     expect(deps.toggleAlwaysOnTop).toHaveBeenCalledOnce();
     router.run("file.new-window");
     expect(deps.newWindow).toHaveBeenCalledOnce();
+  });
+});
+
+describe("窗口域 keyBinding 命令映射（10#1 执行接线：WINDOW_KEYBINDING_COMMANDS）", () => {
+  it("catalog 全部窗口域命令逐一派发到同一命令函数（AC-M-3 与菜单 action 同源）", () => {
+    const deps = makeDeps();
+    runWindowKeybindingCommand("Always on Top", deps);
+    runWindowKeybindingCommand("Toggle Sidebar", deps);
+    runWindowKeybindingCommand("New Tab", deps);
+    runWindowKeybindingCommand("Close Tab", deps);
+    expect(deps.toggleAlwaysOnTop).toHaveBeenCalledOnce();
+    expect(deps.toggleSidebar).toHaveBeenCalledOnce();
+    expect(deps.newTab).toHaveBeenCalledOnce();
+    expect(deps.closeTab).toHaveBeenCalledOnce();
+  });
+
+  it("映射表与 catalog 窗口域命令键集一致（防 catalog 扩展后执行映射漏接）", () => {
+    const windowCommandIds = SHORTCUT_COMMANDS.filter((c) => c.domain === "window").map(
+      (c) => c.commandId,
+    );
+    expect(Object.keys(WINDOW_KEYBINDING_COMMANDS).sort()).toEqual(windowCommandIds.sort());
+  });
+
+  it("映射表外命令告警不崩溃（注册侧已过滤，此处为派发面防御）", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    expect(() => runWindowKeybindingCommand("不存在命令", makeDeps())).not.toThrow();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("不存在命令"));
   });
 });
 

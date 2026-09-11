@@ -102,6 +102,37 @@ export interface MenuRouter {
   run: (id: string) => void;
 }
 
+/**
+ * 窗口域 keyBinding 命令映射（catalog commandId → 命令函数；10#1 执行通路）。
+ *
+ * 与 createMenuRouter 精确表相邻同源维护：值取同一批 MenuRouterDeps 回调，与菜单
+ * action 共用同一命令函数（AC-M-3），防「菜单执行」与「快捷键执行」两表漂移。
+ * 键集 = shortcut-catalog 中 domain=window 的命令名（conf.user.json keyBinding 键面）；
+ * 目录外命令在注册侧告警跳过（window-keybinding-shortcuts 消费时校验）。
+ */
+export const WINDOW_KEYBINDING_COMMANDS: Readonly<Record<string, (deps: MenuRouterDeps) => void>> =
+  {
+    "Always on Top": (deps) => deps.toggleAlwaysOnTop(),
+    "Toggle Sidebar": (deps) => deps.toggleSidebar(),
+    "New Tab": (deps) => deps.newTab(),
+    "Close Tab": (deps) => deps.closeTab(),
+  };
+
+/**
+ * 执行窗口域 keyBinding 命令（映射表查表派发；AC-M-3 与菜单 action 同一函数）
+ * @param commandId 快捷键命令名（conf.user.json keyBinding 键面）
+ * @param deps 装配层命令回调集（App 层 menuDeps）
+ */
+export function runWindowKeybindingCommand(commandId: string, deps: MenuRouterDeps): void {
+  const command = WINDOW_KEYBINDING_COMMANDS[commandId];
+  if (command === undefined) {
+    // 注册侧已按本表过滤，此处为防御分支（表收缩/调用面误用）——告警留痕不崩溃
+    console.warn(`[MarkWell] 未知的窗口快捷键命令: ${commandId}`);
+    return;
+  }
+  command(deps);
+}
+
 /** 编辑器域命令 id 前缀（"editor.<命令名>" → runEditorMenuCommand("<命令名>")） */
 const EDITOR_PREFIX = "editor.";
 

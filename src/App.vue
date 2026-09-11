@@ -10,7 +10,7 @@
      12 W6 退出聚合确认（onCloseRequested 单一 handler → 脏标签列表确认 →
      逐标签写盘 → destroy，AC-M-18~21） -->
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import AppShell from "./components/layout/AppShell.vue";
 import FileTreeMenu from "./features/file-tree/FileTreeMenu.vue";
 import { useFileTreeStore } from "./features/file-tree/file-tree-store";
@@ -41,6 +41,8 @@ import { useNativeMenu } from "./features/window-shell/use-native-menu";
 import { useAutoHideMenu } from "./features/window-shell/use-auto-hide-menu";
 import { createWindowControls } from "./features/window-shell/use-window-controls";
 import { registerWindowShellShortcuts } from "./features/window-shell/window-shortcuts";
+import { registerWindowKeybindingShortcuts } from "./features/window-shell/window-keybinding-shortcuts";
+import { runWindowKeybindingCommand } from "./features/window-shell/menu-router";
 import { useSourceMode } from "./features/window-shell/source-mode";
 import { useViewModes } from "./features/window-shell/view-modes";
 import { createExitConfirm } from "./features/window-shell/exit-confirm";
@@ -383,6 +385,25 @@ const cleanupWindowShellShortcuts = registerWindowShellShortcuts({
   onToggleTypewriterMode: () => viewModes.toggleTypewriter(),
 });
 
+/**
+ * 窗口域 keyBinding 动态快捷键（10#1 执行接线）：按当前合并条目全量重注册
+ * （先注销旧集防监听叠加）——启动装载（advanced 快照就绪）与 Reset 等任何
+ * keyBinding 变化都经 menuShortcutEntries 重算触发，自定义组合即时生效。
+ */
+let cleanupWindowKeybindings: (() => void) | undefined;
+
+/** 按当前 menuShortcutEntries 重注册窗口域自定义组合快捷键 */
+function syncWindowKeybindings(): void {
+  cleanupWindowKeybindings?.();
+  cleanupWindowKeybindings = registerWindowKeybindingShortcuts(
+    settingsStore.menuShortcutEntries,
+    (commandId) => runWindowKeybindingCommand(commandId, menuDeps),
+  );
+}
+
+// 组件层 watch 随卸载自动停止（宪法 B.2.4）；immediate 覆盖装载前空集形态
+watch(() => settingsStore.menuShortcutEntries, syncWindowKeybindings, { immediate: true });
+
 /** Alt 切换状态机句柄（onMounted 赋值；undefined=尚未装配——全屏联动经 optional chain 防御） */
 let autoHideHandle: ReturnType<typeof useAutoHideMenu> | undefined;
 
@@ -486,6 +507,7 @@ onBeforeUnmount(() => {
   unlistenCloseRequested?.();
   cleanupShortcuts();
   cleanupWindowShellShortcuts();
+  cleanupWindowKeybindings?.();
   cleanupTabsShortcuts();
   cleanupSearchShortcuts();
   cleanupSettingsShortcuts();
