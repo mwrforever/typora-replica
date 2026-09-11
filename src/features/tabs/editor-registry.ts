@@ -79,6 +79,25 @@ export function recycleLeastRecent(excludeTabId: string): string | undefined {
   return victim;
 }
 
+/**
+ * 暂停全部标签自动保存（12 退出聚合 W6：确认弹窗期与逐标签写盘期不写盘）。
+ * stop 幂等（重复调用安全），confirming 不变量「进入确认 ⇒ 已暂停」可重复维持；
+ * 副作用披露：markdownUpdated→markDirty 脏桥随订阅一并停——弹窗期编辑暂不置脏，
+ * 恢复后下次编辑重新标记（与 02 单一事件源语义一致）。
+ */
+export function stopAllAutoSave(): void {
+  for (const inst of instances.values()) inst.autoSave.stop();
+}
+
+/**
+ * 恢复激活标签自动保存（12 退出聚合 W6：取消/写盘失败/关窗失败回退路径）。
+ * 仅激活标签重启订阅——非激活标签本就不运行（激活切换时 activateInstance 统一起停）。
+ */
+export function startActiveAutoSave(): void {
+  if (adoptedTabId === undefined) return;
+  instances.get(adoptedTabId)?.autoSave.start();
+}
+
 /** 测试专用：清空注册表（模块级单例，用例间必须隔离） */
 export function clearRegistryForTest(): void {
   instances.clear();

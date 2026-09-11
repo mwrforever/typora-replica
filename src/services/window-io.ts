@@ -6,6 +6,7 @@
 // 全屏/置顶/缩放天然仅作用于当前窗口（AC-M-15 仅当前窗口语义）。
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import type { CloseRequestedEvent } from "@tauri-apps/api/window";
 
 /** 主窗口 label（tauri.conf.json windows[0] 未声明 label 时 Tauri 默认 main） */
 const MAIN_WINDOW_LABEL = "main";
@@ -65,4 +66,27 @@ export function createMainWindow(): Promise<string> {
  */
 export function isMainWindow(): boolean {
   return getCurrentWindow().label === MAIN_WINDOW_LABEL;
+}
+
+/**
+ * 注册当前窗口关闭请求监听（12 W6 退出聚合接线，AC-M-18~21）。
+ * @param handler 关闭请求回调（event.preventDefault() 阻止本次关闭，后续处置
+ *                归退出聚合状态机——弹确认或 destroy）
+ * @returns 取消监听函数（unlisten 自持，A.5.4 精神；装配层 onBeforeUnmount 退订）
+ */
+export function registerCloseRequested(
+  handler: (event: CloseRequestedEvent) => void | Promise<void>,
+): Promise<() => void> {
+  return getCurrentWindow().onCloseRequested(handler);
+}
+
+/**
+ * 销毁当前窗口（12 W6 确认通过后的唯一关窗出口）。
+ * 必须 destroy 而非 close：onCloseRequested 监听在册时 Tauri 对 close 请求
+ * 自动阻止并再次回调 JS（has_js_listener 判定），close 只会重入确认流程形成
+ * 死循环；destroy 绕过 close-requested 管线直接销毁窗口。
+ * @throws Error IPC 调用失败（窗口可能已销毁；调用方记录并回退交互态）
+ */
+export async function destroyCurrentWindow(): Promise<void> {
+  await getCurrentWindow().destroy();
 }

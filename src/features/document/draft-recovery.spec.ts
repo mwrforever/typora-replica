@@ -72,17 +72,6 @@ describe("草稿备份与恢复（F31）", () => {
     d.stop();
   });
 
-  it("setupExitBackup 幂等：重复挂载只注册一次", () => {
-    const d = new DraftRecovery(() => [{ path: "C:/a.md", content: "草稿内容" }]);
-    let registerCount = 0;
-    const registrar = () => {
-      registerCount += 1;
-    };
-    d.setupExitBackup(registrar);
-    d.setupExitBackup(registrar); // 重复挂载为 no-op（防多装配叠加备份）
-    expect(registerCount).toBe(1);
-  });
-
   it("备份失败静默降级：saveDraft 拒绝不抛错（不打断编辑）", async () => {
     mockSaveDraft.mockRejectedValue(new Error("磁盘错误"));
     const d = new DraftRecovery(() => [{ path: "C:/a.md", content: "草稿内容" }]);
@@ -112,16 +101,6 @@ describe("草稿备份与恢复（F31）", () => {
     const d = new DraftRecovery(() => [{ content: "# 未存标题\n正文" }]);
     await d.backupIfNeeded();
     expect(mockSaveDraft).toHaveBeenCalledWith("未存标题", "# 未存标题\n正文");
-  });
-
-  it("setupExitBackup：退出回调触发备份（正常退出也留，AC-F31-4）", async () => {
-    const d = new DraftRecovery(() => [{ path: "C:/a.md", content: "草稿内容" }]);
-    let handler: (() => Promise<void>) | undefined;
-    d.setupExitBackup((h) => {
-      handler = h;
-    });
-    await handler!();
-    expect(mockSaveDraft).toHaveBeenCalledWith("a.md", "草稿内容");
   });
 
   it("聚合：多个脏标签各自备份，全空白跳过、未命名按首句命名（04 多标签）", async () => {

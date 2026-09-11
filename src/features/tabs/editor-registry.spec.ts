@@ -11,6 +11,8 @@ import {
   getInstance,
   recycleLeastRecent,
   registerInstance,
+  startActiveAutoSave,
+  stopAllAutoSave,
   unregisterInstance,
 } from "./editor-registry";
 import type { RegisteredInstance } from "./editor-registry";
@@ -131,5 +133,31 @@ describe("editorRegistry 实例注册表", () => {
     expect(getActiveFrontMatter()).toBe(fm);
     unregisterInstance("a");
     expect(getActiveFrontMatter()).toBeNull();
+  });
+
+  it("stopAllAutoSave：停全部实例自动保存（12 退出聚合弹窗期暂停）", () => {
+    const a = fakeInstance(1);
+    const b = fakeInstance(2);
+    registerInstance("a", a);
+    registerInstance("b", b);
+    activateInstance("a");
+    stopAllAutoSave();
+    // 全实例（含非激活标签）一律 stop——confirming 期不写盘
+    expect(a.autoSave.stop).toHaveBeenCalled();
+    expect(b.autoSave.stop).toHaveBeenCalled();
+  });
+
+  it("startActiveAutoSave：仅恢复激活标签；无激活标签安全返回", () => {
+    const a = fakeInstance(1);
+    const b = fakeInstance(2);
+    registerInstance("a", a);
+    registerInstance("b", b);
+    startActiveAutoSave(); // 从未激活：adoptedTabId 为 undefined → no-op
+    expect(a.autoSave.start).not.toHaveBeenCalled();
+    expect(b.autoSave.start).not.toHaveBeenCalled();
+    activateInstance("a");
+    startActiveAutoSave();
+    expect(a.autoSave.start).toHaveBeenCalledTimes(2); // activate 一次 + 恢复一次
+    expect(b.autoSave.start).not.toHaveBeenCalled(); // 非激活标签不重启
   });
 });

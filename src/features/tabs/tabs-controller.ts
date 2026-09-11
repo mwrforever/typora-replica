@@ -21,6 +21,8 @@ import {
   getInstance,
   recycleLeastRecent,
   registerInstance,
+  startActiveAutoSave,
+  stopAllAutoSave,
   unregisterInstance,
 } from "./editor-registry";
 import { MAX_TABS, useTabsStore } from "./tabs-store";
@@ -58,6 +60,18 @@ export interface TabsController {
   confirmCloseDiscard(): void;
   /** C2「取消」：中止关闭，标签与内容不变 */
   cancelClose(): void;
+  /**
+   * 逐标签写盘（12 退出聚合「全部保存」消费；spec 04 §5 增补，缺口 C 已批）。
+   * 复用 02 session.save 串行链路——行尾归一/尾换行/B 文档切换守卫/C 纪元守卫
+   * 全部继承；未命名标签返回 no-path（不弹另存为对话框，处置由上层状态机决策）。
+   * @param tabId 目标标签 id（不存在或上下文已失返回 no-path 形态失败产物，不抛错）
+   * @returns 保存产物（saved=true 已写盘并清脏；saved=false 附原因与提示）
+   */
+  saveTab(tabId: string): Promise<SaveOutcome>;
+  /** 12 退出聚合：弹窗/写盘期暂停全部标签自动保存（幂等；脏桥一并停，恢复后自愈） */
+  pauseAutoSave(): void;
+  /** 12 退出聚合：恢复激活标签自动保存（取消/失败回退路径；非激活标签本就不运行） */
+  resumeAutoSave(): void;
   reopenClosed(): void;
   cycle(dir: 1 | -1): void;
   onInstanceReady(tabId: string, inst: TabInstanceReady): void;
@@ -247,6 +261,29 @@ function createController(): TabsController {
     closeRequest.value = undefined;
   }
 
+  /**
+   * 逐标签写盘（12 退出聚合「全部保存」分支消费；复用 02 session.save——
+   * serialize 注入保证后台标签取本实例内容，串行链防并发写盘交错）。
+   * 未知 tabId（弹窗期间标签被关闭等竞态）防御性返回失败产物，不抛错。
+   */
+  async function saveTab(tabId: string): Promise<SaveOutcome> {
+    const ctx = contexts.get(tabId);
+    if (!ctx) {
+      return { saved: false, reason: "no-path", message: "标签不存在或已关闭，已跳过写盘" };
+    }
+    return ctx.session.save();
+  }
+
+  /** 12 退出聚合：暂停全部标签自动保存（透传注册表；stop 幂等） */
+  function pauseAutoSave(): void {
+    stopAllAutoSave();
+  }
+
+  /** 12 退出聚合：恢复激活标签自动保存（透传注册表；仅激活标签运行） */
+  function resumeAutoSave(): void {
+    startActiveAutoSave();
+  }
+
   /** LIFO 重开最近关闭：新 id + 恢复关闭前内容快照（脏标签重开仍脏） */
   function reopenClosed(): void {
     const id = store.reopenClosed();
@@ -350,6 +387,9 @@ function createController(): TabsController {
     confirmCloseSave,
     confirmCloseDiscard,
     cancelClose,
+    saveTab,
+    pauseAutoSave,
+    resumeAutoSave,
     reopenClosed,
     cycle,
     onInstanceReady,

@@ -5,11 +5,12 @@
      12 装配：布局骨架归 components/layout/AppShell.vue（侧栏容器/中央区/状态栏容器），
      本组件保留启动决策链与全局单例浮层（菜单/快速打开/查找替换/关闭确认/设置面板），
      并装配 12 W2 原生菜单（menuRouter 命令依赖注入 + Themes/Open Recent 动态重建
-     + autoHideMenuBar Alt 切换）与 12 W3 窗口控制（全屏/缩放/置顶/新建窗口，
-     菜单项与快捷键统一经 menuDeps/windowControls 同一命令函数单一执行） -->
+     + autoHideMenuBar Alt 切换）、12 W3 窗口控制（全屏/缩放/置顶/新建窗口，
+     菜单项与快捷键统一经 menuDeps/windowControls 同一命令函数单一执行）与
+     12 W6 退出聚合确认（onCloseRequested 单一 handler → 脏标签列表确认 →
+     逐标签写盘 → destroy，AC-M-18~21） -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import AppShell from "./components/layout/AppShell.vue";
 import FileTreeMenu from "./features/file-tree/FileTreeMenu.vue";
 import { useFileTreeStore } from "./features/file-tree/file-tree-store";
@@ -42,12 +43,16 @@ import { createWindowControls } from "./features/window-shell/use-window-control
 import { registerWindowShellShortcuts } from "./features/window-shell/window-shortcuts";
 import { useSourceMode } from "./features/window-shell/source-mode";
 import { useViewModes } from "./features/window-shell/view-modes";
+import { createExitConfirm } from "./features/window-shell/exit-confirm";
+import ExitConfirmDialog from "./features/window-shell/ExitConfirmDialog.vue";
 import type { MenuRouterDeps } from "./features/window-shell/menu-router";
 import { setNativeMenuVisible } from "./services/menu-io";
 import {
   createMainWindow,
+  destroyCurrentWindow,
   isMainWindow,
   isWindowFullscreen,
+  registerCloseRequested,
   setWebviewZoom,
   toggleAlwaysOnTop,
   toggleFullscreen,
@@ -93,6 +98,30 @@ const drafts = new DraftRecovery(() =>
       };
     }),
 );
+
+/**
+ * 退出聚合确认状态机（12 W6，AC-M-18~21）：窗口关闭的单一决策入口。
+ * 依赖绑定（B.2.1 单向）：脏聚合读 04 store filter dirty；逐标签写盘走 04
+ * saveTab（02 session.save 链路）；自动保存暂停/恢复经 04 controller 透传
+ * 注册表；关窗经 services/window-io destroy（禁 close 防确认死循环）。
+ */
+const exitConfirm = createExitConfirm({
+  collectDirtyTabs: () =>
+    tabs.store.tabs.filter((t) => t.dirty).map((t) => ({ id: t.id, title: t.title })),
+  saveTab: (tabId) => tabs.saveTab(tabId),
+  suspendAutoSave: () => tabs.pauseAutoSave(),
+  resumeAutoSave: () => tabs.resumeAutoSave(),
+  closeWindow: () => destroyCurrentWindow(),
+});
+
+/** 弹窗显隐（confirming 展示确认列表；saving 保持展示并禁用按钮） */
+const exitDialogVisible = computed(
+  () => exitConfirm.phase.value === "confirming" || exitConfirm.phase.value === "saving",
+);
+/** 写盘进行中（弹窗按钮禁用态） */
+const exitSaving = computed(() => exitConfirm.phase.value === "saving");
+/** 本轮冻结的脏标签列表（模板消费；顶层 computed 解包——controller 非响应式对象） */
+const exitDirtyTabs = computed(() => exitConfirm.dirtyTabs.value);
 
 /** Ctrl+P 面板开关 */
 const quickOpenVisible = ref(false);
@@ -364,6 +393,9 @@ let menuHandle: ReturnType<typeof useNativeMenu> | undefined;
 /** Alt 切换状态机注销句柄（onMounted 赋值；undefined=尚未装配） */
 let cleanupAutoHideMenu: (() => void) | undefined;
 
+/** 关闭请求监听退订句柄（onMounted 赋值；A.5.4 精神——unlisten 必须自持） */
+let unlistenCloseRequested: (() => void) | undefined;
+
 onMounted(async () => {
   // 07 图片功能装配（幂等，仅启动调一次）：onUpload 真实实现注入 01 注册表 +
   // 设置快照预加载/失效订阅。先于启动决策执行，保证首标签挂载前注册表就绪
@@ -429,13 +461,16 @@ onMounted(async () => {
   }
   // 草稿心跳：门面 markdownUpdated 流（仅激活标签编辑触发，P1 语义）
   drafts.start((cb) => editorManager.subscribeMarkdownUpdated(cb));
-  drafts.setupExitBackup(async (onCloseHandler) => {
-    // 正常退出：先备份未保存内容再放行关闭（12 窗口外壳可替换关闭流程）
-    await getCurrentWindow().onCloseRequested(async (event) => {
-      event.preventDefault();
-      await onCloseHandler();
-      await getCurrentWindow().destroy();
-    });
+  // 12 W6 退出聚合（AC-M-18~21）：onCloseRequested 单一 handler 收敛——旧 02
+  // drafts 直通 destroy 关闭流程由状态机替换（drafts.setupExitBackup 已随本次
+  // 改动移除）。草稿备份为关闭入口第一步（AC-F31-4「正常退出也留备份」语义
+  // 保留：用户取消亦已留档），随后 preventDefault 并交状态机决策（弹确认或
+  // destroy）。preventDefault 对无脏路径同样安全：destroy 绕过 close-requested
+  // 管线，直接关窗不弹窗（AC-M-21）。
+  unlistenCloseRequested = await registerCloseRequested(async (event) => {
+    event.preventDefault();
+    await drafts.backupIfNeeded();
+    await exitConfirm.handleCloseRequest();
   });
 });
 
@@ -445,6 +480,8 @@ onBeforeUnmount(() => {
   // 12 W2 菜单订阅退订 + Alt 切换监听移除（detached 订阅自持取消，B.2.4）
   menuHandle?.cleanup();
   cleanupAutoHideMenu?.();
+  // 12 W6 关闭请求监听退订（unlisten 自持，A.5.4 精神）
+  unlistenCloseRequested?.();
   cleanupShortcuts();
   cleanupWindowShellShortcuts();
   cleanupTabsShortcuts();
@@ -511,6 +548,16 @@ function basenameOf(path: string): string {
     @save="tabs.confirmCloseSave"
     @discard="tabs.confirmCloseDiscard"
     @cancel="tabs.cancelClose"
+  />
+  <!-- 退出聚合确认（12 W6，AC-M-18~21）：多脏标签列表式一次性确认；
+       saving 阶段保持展示并禁用按钮（写盘原子性） -->
+  <ExitConfirmDialog
+    v-if="exitDialogVisible"
+    :items="exitDirtyTabs"
+    :saving="exitSaving"
+    @save-all="exitConfirm.saveAll"
+    @discard-all="exitConfirm.discardAll"
+    @cancel="exitConfirm.cancel"
   />
   <!-- 偏好设置面板浮层（10）：显隐由 settingsStore.visible 驱动，内部自管开合 -->
   <SettingsPanel />
