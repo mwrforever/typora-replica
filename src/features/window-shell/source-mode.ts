@@ -16,7 +16,7 @@
 // display:none 时 focus 是 no-op，键盘输入会丢失）。
 //
 // MVP 取舍（随 PR 披露）：
-// - 内容同步只在切出时做（不做逐键双向实时同步）；
+// - 内容同步只在切出与关窗入口回写时做（flushPendingWrite，不做逐键双向实时同步）；
 // - 源码层为当前活跃标签的单一视图层（不为每标签建 CM 实例）；标签切换时
 //   刷新为活跃标签内容，切换瞬间源码层未回写的编辑随刷新丢弃（04 无按标签
 //   写回接口，留后续工作包；丢弃时经 discardNotice 给用户可见信号）。
@@ -75,6 +75,20 @@ const REVEAL_BRIEF_MS = 1;
 const DISCARD_NOTICE_MS = 4000;
 
 /**
+ * 关窗前回写产物（装配层 close-flush 据此决定置脏/告警路径）
+ */
+export type SourceFlushOutcome =
+  /** 非源码态：无源码层编辑面，无需处置 */
+  | "inactive"
+  /** 源码态但源码层与切入基准一致：无未回写编辑 */
+  | "clean"
+  /** 未回写编辑已回写进编辑器（装配层须即时置脏使标签进入退出聚合） */
+  | "flushed"
+  /** 疑似存在未回写编辑但无法回写（编辑器丢失/宿主未就绪/回写抛错）——
+   *  装配层不得静默放行关窗（按「有未保存内容」语义置脏拦截） */
+  | "failed";
+
+/**
  * 折算 Front Matter 行偏移（源码全文行号 ↔ 正文行号）
  * @param text 源码全文（含或不含 FM）
  * @returns 正文起始行号偏移：无 FM 为 0；有 FM 为「内文行数 + 2 条定界行」
@@ -97,6 +111,9 @@ export interface SourceModeController {
   exit(): boolean;
   /** 双向切换（Ctrl+/ 与菜单「源码模式」共用入口） */
   toggle(): boolean;
+  /** 关窗前回写（不切换状态）：源码态且有未回写编辑时按 exit() 同路径单事务
+   *  回写进编辑器，状态保持 source；产物语义见 SourceFlushOutcome */
+  flushPendingWrite(): SourceFlushOutcome;
   /** 标签切换时刷新为活跃标签内容（仅源码态有意义；未回写编辑丢弃并告警） */
   syncToActiveTab(): void;
 }
@@ -108,7 +125,11 @@ export interface SourceModeController {
  */
 export function createSourceMode(deps: SourceModeDeps, host: SourceModeHost): SourceModeController {
   let state: SourceModeState = "wysiwyg";
-  /** 切入时装载的全文：切出时变更判定基准（无变化不回写，防空 undo 步） */
+  /**
+   * 切入时装载的全文：切出/关窗回写的变更判定基准（无变化不回写，防空 undo 步）；
+   * 关窗回写成功后同步为已回写文本（源码层与编辑器已一致，后续 exit 判定不再
+   * 重复回写产生冗余 undo 步）
+   */
   let pendingText = "";
 
   const enter = (): boolean => {
@@ -166,11 +187,38 @@ export function createSourceMode(deps: SourceModeDeps, host: SourceModeHost): So
     return true;
   };
 
+  /**
+   * 关窗前回写（不切换状态）：源码态下读源码层全文与切入基准比对，有差异则
+   * 单事务回写进编辑器（与 exit() 同一 setContent 路径），状态保持 source。
+   * 与 exit() 的差异：不恢复光标/不翻转状态——关窗链路只要内容进编辑器并置脏，
+   * 后续聚合确认与写盘由 12 W6 退出状态机统一处置。
+   */
+  const flushPendingWrite = (): SourceFlushOutcome => {
+    if (state !== "source") return "inactive";
+    const editor = deps.getEditor();
+    // 编辑器丢失/宿主未就绪：源码层文本不可读不可写，无法排除未回写编辑——
+    // 按「有未保存内容」语义上报失败（装配层据此拦截直通关窗），状态保持可重试
+    if (editor === undefined || !host.isReady()) return "failed";
+    try {
+      const text = host.getText();
+      // 与 exit() 同一变更判定基准：无差异不回写（防空 undo 步）
+      if (text === pendingText) return "clean";
+      deps.setContent(text);
+      // 基准随回写前移：后续 exit() 判定已一致，不再重复回写
+      pendingText = text;
+    } catch (error) {
+      console.warn("[MarkWell] 关窗前源码层回写失败，已按未保存内容拦截关窗", error);
+      return "failed";
+    }
+    return "flushed";
+  };
+
   return {
     getState: () => state,
     enter,
     exit,
     toggle: () => (state === "source" ? exit() : enter()),
+    flushPendingWrite,
     syncToActiveTab: () => {
       if (state !== "source") return;
       const editor = deps.getEditor();
@@ -279,6 +327,8 @@ export function useSourceMode(): UseSourceModeReturn {
     enter: () => runCommand(controller.enter),
     exit: () => runCommand(controller.exit),
     toggle: () => runCommand(controller.toggle),
+    // 关窗回写不改状态不动焦点，直通即可（runCommand 的镜像同步/焦点移交均不需要）
+    flushPendingWrite: controller.flushPendingWrite,
     syncToActiveTab: controller.syncToActiveTab,
     setHost: (host) => {
       hostSlot = host;

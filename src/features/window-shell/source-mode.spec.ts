@@ -255,6 +255,86 @@ describe("切出源码模式（source → WYSIWYG）", () => {
   });
 });
 
+describe("关窗前回写（flushPendingWrite，不切换状态）", () => {
+  it("源码态有未回写编辑：回写进编辑器且状态保持 source（flushed，关窗链路消费）", () => {
+    const deps = makeDeps();
+    const host = makeHost();
+    const machine = createSourceMode(deps, host);
+    machine.enter();
+    host.load("# 标题\n\n关窗前源码编辑", { line: 0, col: 0 });
+    expect(machine.flushPendingWrite()).toBe("flushed");
+    expect(deps.setContent).toHaveBeenCalledOnce();
+    expect(deps.setContent).toHaveBeenCalledWith("# 标题\n\n关窗前源码编辑");
+    expect(machine.getState()).toBe("source");
+  });
+
+  it("回写成功后基准前移：随后 exit 判定已一致不再重复回写（无冗余 undo 步）", () => {
+    const deps = makeDeps();
+    const host = makeHost();
+    const machine = createSourceMode(deps, host);
+    machine.enter();
+    host.load("# 已编辑", { line: 0, col: 0 });
+    expect(machine.flushPendingWrite()).toBe("flushed");
+    expect(machine.exit()).toBe(true);
+    expect(deps.setContent).toHaveBeenCalledOnce();
+    expect(machine.getState()).toBe("wysiwyg");
+  });
+
+  it("源码态无变更：clean 不回写（与切出同一变更判定基准）", () => {
+    const deps = makeDeps();
+    const host = makeHost();
+    const machine = createSourceMode(deps, host);
+    machine.enter();
+    expect(machine.flushPendingWrite()).toBe("clean");
+    expect(deps.setContent).not.toHaveBeenCalled();
+  });
+
+  it("非源码态：inactive（WYSIWYG 关窗无源码层处置面）", () => {
+    const deps = makeDeps();
+    const host = makeHost();
+    const machine = createSourceMode(deps, host);
+    expect(machine.flushPendingWrite()).toBe("inactive");
+    expect(deps.setContent).not.toHaveBeenCalled();
+  });
+
+  it("编辑器丢失：failed 不回写且状态保持 source（装配层据此拦截直通关窗）", () => {
+    const deps = makeDeps();
+    const host = makeHost();
+    const machine = createSourceMode(deps, host);
+    machine.enter();
+    host.load("# 未回写编辑", { line: 0, col: 0 });
+    deps.getEditor = vi.fn(() => undefined);
+    expect(machine.flushPendingWrite()).toBe("failed");
+    expect(deps.setContent).not.toHaveBeenCalled();
+    expect(machine.getState()).toBe("source");
+  });
+
+  it("宿主未就绪：failed（源码层文本不可读，无法排除未回写编辑）", () => {
+    const deps = makeDeps();
+    const host = makeHost();
+    const machine = createSourceMode(deps, host);
+    machine.enter();
+    host.isReady = vi.fn(() => false);
+    expect(machine.flushPendingWrite()).toBe("failed");
+    expect(deps.setContent).not.toHaveBeenCalled();
+  });
+
+  it("回写抛错：failed + 中文告警 + 状态保持 source 可重试（防内容丢失）", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const deps = makeDeps();
+    const host = makeHost();
+    const machine = createSourceMode(deps, host);
+    machine.enter();
+    host.load("# 未回写编辑", { line: 0, col: 0 });
+    deps.setContent = vi.fn(() => {
+      throw new Error("dispatch failed");
+    });
+    expect(machine.flushPendingWrite()).toBe("failed");
+    expect(machine.getState()).toBe("source");
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("回写失败"), expect.anything());
+  });
+});
+
 describe("toggle 双向切换（Ctrl+/ 单一入口）", () => {
   it("wysiwyg 态切入、source 态切出（往返一次回到原态）", () => {
     const deps = makeDeps();
@@ -455,6 +535,18 @@ describe("useSourceMode 单例装配（真实依赖接线）", () => {
     expect(vi.mocked(editorManager.setContent)).toHaveBeenCalledWith("# 单例文档\n\n正文编辑后");
     expect(vi.mocked(revealRange)).toHaveBeenCalledWith(expect.anything(), 0, 0, 1);
     expect(sm.active.value).toBe(false);
+    sm.setHost(undefined);
+  });
+
+  it("关窗回写透传：flushPendingWrite 经单例触达转发宿主与 setContent 接线（App.vue 关窗入口消费）", () => {
+    const sm = useSourceMode();
+    const host = makeHost();
+    sm.setHost(host);
+    expect(sm.enter()).toBe(true);
+    host.load("# 单例文档\n\n关窗前编辑", { line: 0, col: 0 });
+    expect(sm.flushPendingWrite()).toBe("flushed");
+    expect(vi.mocked(editorManager.setContent)).toHaveBeenCalledWith("# 单例文档\n\n关窗前编辑");
+    expect(sm.getState()).toBe("source");
     sm.setHost(undefined);
   });
 

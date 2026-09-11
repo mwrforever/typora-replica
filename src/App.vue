@@ -44,6 +44,7 @@ import { registerWindowShellShortcuts } from "./features/window-shell/window-sho
 import { registerWindowKeybindingShortcuts } from "./features/window-shell/window-keybinding-shortcuts";
 import { runWindowKeybindingCommand } from "./features/window-shell/menu-router";
 import { useSourceMode } from "./features/window-shell/source-mode";
+import { flushSourceEditsBeforeClose } from "./features/window-shell/close-flush";
 import { useViewModes } from "./features/window-shell/view-modes";
 import { createExitConfirm } from "./features/window-shell/exit-confirm";
 import ExitConfirmDialog from "./features/window-shell/ExitConfirmDialog.vue";
@@ -492,6 +493,14 @@ onMounted(async () => {
   // 管线，直接关窗不弹窗（AC-M-21）。
   unlistenCloseRequested = await registerCloseRequested(async (event) => {
     event.preventDefault();
+    // 源码态关窗回写（关窗入口第一步，先于草稿备份）：CM 层未回写编辑先回写进
+    // PM 文档并即时置脏——否则无脏直通 destroy 会静默丢失源码层编辑；置脏先行
+    // 使草稿备份（过滤脏标签）与退出聚合（collectDirtyTabs）都能捕获该编辑
+    flushSourceEditsBeforeClose({
+      flushPendingWrite: sourceMode.flushPendingWrite,
+      activeTabId: () => tabs.store.activeTabId,
+      markDirty: (tabId) => tabs.store.markDirty(tabId),
+    });
     await drafts.backupIfNeeded();
     await exitConfirm.handleCloseRequest();
   });

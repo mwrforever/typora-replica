@@ -6,7 +6,8 @@ import path from "node:path";
 
 /**
  * 12 窗口外壳 E2E（P4 阶段）：源码模式往返（AC-M-6/7/8）、F11 全屏（AC-M-13）、
- * 缩放档位（AC-M-14）、退出聚合确认（AC-M-18~21 用户可见行为路径）。
+ * 缩放档位（AC-M-14）、退出聚合确认（AC-M-18~21 用户可见行为路径，含源码态
+ * 关窗回写修补用例——CM 层未回写编辑不得随 destroy 静默丢失）。
  *
  * 前置：①含 Rust 变更分支先 cargo build（capability application 指 debug 产物，
  *          e2e/README.md §0）；②npm run dev（1420）+ tauri-driver（4444）后台运行；
@@ -224,6 +225,47 @@ describe("12 窗口外壳", () => {
       } catch {
         // 会话已终止（窗口关闭是本组末用例的预期终态）：跳过还原
       }
+    });
+
+    it("源码态未回写编辑直接关窗：回写置脏进确认列表，取消后内容不丢（静默丢失修复）", async () => {
+      // 基准干净化：Ctrl+S 存盘清脏（本组已关自动保存）——此后确认弹窗的出现
+      // 完全归因于源码态关窗回写置脏，排除既有脏状态干扰（修复前此处无脏直通
+      // destroy，源码层编辑静默丢失且无任何确认/备份/提示）
+      await browser.keys(["Control", "s"]);
+      await browser.waitUntil(
+        async () => {
+          const cls = await (await $(".tab-bar__tab--active")).getAttribute("class");
+          return !cls.includes("tab-bar__tab--dirty");
+        },
+        { timeout: 5000, timeoutMsg: "Ctrl+S 后标签未变干净" },
+      );
+      // 进源码模式在 CM 层追加哨兵（不置脏、不产 markdownUpdated 的静默编辑面）
+      const sentinel = "源码态关窗哨兵";
+      await browser.keys(["Control", "/"]);
+      await $('[data-testid="source-mode-layer"] .cm-content').click();
+      await browser.keys(["Control", "End"]);
+      await browser.keys(["Enter", sentinel]);
+      // 关窗请求：回写先于聚合发生——干净标签被置脏进确认列表（AC-M-18 语义
+      // 覆盖源码层编辑），未确认前不写盘
+      sendWmClose();
+      const dialog = await $('[role="dialog"][aria-label="未保存的更改"]');
+      await dialog.waitForExist({ timeout: 5000 });
+      expect(await $(".exit-confirm__list").getText()).toContain("opening.md");
+      expect(readFileSync(fixturePath, "utf8").includes(sentinel)).toBe(false);
+      // 取消（AC-M-20）：窗口保持，回写内容不丢
+      await clickDialogButton("取消");
+      await browser.waitUntil(async () => !(await dialog.isExisting()), {
+        timeout: 3000,
+        timeoutMsg: "取消后弹窗未关闭",
+      });
+      // 回写证据：切回 WYSIWYG 后哨兵已在编辑器内容中（flush 进 PM 文档，
+      // 非仅置脏标志）
+      await browser.keys(["Control", "/"]);
+      await browser.waitUntil(
+        async () =>
+          (await (await visiblePane()).$(".milkdown .ProseMirror").getText()).includes(sentinel),
+        { timeout: 5000, timeoutMsg: "关窗回写未进入编辑器内容" },
+      );
     });
 
     it("脏标签关窗弹列表式确认，取消后窗口保持内容不变（AC-M-18/20）", async () => {
