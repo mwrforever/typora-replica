@@ -63,6 +63,35 @@ try {
   // 存量文件非法 JSON：按空设置处理（theme 组由应用逐键回落默认），还原时写回原字节
 }
 
+/**
+ * 10#1 重启补验前置（keybinding-restart.e2e.ts）：预置 conf.user.json 的 keyBinding
+ * 覆盖——`"Always on Top": "Ctrl+Shift+P"`。conf.user.json 为 10 高级设置存储
+ * （app_data_dir 下，Rust io::advanced_settings 管理；支持 // 注释），应用启动时
+ * read_advanced_settings 读取并注入菜单快捷键合并数据——读取早于 mocha 钩子可执行
+ * 时点，必须与上方 settings store 同一时点（配置加载期）落盘。缺键由 Rust DTO
+ * default 兜底，故只写 keyBinding 单键。原字节存内存，onComplete 还原。
+ */
+const confUserPath = path.join(process.env.APPDATA ?? "", "com.markwell.app", "conf.user.json");
+// 原文件字节（不存在则 undefined，还原时删除本预置创建的文件）
+const originalConfUser = existsSync(confUserPath) ? readFileSync(confUserPath) : undefined;
+try {
+  const parsedConf = originalConfUser
+    ? (JSON.parse(originalConfUser.toString("utf8")) as Record<string, unknown>)
+    : {};
+  parsedConf.keyBinding = { "Always on Top": "Ctrl+Shift+P" };
+  mkdirSync(path.dirname(confUserPath), { recursive: true });
+  writeFileSync(confUserPath, JSON.stringify(parsedConf, null, 2), "utf8");
+} catch {
+  // 存量文件含 // 注释无法直接 parse（Rust 模板自带用户指引注释）：按空 conf 重写
+  // 仅含 keyBinding 单键（Rust 剥注释解析器对无注释 JSON 同样兼容），还原时写回原字节
+  mkdirSync(path.dirname(confUserPath), { recursive: true });
+  writeFileSync(
+    confUserPath,
+    JSON.stringify({ keyBinding: { "Always on Top": "Ctrl+Shift+P" } }, null, 2),
+    "utf8",
+  );
+}
+
 /** 共享 tauri:options（两 capability 仅 --reopen-file 启动参数不同） */
 function tauriOptions(reopenFile: string): Record<string, unknown> {
   return {
@@ -111,8 +140,14 @@ export const config: Options.Testrunner = {
   capabilities: [
     {
       maxInstances: 1,
-      // 其余模块用例维持原启动链路（.fixtures 为侧栏数据源）
-      exclude: ["./specs/search.e2e.ts", "./specs/image-display.e2e.ts"],
+      // 其余模块用例维持原启动链路（.fixtures 为侧栏数据源）；
+      // 12 窗口外壳两个附属 spec 独立 capability（见数组尾两项的顺序性说明）
+      exclude: [
+        "./specs/search.e2e.ts",
+        "./specs/image-display.e2e.ts",
+        "./specs/keybinding-restart.e2e.ts",
+        "./specs/window-shell-new-window.e2e.ts",
+      ],
       "tauri:options": tauriOptions(fixturePath),
     } as unknown as Capabilities.Capability,
     {
@@ -128,6 +163,23 @@ export const config: Options.Testrunner = {
       // 验证 asset 协议动态授权 + CSP + 显示观察器的端到端全链路
       specs: ["./specs/image-display.e2e.ts"],
       "tauri:options": tauriOptions(path.join(imageFixtureDir, "doc.md")),
+    } as unknown as Capabilities.Capability,
+    {
+      maxInstances: 1,
+      // 10#1 重启补验专用（keybinding-restart.e2e.ts）：conf.user.json 的 keyBinding
+      // 预置已在本文件配置加载期落盘（见上方 confUserPath 段），本 capability 启动的
+      // 应用实例装载覆盖并验证菜单快捷键合并数据（order：随 capability 数组在
+      // 常规 spec 之后执行，保证 fixture 写盘断言不受并行干扰）
+      specs: ["./specs/keybinding-restart.e2e.ts"],
+      "tauri:options": tauriOptions(fixturePath),
+    } as unknown as Capabilities.Capability,
+    {
+      maxInstances: 1,
+      // 12 New Window / 置顶专用（window-shell-new-window.e2e.ts）：必须为最后一个
+      // capability——New Window 触发后 driver 会话上下文被新窗口顶掉，主窗查询失联
+      //（spec 文件头说明），其所在 capability 之后不能再有依赖窗口交互的用例
+      specs: ["./specs/window-shell-new-window.e2e.ts"],
+      "tauri:options": tauriOptions(fixturePath),
     } as unknown as Capabilities.Capability,
   ],
 
@@ -146,12 +198,18 @@ export const config: Options.Testrunner = {
   },
   reporters: ["spec"],
 
-  // 08 主题 E2E 后置（D8-②）：还原 settings store 原字节；本预置创建的文件（原不存在）则删除
+  // 08 主题 E2E 后置（D8-②）与 10#1 重启补验后置：还原 settings store 与
+  // conf.user.json 原字节；本预置创建的文件（原不存在）则删除
   onComplete: () => {
     if (originalSettings) {
       writeFileSync(settingsPath, originalSettings);
     } else if (existsSync(settingsPath)) {
       rmSync(settingsPath);
+    }
+    if (originalConfUser) {
+      writeFileSync(confUserPath, originalConfUser);
+    } else if (existsSync(confUserPath)) {
+      rmSync(confUserPath);
     }
   },
 };
