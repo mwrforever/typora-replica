@@ -138,7 +138,8 @@ fn next_window_label<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> String {
 
 /// 新建应用窗口（AC-M-16：New Window Ctrl+Shift+N；初始空文档——新窗口是独立
 /// WebView 加载同一前端产物，main.ts/App.vue 在该窗口独立执行，Pinia/多标签/菜单
-/// 装配天然按窗口隔离，空文档由前端启动决策的 --new 缺省路径给出）
+/// 装配天然按窗口隔离；空文档由前端 isMainWindow 门控给出——次窗口不走启动决策链，
+/// 恒 createUntitled 新建空文档标签，cli 参数/重启恢复偏好属主窗口启动语义）
 ///
 /// `app` 为应用句柄（窗口创建挂靠点）。返回新窗口 label（前端日志/调试标识）。
 #[tauri::command]

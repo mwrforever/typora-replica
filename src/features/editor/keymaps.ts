@@ -307,7 +307,9 @@ export function makeScrollJumpCommand(mode: "top" | "bottom" | "selection"): (ct
 // 命令名 → onRun 工厂目录持有在 01 域内（A.7.4：Ctx/Command 编辑器域类型不离开本文件）；
 // 10 模块只传 JSON 值对象（命令名字符串 + 解析后的键名字符串）经 bindMenuShortcut 注入，
 // 12 menuRouter 经 runEditorMenuCommand 以同一目录执行菜单 action——同一命令函数单一执行路径。
-// 复用既有命令路径（commandsCtx 调用 / 预设命令 / 本文件既有工厂），不新增命令实现。
+// 命令实现路径：commandsCtx 调用 / 预设命令 / 本文件工厂——其中光标跳转无既有
+// 命令可复用，由 makeScrollJumpCommand 工厂提供（Ctrl+Home/End 原生行为的 PM
+// 等价命令，与目录内其他工厂同形态持有）。
 // 目录范围：原 keyBinding 十命令 + Edit/Paragraph/Format 菜单可执行命令（引用块/列表/
 // 缩进出/级别增减/删除线/表格/换行/跳转等）；窗口域命令（Always on Top 等）不在本目录。
 
