@@ -2,6 +2,12 @@
 
 > 本文件记录工程规范与体系级变更（先记变更再改正文）。代码级变更走 git 提交历史，不在此重复。
 
+## 2026-09-12 12 窗口外壳模块交付合入 test（PR #18，登记）
+
+- **合入记录**：12 窗口外壳模块（AppShell 三区布局 / Tauri 原生七菜单 + menuRouter 单一执行路径 / 窗口控制含 window-state 重启恢复 / 源码模式 / Focus·Typewriter / 退出聚合确认，23 条 AC）随 PR #18 合入 test（merge commit 4251558）；门禁全绿（test:coverage 1465 用例核心域 100%、cargo fmt / clippy -D warnings / cargo test 168 passed、本地 E2E 14 spec 43 用例连续两轮全绿）。
+- **TASK.md 登记台同步收口**：10#1（菜单侧补验）/ 10#2（shortcut-catalog 窗口域默认组合核对）/ 10#3（defaultPrevented 守卫，按五服务 app/tabs/search/file-tree/devtools 补齐）三条补验项闭环删除，残留决策登记 10 节新条目（Ctrl+O / Ctrl+Shift+S 键盘通路未入 catalog，留 10 域拍板）；09#1（导出 HTML lang）按 12 调研报告 D2 裁决注明「12 不接，维持登记，归 10 设置迭代」；07#4（授权竞态）与 12#1~#4（源码模式延后项）核实后维持活登记。08#1 主题守卫已随 W3 交付收口（见 2026-09-10 W3 节）。
+- **规范面**：本模块合入无宪法条款变更；两笔新增依赖登记见 2026-09-10 W3 / W4 两节。
+
 ## 2026-09-10 12 窗口外壳 W4 新增 npm 直接依赖 @codemirror/* 声明化（登记）
 
 - **新增运行时依赖（声明化既有传递依赖，非新装包）**：`@codemirror/state` ^6.4.1 / `@codemirror/view` ^6.16.0 / `@codemirror/language` ^6.10.1 / `@codemirror/commands` ^6.2.4 / `@codemirror/lang-markdown` ^6.0.0 / `@codemirror/theme-one-dark` ^6.1.2。六包此前已随 `@milkdown/crepe@7.22.1`（直依前四者与 one-dark，lang-markdown 经 `@codemirror/language-data` 传递）在锁文件单拷贝存在，12 W4 源码模式需直接 import，按调研报告 §4.1 建议声明化消除 phantom import。版本以 package-lock.json 实测为准：state 6.7.1 / view 6.43.8 / language 6.12.4 / commands 6.10.4 / lang-markdown 6.5.2 / theme-one-dark 6.1.3——依赖范围取 crepe 依赖同源交集，`npm install` 后锁文件 diff 仅根 dependencies 声明 6 行新增，零版本漂移、零新增安装、零 install scripts（allowScripts 白名单不动）。许可 MIT 全系；CM6 无已知 CVE（CVE-2025-6493 仅影响 CM5）；`npm audit --audit-level=critical` 门禁继续把关。依据：docs/progress/2026-09-10-12-窗口外壳-调研报告.md §4.1（实现前置已评估批准）。
