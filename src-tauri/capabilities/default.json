@@ -43,6 +43,7 @@
     "allow-is-window-fullscreen",
     "allow-toggle-always-on-top",
     "allow-set-webview-zoom",
-    "allow-create-main-window"
+    "allow-create-main-window",
+    "core:window:allow-destroy"
   ]
 }

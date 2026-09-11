@@ -22,11 +22,9 @@ import path from "node:path";
  *   点标题栏 X，走 Tauri close-requested JS 管线进退出聚合；WebView 内 JS 直调
  *   window.close 被 ACL 拦截（core:window:allow-close 未授权，产品无此调用方），
  *   WebDriver closeWindow 又绕过 JS 管线直杀窗口，两者均不等价用户路径。
- *
- * 已知缺陷关联（docs/bugs/2026-09-12-退出聚合关窗出口被ACL拒绝.md）：
- *   退出聚合关窗出口 getCurrentWindow().destroy() 缺 core:window:allow-destroy 授权，
- *   「全部保存/无脏直通」后窗口无法关闭。本 spec 的「全部保存」用例断言到写盘与
- *   弹窗回退为止，关窗断言以 BUG-DESTROY-ACL 注释锚点挂起（见 saveAll 用例尾注）。
+ * - 窗口关闭证据 = 会话终止（destroy 后应用进程退出，后续 driver 命令必然失败）；
+ *   「全部保存」为本 capability 末用例，session 终止不影响后续 capability 拉起
+ *   新实例（AC-M-21 无脏直通关窗以 keybinding-restart spec 末用例等价覆盖）。
  *
  * E2E 局限（如实披露，禁止伪造断言）：
  * - AC-M-13「全屏时菜单栏隐藏」：菜单栏为 OS 原生 UI，WebDriver 无法观测；
@@ -210,16 +208,22 @@ describe("12 窗口外壳", () => {
     });
 
     after(async () => {
-      // 还原自动保存开关（开）：与组前置对称，保持后续用例运行环境与默认一致
-      await browser.keys(["Control", ","]);
-      const autoSaveSwitch = await $(
-        '[data-testid="setting-row-save-recover.auto-save"] input[type="checkbox"]',
-      );
-      if (!(await autoSaveSwitch.isSelected())) {
-        await autoSaveSwitch.click();
-        await browser.pause(300);
+      // 还原自动保存开关（开）：与组前置对称，保持后续用例运行环境与默认一致。
+      // 「全部保存」用例以窗口关闭结束（会话终止）时本还原无从执行——设置文件
+      // 由 wdio.conf onComplete 字节级还原兜底，此处吞掉会话终止错误防假红
+      try {
+        await browser.keys(["Control", ","]);
+        const autoSaveSwitch = await $(
+          '[data-testid="setting-row-save-recover.auto-save"] input[type="checkbox"]',
+        );
+        if (!(await autoSaveSwitch.isSelected())) {
+          await autoSaveSwitch.click();
+          await browser.pause(300);
+        }
+        await browser.keys(["Escape"]);
+      } catch {
+        // 会话已终止（窗口关闭是本组末用例的预期终态）：跳过还原
       }
-      await browser.keys(["Escape"]);
     });
 
     it("脏标签关窗弹列表式确认，取消后窗口保持内容不变（AC-M-18/20）", async () => {
@@ -248,7 +252,7 @@ describe("12 窗口外壳", () => {
       expect(readFileSync(fixturePath, "utf8").includes(sentinel)).toBe(false);
     });
 
-    it("再触发关窗选「全部保存」：逐标签写盘成功（AC-M-19 写盘段）", async () => {
+    it("再触发关窗选「全部保存」：逐标签写盘成功后窗口关闭（AC-M-19）", async () => {
       const sentinel = "退出确认哨兵文本";
       const original = readFileSync(fixturePath, "utf8");
       try {
@@ -264,29 +268,25 @@ describe("12 窗口外壳", () => {
           interval: 200,
           timeoutMsg: "全部保存未写盘",
         });
-        // 写盘成功后弹窗完成使命关闭（确认态回退）
-        await browser.waitUntil(async () => !(await dialog.isExisting()), {
-          timeout: 3000,
-          timeoutMsg: "全部保存后确认弹窗未关闭",
-        });
-        // BUG-DESTROY-ACL：关窗出口 getCurrentWindow().destroy() 缺 core:window:allow-destroy
-        // 授权（docs/bugs/2026-09-12-退出聚合关窗出口被ACL拒绝.md），「窗口关闭」断言
-        // 挂起。缺陷修复后在此补 session 终止断言：
-        //   await browser.waitUntil(async () => { try { await browser.execute(() => 1); return false; } catch { return true; } }, ...)
+        // 全部成功后 destroy 关窗（复核聚合为空 → closing 终态）：会话终止即窗口
+        // 关闭证据——窗口销毁后应用进程退出，任何后续 driver 命令必然失败。
+        // 用例为 capability 1 最后一个用例，session 终止不影响后续 capability
+        await browser.waitUntil(
+          async () => {
+            try {
+              await browser.execute(() => 1);
+              return false;
+            } catch {
+              return true;
+            }
+          },
+          { timeout: 8000, interval: 200, timeoutMsg: "全部保存后窗口未关闭" },
+        );
       } finally {
-        // 还原 fixture 原始字节：写盘断言改变了基准文件（下次运行由 wdio.conf 顶层重置，
-        // 此处立即还原防止同轮运行内后续 spec 读到污染内容）
+        // 还原 fixture 原始字节：写盘断言改变了基准文件（Node 侧 fs 独立于已终止
+        // 的会话；下次运行由 wdio.conf 顶层重置，此处立即还原防同轮污染）
         writeFileSync(fixturePath, original, "utf8");
       }
-    });
-
-    it("无脏标签关窗不弹确认（AC-M-21 不弹窗面；关窗面受 BUG-DESTROY-ACL 阻断）", async () => {
-      // 上一用例已全部保存（标签不脏）：关窗请求应直通关窗而非弹确认。
-      // 当前缺陷下 destroy 被拒窗口保持，本用例钉住「无脏不弹窗」的决策面；
-      // 关窗面待缺陷修复后并入上一用例的 session 终止断言
-      sendWmClose();
-      await browser.pause(1500);
-      await expect($('[role="dialog"][aria-label="未保存的更改"]')).not.toExist();
     });
   });
 });
